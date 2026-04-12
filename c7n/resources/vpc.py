@@ -3115,15 +3115,6 @@ class SetFlowLogs(BaseAction):
             client.create_flow_logs, params, ('FlowLogAlreadyExists',))
 
 
-class PrefixListDescribe(query.DescribeSource):
-
-    def get_resources(self, ids, cache=True):
-        query = {'Filters': [
-            {'Name': 'prefix-list-id',
-             'Values': ids}]}
-        return self.query.filter(self.manager, **query)
-
-
 @resources.register('prefix-list')
 class PrefixList(query.QueryResourceManager):
 
@@ -3134,10 +3125,10 @@ class PrefixList(query.QueryResourceManager):
         config_type = cfn_type = "AWS::EC2::PrefixList"
         name = 'PrefixListName'
         id = 'PrefixListId'
+        filter_name = 'prefix-list-id'
+        filter_type = 'ec2-filter'
         id_prefix = 'pl-'
         universal_taggable = object()
-
-    source_mapping = {'describe': PrefixListDescribe}
 
 
 @PrefixList.filter_registry.register('entry')
