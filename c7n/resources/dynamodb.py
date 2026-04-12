@@ -503,12 +503,6 @@ class Stream(query.QueryResourceManager):
 
 class DescribeDaxCluster(query.DescribeSource):
 
-    def get_resources(self, ids, cache=True):
-        """Retrieve dax resources for serverless policies or related resources
-        """
-        client = local_session(self.manager.session_factory).client('dax')
-        return client.describe_clusters(ClusterNames=ids).get('Clusters')
-
     def augment(self, clusters):
         resources = super(DescribeDaxCluster, self).augment(clusters)
         return list(filter(None, _dax_cluster_tags(
@@ -525,6 +519,8 @@ class DynamoDbAccelerator(query.QueryResourceManager):
         service = 'dax'
         arn_type = 'cache'
         enum_spec = ('describe_clusters', 'Clusters', None)
+        filter_name = 'ClusterNames'
+        filter_type = 'list'
         arn = 'ClusterArn'
         id = name = 'ClusterName'
         cfn_type = 'AWS::DAX::Cluster'
