@@ -267,12 +267,11 @@ class SnapshotCrossAccountAccess(CrossAccountAccessFilter):
     def process(self, resources, event=None):
         self.accounts = self.get_accounts()
         results = []
-        client = local_session(self.manager.session_factory).client('ec2')
         with self.executor_factory(max_workers=3) as w:
             futures = []
             for resource_set in chunks(resources, 50):
                 futures.append(w.submit(
-                    self.process_resource_set, client, resource_set))
+                    self.process_resource_set, resource_set))
             for f in as_completed(futures):
                 if f.exception():
                     self.log.error(
@@ -282,7 +281,8 @@ class SnapshotCrossAccountAccess(CrossAccountAccessFilter):
                 results.extend(f.result())
         return results
 
-    def process_resource_set(self, client, resource_set):
+    def process_resource_set(self, resource_set):
+        client = local_session(self.manager.session_factory).client('ec2')
         results = []
         everyone_only = self.data.get('everyone_only', False)
         for r in resource_set:
@@ -483,13 +483,12 @@ class SnapshotDelete(BaseAction):
         log.info("Deleting %d snapshots, auto-filtered %d ami-snapshots",
                  post, pre - post)
 
-        client = local_session(self.manager.session_factory).client('ec2')
         deleted_snapshots = []
         with self.executor_factory(max_workers=2) as w:
             futures = []
             for snapshot_set in chunks(reversed(snapshots), size=50):
                 futures.append(
-                    w.submit(self.process_snapshot_set, client, snapshot_set, deleted_snapshots))
+                    w.submit(self.process_snapshot_set, snapshot_set, deleted_snapshots))
             for f in as_completed(futures):
                 if f.exception():
                     self.log.error(
@@ -497,7 +496,8 @@ class SnapshotDelete(BaseAction):
                             f.exception()))
         return deleted_snapshots
 
-    def process_snapshot_set(self, client, snapshots_set, deleted_snapshots):
+    def process_snapshot_set(self, snapshots_set, deleted_snapshots):
+        client = local_session(self.manager.session_factory).client('ec2')
         retry = get_retry((
             'RequestLimitExceeded', 'Client.RequestLimitExceeded'))
 
@@ -767,7 +767,8 @@ class EBSSnapshotsFilter(ListItemFilter):
     item_annotation_key = 'c7n:Snapshots'
     annotate_items = True
 
-    def _process_resources_set(self, client, resources):
+    def _process_resources_set(self, resources):
+        client = local_session(self.manager.session_factory).client('ec2')
         snapshots = client.describe_snapshots(
             Filters=[{
                 'Name': 'volume-id',
@@ -779,12 +780,11 @@ class EBSSnapshotsFilter(ListItemFilter):
             res[self.item_annotation_key] = grouped.get(res['VolumeId']) or []
 
     def process(self, resources, event=None):
-        client = local_session(self.manager.session_factory).client('ec2')
         with self.manager.executor_factory(max_workers=3) as w:
             futures = []
             # 200 max value for a single call
             for resources_set in chunks(resources, 30):
-                futures.append(w.submit(self._process_resources_set, client,
+                futures.append(w.submit(self._process_resources_set,
                                         resources_set))
             for f in as_completed(futures):
                 if f.exception():
@@ -1056,13 +1056,12 @@ class CopyInstanceTags(BaseAction):
                 "ebs copy tags action implicitly filtered from %d to %d",
                 vol_count, len(volumes))
         self.initialize(volumes)
-        client = local_session(self.manager.session_factory).client('ec2')
         with self.executor_factory(max_workers=10) as w:
             futures = []
             for instance_set in chunks(sorted(
                     self.instance_map.keys(), reverse=True), size=100):
                 futures.append(
-                    w.submit(self.process_instance_set, client, instance_set))
+                    w.submit(self.process_instance_set, instance_set))
             for f in as_completed(futures):
                 if f.exception():
                     self.log.error(
@@ -1081,7 +1080,8 @@ class CopyInstanceTags(BaseAction):
         self.instance_vol_map = instance_vol_map
         self.instance_map = instance_map
 
-    def process_instance_set(self, client, instance_ids):
+    def process_instance_set(self, instance_ids):
+        client = local_session(self.manager.session_factory).client('ec2')
         for i in instance_ids:
             try:
                 self.process_instance_volumes(
@@ -1231,13 +1231,11 @@ class EncryptInstanceVolumes(BaseAction):
             self.manager.get_resource_manager('ec2').get_resources(
                 list(instance_vol_map.keys()), cache=False)}
 
-        client = local_session(self.manager.session_factory).client('ec2')
-
         with self.executor_factory(max_workers=3) as w:
             futures = {}
             for instance_id, vol_set in instance_vol_map.items():
                 futures[w.submit(
-                    self.process_volume, client,
+                    self.process_volume,
                     instance_id, vol_set)] = instance_id
 
             for f in as_completed(futures):
@@ -1248,11 +1246,12 @@ class EncryptInstanceVolumes(BaseAction):
                             instance_id, instance_vol_map[instance_id],
                             f.exception()))
 
-    def process_volume(self, client, instance_id, vol_set):
+    def process_volume(self, instance_id, vol_set):
         """Encrypt attached unencrypted ebs volumes
 
         vol_set corresponds to all the unencrypted volumes on a given instance.
         """
+        client = local_session(self.manager.session_factory).client('ec2')
         key_id = self.get_encryption_key()
         if self.verbose:
             self.log.debug("Using encryption key: %s" % key_id)
@@ -1533,12 +1532,11 @@ class Delete(BaseAction):
         'ec2:DetachVolume', 'ec2:DeleteVolume', 'ec2:DescribeVolumes')
 
     def process(self, volumes):
-        client = local_session(self.manager.session_factory).client('ec2')
         with self.executor_factory(max_workers=3) as w:
             futures = {}
             for v in volumes:
                 futures[
-                    w.submit(self.process_volume, client, v)] = v
+                    w.submit(self.process_volume, v)] = v
             for f in as_completed(futures):
                 v = futures[f]
                 if f.exception():
@@ -1546,7 +1544,8 @@ class Delete(BaseAction):
                         "Error processing volume:%s error:%s",
                         v['VolumeId'], f.exception())
 
-    def process_volume(self, client, volume):
+    def process_volume(self, volume):
+        client = local_session(self.manager.session_factory).client('ec2')
         try:
             if self.data.get('force') and len(volume['Attachments']):
                 client.detach_volume(VolumeId=volume['VolumeId'], Force=True)

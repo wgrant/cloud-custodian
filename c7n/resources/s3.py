@@ -1013,7 +1013,8 @@ class S3LockConfigurationFilter(ValueFilter):
     annotate = True
     annotation_key = 'c7n:ObjectLockConfiguration'
 
-    def _process_resource(self, client, resource):
+    def _process_resource(self, resource):
+        client = local_session(self.manager.session_factory).client('s3')
         try:
             config = client.get_object_lock_configuration(
                 Bucket=resource['Name']
@@ -1026,13 +1027,12 @@ class S3LockConfigurationFilter(ValueFilter):
         resource[self.annotation_key] = config
 
     def process(self, resources, event=None):
-        client = local_session(self.manager.session_factory).client('s3')
         with self.executor_factory(max_workers=3) as w:
             futures = []
             for res in resources:
                 if self.annotation_key in res:
                     continue
-                futures.append(w.submit(self._process_resource, client, res))
+                futures.append(w.submit(self._process_resource, res))
             for f in as_completed(futures):
                 exc = f.exception()
                 if exc:

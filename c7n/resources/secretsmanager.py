@@ -16,7 +16,10 @@ from c7n.filters.core import ValueFilter
 
 class DescribeSecret(DescribeSource):
 
-    def _augment_secret(self, secret, client):
+    def _augment_secret(self, secret):
+        client = local_session(self.manager.session_factory).client(
+            self.manager.resource_type.service
+        )
         detail_op, param_name, param_key, _ = self.manager.resource_type.detail_spec
         op = getattr(client, detail_op)
         kw = {param_name: secret[param_key]}
@@ -38,12 +41,9 @@ class DescribeSecret(DescribeSource):
             secret.setdefault('c7n:DeniedMethods', []).append(detail_op)
 
     def augment(self, secrets):
-        client = local_session(self.manager.session_factory).client(
-            self.manager.resource_type.service
-        )
         with self.manager.executor_factory(max_workers=self.manager.max_workers) as w:
             for s in secrets:
-                w.submit(self._augment_secret, s, client)
+                w.submit(self._augment_secret, s)
 
         return secrets
 

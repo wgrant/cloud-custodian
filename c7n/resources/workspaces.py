@@ -76,7 +76,8 @@ class WorkspaceConnectionStatusFilter(ValueFilter):
     permissions = ('workspaces:DescribeWorkspacesConnectionStatus',)
     annotation_key = 'c7n:ConnectionStatus'
 
-    def get_connection_status(self, client, workspace_ids):
+    def get_connection_status(self, workspace_ids):
+        client = local_session(self.manager.session_factory).client('workspaces')
         connection_status_chunk = self.manager.retry(
             client.describe_workspaces_connection_status,
             WorkspaceIds=workspace_ids
@@ -85,14 +86,13 @@ class WorkspaceConnectionStatusFilter(ValueFilter):
         return connection_status_chunk
 
     def process(self, resources, event=None):
-        client = local_session(self.manager.session_factory).client('workspaces')
         unannotated = {r['WorkspaceId']: r for r in resources if self.annotation_key not in r}
         status_map = {}
         with self.executor_factory(max_workers=2) as w:
             self.log.debug(
                 'Querying connection status for %d workspaces' % len(unannotated))
             for status in itertools.chain(*w.map(
-                functools.partial(self.get_connection_status, client),
+                self.get_connection_status,
                 chunks(unannotated.keys(), 25)
             )):
                 status_map[status['WorkspaceId']] = status

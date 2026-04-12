@@ -802,9 +802,6 @@ class FilterRestIntegration(ValueFilter):
 
     def process(self, resources, event=None):
         method_set = self.data.get('method', 'all')
-        # 10 req/s with burst to 40
-        client = utils.local_session(
-            self.manager.session_factory).client('apigateway')
 
         # uniqueness constraint validity across apis?
         resource_map = {r['id']: r for r in resources}
@@ -822,7 +819,7 @@ class FilterRestIntegration(ValueFilter):
                     tasks.append((r, m))
             for task_set in utils.chunks(tasks, 20):
                 futures[w.submit(
-                    self.process_task_set, client, task_set)] = task_set
+                    self.process_task_set, task_set)] = task_set
 
             for f in as_completed(futures):
                 task_set = futures[f]
@@ -842,7 +839,10 @@ class FilterRestIntegration(ValueFilter):
 
         return [resource_map[rid] for rid in results]
 
-    def process_task_set(self, client, task_set):
+    def process_task_set(self, task_set):
+        # 10 req/s with burst to 40
+        client = utils.local_session(
+            self.manager.session_factory).client('apigateway')
         results = []
         for r, m in task_set:
             try:
@@ -979,9 +979,6 @@ class FilterRestMethod(ValueFilter):
 
     def process(self, resources, event=None):
         method_set = self.data.get('method', 'all')
-        # 10 req/s with burst to 40
-        client = utils.local_session(
-            self.manager.session_factory).client('apigateway')
 
         # uniqueness constraint validity across apis?
         resource_map = {r['id']: r for r in resources}
@@ -999,7 +996,7 @@ class FilterRestMethod(ValueFilter):
                     tasks.append((r, m))
             for task_set in utils.chunks(tasks, 20):
                 futures[w.submit(
-                    self.process_task_set, client, task_set)] = task_set
+                    self.process_task_set, task_set)] = task_set
 
             for f in as_completed(futures):
                 task_set = futures[f]
@@ -1016,7 +1013,10 @@ class FilterRestMethod(ValueFilter):
                             ANNOTATION_KEY_MATCHED_METHODS, []).append(m)
         return [resource_map[rid] for rid in results]
 
-    def process_task_set(self, client, task_set):
+    def process_task_set(self, task_set):
+        # 10 req/s with burst to 40
+        client = utils.local_session(
+            self.manager.session_factory).client('apigateway')
         results = []
         for r, m in task_set:
             method = client.get_method(

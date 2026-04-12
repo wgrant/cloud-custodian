@@ -176,14 +176,14 @@ class DefinitionDeregister(BaseAction):
     valid_origin_states = ('ACTIVE',)
 
     def deregister_definition(self, r):
-        self.client.deregister_job_definition(
+        client = local_session(
+            self.manager.session_factory).client('batch')
+        client.deregister_job_definition(
             jobDefinition='%s:%s' % (r['jobDefinitionName'],
                                      r['revision']))
 
     def process(self, resources):
         resources = self.filter_resources(resources, 'status', self.valid_origin_states)
-        self.client = local_session(
-            self.manager.session_factory).client('batch')
         with self.executor_factory(max_workers=2) as w:
             list(w.map(self.deregister_definition, resources))
 

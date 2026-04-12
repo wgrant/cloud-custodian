@@ -51,7 +51,6 @@ class ServiceQuota(QueryResourceManager):
         metrics_namespace = 'AWS/Usage'
 
     def augment(self, resources):
-        client = local_session(self.session_factory).client('service-quotas')
         retry = get_retry(('TooManyRequestsException',))
 
         excl_sc = incl_sc = set()
@@ -61,7 +60,9 @@ class ServiceQuota(QueryResourceManager):
             elif q.get("include_service_codes"):
                 incl_sc = set(q.get("include_service_codes"))
 
-        def get_quotas(client, s):
+        def get_quotas(s):
+            client = local_session(self.session_factory).client('service-quotas')
+
             def _get_quotas(client, s, attr):
                 quotas = {}
                 token = None
@@ -114,7 +115,7 @@ class ServiceQuota(QueryResourceManager):
                 # Leveraging metadata to exclude unwanted service codes to reduce masive API calls
                 if r["ServiceCode"] in excl_sc or incl_sc and r["ServiceCode"] not in incl_sc:
                     continue
-                futures[w.submit(get_quotas, client, r)] = r
+                futures[w.submit(get_quotas, r)] = r
 
             for f in as_completed(futures):
                 if f.exception():

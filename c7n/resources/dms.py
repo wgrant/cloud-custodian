@@ -24,12 +24,11 @@ class InstanceDescribe(DescribeSource):
                     {'Name': 'replication-instance-id', 'Values': resource_ids}]})
 
     def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('dms')
         with self.manager.executor_factory(max_workers=2) as w:
             futures = []
             for resource_set in chunks(resources, 20):
                 futures.append(
-                    w.submit(self.process_resource_set, client, resources))
+                    w.submit(self.process_resource_set, resource_set))
 
             for f in as_completed(futures):
                 if f.exception():
@@ -38,7 +37,8 @@ class InstanceDescribe(DescribeSource):
                         f.exception())
         return resources
 
-    def process_resource_set(self, client, resources):
+    def process_resource_set(self, resources):
+        client = local_session(self.manager.session_factory).client('dms')
         for arn, r in zip(self.manager.get_arns(resources), resources):
             self.manager.log.info("arn %s" % arn)
             try:

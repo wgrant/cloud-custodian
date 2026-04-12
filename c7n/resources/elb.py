@@ -762,11 +762,10 @@ class ELBAttributeFilterBase:
     """
 
     def initialize(self, elbs):
-        client = local_session(
-            self.manager.session_factory).client('elb')
-
         def _process_attributes(elb):
             if 'Attributes' not in elb:
+                client = local_session(
+                    self.manager.session_factory).client('elb')
                 results = client.describe_load_balancer_attributes(
                     LoadBalancerName=elb['LoadBalancerName'])
                 elb['Attributes'] = results['LoadBalancerAttributes']

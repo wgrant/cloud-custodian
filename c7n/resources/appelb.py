@@ -737,11 +737,11 @@ class AppELBAttributeFilterBase:
     """
 
     def initialize(self, albs):
-        client = local_session(self.manager.session_factory).client('elbv2')
-
         def _process_attributes(alb):
             if 'Attributes' not in alb:
                 alb['Attributes'] = {}
+                client = local_session(
+                    self.manager.session_factory).client('elbv2')
                 results = client.describe_load_balancer_attributes(
                     LoadBalancerArn=alb['LoadBalancerArn'])
                 # flatten out the list of dicts and cast
@@ -1128,9 +1128,8 @@ class AppELBTargetGroup(QueryResourceManager):
                 "elasticloadbalancing:DescribeTags")
 
     def augment(self, target_groups):
-        client = local_session(self.session_factory).client('elbv2')
-
         def _describe_target_group_health(target_group):
+            client = local_session(self.session_factory).client('elbv2')
             result = self.retry(client.describe_target_health,
                 TargetGroupArn=target_group['TargetGroupArn'])
             target_group['TargetHealthDescriptions'] = result[
@@ -1290,11 +1289,11 @@ class TargetGroupAttributeFilterBase:
     """
 
     def initialize(self, tgs):
-        client = local_session(self.manager.session_factory).client('elbv2')
-
         def _process_attributes(tg):
             if 'c7n:TargetGroupAttributes' not in tg:
                 tg['c7n:TargetGroupAttributes'] = {}
+                client = local_session(
+                    self.manager.session_factory).client('elbv2')
                 results = self.manager.retry(client.describe_target_group_attributes,
                     TargetGroupArn=tg['TargetGroupArn'],
                     ignore_err_codes=('TargetGroupNotFoundException',))

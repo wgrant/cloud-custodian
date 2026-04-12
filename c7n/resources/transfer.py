@@ -45,13 +45,11 @@ class StopServer(BaseAction):
         if not len(resources):
             return
 
-        client = local_session(
-            self.manager.session_factory).client('transfer')
         with self.executor_factory(
                 max_workers=min(3, len(resources) or 1)) as w:
             futures = {}
             for r in resources:
-                futures[w.submit(self.process_server, client, r)] = r
+                futures[w.submit(self.process_server, r)] = r
             for f in as_completed(futures):
                 r = futures[f]
                 if f.exception():
@@ -60,7 +58,8 @@ class StopServer(BaseAction):
                         r['ServerId'], f.exception())
                     continue
 
-    def process_server(self, client, server):
+    def process_server(self, server):
+        client = local_session(self.manager.session_factory).client('transfer')
         client.stop_server(ServerId=server['ServerId'])
 
 
@@ -88,13 +87,11 @@ class StartServer(BaseAction):
         if not len(resources):
             return
 
-        client = local_session(
-            self.manager.session_factory).client('transfer')
         with self.executor_factory(
                 max_workers=min(3, len(resources) or 1)) as w:
             futures = {}
             for r in resources:
-                futures[w.submit(self.process_server, client, r)] = r
+                futures[w.submit(self.process_server, r)] = r
             for f in as_completed(futures):
                 r = futures[f]
                 if f.exception():
@@ -103,7 +100,8 @@ class StartServer(BaseAction):
                         r['ServerId'], f.exception())
                     continue
 
-    def process_server(self, client, server):
+    def process_server(self, server):
+        client = local_session(self.manager.session_factory).client('transfer')
         client.start_server(ServerId=server['ServerId'])
 
 
@@ -125,13 +123,11 @@ class DeleteServer(BaseAction):
     permissions = ("transfer:DeleteServer",)
 
     def process(self, resources):
-        client = local_session(
-            self.manager.session_factory).client('transfer')
         with self.executor_factory(
                 max_workers=min(3, len(resources) or 1)) as w:
             futures = {}
             for r in resources:
-                futures[w.submit(self.process_server, client, r)] = r
+                futures[w.submit(self.process_server, r)] = r
             for f in as_completed(futures):
                 r = futures[f]
                 if f.exception():
@@ -140,7 +136,8 @@ class DeleteServer(BaseAction):
                         r['ServerId'], f.exception())
                     continue
 
-    def process_server(self, client, server):
+    def process_server(self, server):
+        client = local_session(self.manager.session_factory).client('transfer')
         try:
             client.delete_server(ServerId=server['ServerId'])
         except client.exceptions.ResourceNotFoundException:
@@ -202,13 +199,11 @@ class DeleteUser(BaseAction):
     permissions = ("transfer:DeleteUser",)
 
     def process(self, resources):
-        client = local_session(
-            self.manager.session_factory).client('transfer')
         with self.executor_factory(
                 max_workers=min(3, len(resources) or 1)) as w:
             futures = {}
             for r in resources:
-                futures[w.submit(self.process_user, client, r)] = r
+                futures[w.submit(self.process_user, r)] = r
             for f in as_completed(futures):
                 r = futures[f]
                 if f.exception():
@@ -217,7 +212,8 @@ class DeleteUser(BaseAction):
                         r['UserName'], f.exception())
                     continue
 
-    def process_user(self, client, user):
+    def process_user(self, user):
+        client = local_session(self.manager.session_factory).client('transfer')
         try:
             client.delete_user(
                 ServerId=user['Arn'].split('/')[1],

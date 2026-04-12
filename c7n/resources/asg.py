@@ -1072,13 +1072,12 @@ class RemoveTag(Action):
         tags = self.data.get('tags', [])
         if not tags:
             tags = [self.data.get('key', DEFAULT_TAG)]
-        client = local_session(self.manager.session_factory).client('autoscaling')
 
         with self.executor_factory(max_workers=2) as w:
             futures = {}
             for asg_set in chunks(asgs, self.batch_size):
                 futures[w.submit(
-                    self.process_resource_set, client, asg_set, tags)] = asg_set
+                    self.process_resource_set, asg_set, tags)] = asg_set
             for f in as_completed(futures):
                 asg_set = futures[f]
                 if f.exception():
@@ -1092,7 +1091,8 @@ class RemoveTag(Action):
         if error:
             raise error
 
-    def process_resource_set(self, client, asgs, tags):
+    def process_resource_set(self, asgs, tags):
+        client = local_session(self.manager.session_factory).client('autoscaling')
         tag_set = []
         for a in asgs:
             for t in tags:
@@ -1161,12 +1161,11 @@ class Tag(Action):
 
         self.interpolate_values(tags)
 
-        client = self.get_client()
         with self.executor_factory(max_workers=2) as w:
             futures = {}
             for asg_set in chunks(asgs, self.batch_size):
                 futures[w.submit(
-                    self.process_resource_set, client, asg_set, tags)] = asg_set
+                    self.process_resource_set, asg_set, tags)] = asg_set
             for f in as_completed(futures):
                 asg_set = futures[f]
                 if f.exception():
@@ -1179,7 +1178,8 @@ class Tag(Action):
         if error:
             raise error
 
-    def process_resource_set(self, client, asgs, tags):
+    def process_resource_set(self, asgs, tags):
+        client = self.get_client()
         tag_params = []
         propagate = self.data.get('propagate', False)
         for t in tags:
@@ -1602,14 +1602,10 @@ class Resume(Action):
         self.log.debug("Filtered from %d to %d suspended asgs",
                        original_count, len(asgs))
 
-        session = local_session(self.manager.session_factory)
-        ec2_client = session.client('ec2')
-        asg_client = session.client('autoscaling')
-
         with self.executor_factory(max_workers=3) as w:
             futures = {}
             for a in asgs:
-                futures[w.submit(self.resume_asg_instances, ec2_client, a)] = a
+                futures[w.submit(self.resume_asg_instances, a)] = a
             for f in as_completed(futures):
                 if f.exception():
                     self.log.error("Traceback resume asg:%s instances error:%s" % (
@@ -1623,16 +1619,17 @@ class Resume(Action):
         with self.executor_factory(max_workers=3) as w:
             futures = {}
             for a in asgs:
-                futures[w.submit(self.resume_asg, asg_client, a)] = a
+                futures[w.submit(self.resume_asg, a)] = a
             for f in as_completed(futures):
                 if f.exception():
                     self.log.error("Traceback resume asg:%s error:%s" % (
                         futures[f]['AutoScalingGroupName'],
                         f.exception()))
 
-    def resume_asg_instances(self, ec2_client, asg):
+    def resume_asg_instances(self, asg):
         """Resume asg instances.
         """
+        ec2_client = local_session(self.manager.session_factory).client('ec2')
         instance_ids = [i['InstanceId'] for i in asg['Instances']]
         if not instance_ids:
             return
@@ -1640,9 +1637,10 @@ class Resume(Action):
             'RequestLimitExceeded', 'Client.RequestLimitExceeded'))
         retry(ec2_client.start_instances, InstanceIds=instance_ids)
 
-    def resume_asg(self, asg_client, asg):
+    def resume_asg(self, asg):
         """Resume asg processes.
         """
+        asg_client = local_session(self.manager.session_factory).client('autoscaling')
         processes = list(self.ASG_PROCESSES.difference(
             self.data.get('exclude', ())))
 
@@ -1754,8 +1752,6 @@ class Update(Action):
         return self
 
     def process(self, asgs):
-        client = local_session(self.manager.session_factory).client('autoscaling')
-
         settings = {}
         for k, v in self.settings_map.items():
             if k in self.data:
@@ -1765,7 +1761,7 @@ class Update(Action):
             futures = {}
             error = None
             for a in asgs:
-                futures[w.submit(self.process_asg, client, a, settings)] = a
+                futures[w.submit(self.process_asg, a, settings)] = a
             for f in as_completed(futures):
                 if f.exception():
                     self.log.error("Error while updating asg:%s error:%s" % (
@@ -1776,7 +1772,8 @@ class Update(Action):
                 # make sure we stop policy execution if there were errors
                 raise error
 
-    def process_asg(self, client, asg, settings):
+    def process_asg(self, asg, settings):
+        client = local_session(self.manager.session_factory).client('autoscaling')
         self.manager.retry(
             client.update_auto_scaling_group,
             AutoScalingGroupName=asg['AutoScalingGroupName'],

@@ -98,7 +98,7 @@ def universal_augment(self, resources):
     return resources
 
 
-def _common_tag_processer(executor_factory, batch_size, concurrency, client,
+def _common_tag_processer(executor_factory, batch_size, concurrency, get_client,
                           process_resource_set, id_key, resources, tags,
                           log):
 
@@ -107,7 +107,8 @@ def _common_tag_processer(executor_factory, batch_size, concurrency, client,
         futures = []
         for resource_set in utils.chunks(resources, size=batch_size):
             futures.append(
-                w.submit(process_resource_set, client, resource_set, tags))
+                w.submit(_tag_set_handler, get_client,
+                         process_resource_set, resource_set, tags))
 
         for f in as_completed(futures):
             if f.exception():
@@ -117,6 +118,16 @@ def _common_tag_processer(executor_factory, batch_size, concurrency, client,
 
     if error:
         raise error
+
+
+def _tag_set_handler(get_client, process_resource_set, resource_set, tags):
+    """Worker entry point for tag processing.
+
+    Creates a per-thread client via *get_client* so that non-thread-safe
+    cloud library clients are never shared across worker threads.
+    """
+    client = get_client()
+    return process_resource_set(client, resource_set, tags)
 
 
 class TagTrim(Action):
@@ -170,22 +181,19 @@ class TagTrim(Action):
         self.preserve = set(self.data.get('preserve'))
         self.space = self.data.get('space', 3)
 
-        client = utils.local_session(
-            self.manager.session_factory).client(self.manager.resource_type.service)
-
         futures = {}
         mid = self.manager.get_model().id
 
         with self.executor_factory(max_workers=2) as w:
             for r in resources:
-                futures[w.submit(self.process_resource, client, r)] = r
+                futures[w.submit(self.process_resource, r)] = r
             for f in as_completed(futures):
                 if f.exception():
                     self.log.warning(
                         "Error processing tag-trim on resource:%s",
                         futures[f][mid])
 
-    def process_resource(self, client, i):
+    def process_resource(self, i):
         # Can't really go in batch parallel without some heuristics
         # without some more complex matching wrt to grouping resources
         # by common tags populations.
@@ -408,9 +416,9 @@ class Tag(Action):
 
         batch_size = self.data.get('batch_size', self.batch_size)
 
-        client = self.get_client()
         _common_tag_processer(
-            self.executor_factory, batch_size, self.concurrency, client,
+            self.executor_factory, batch_size, self.concurrency,
+            self.get_client,
             self.process_resource_set, self.id_key, resources, tags, self.log)
 
     def process_resource_set(self, client, resource_set, tags):
@@ -465,9 +473,9 @@ class RemoveTag(Action):
         tags = self.data.get('tags', [DEFAULT_TAG])
         batch_size = self.data.get('batch_size', self.batch_size)
 
-        client = self.get_client()
         _common_tag_processer(
-            self.executor_factory, batch_size, self.concurrency, client,
+            self.executor_factory, batch_size, self.concurrency,
+            self.get_client,
             self.process_resource_set, self.id_key, resources, tags, self.log)
 
     def process_resource_set(self, client, resource_set, tag_keys):
@@ -506,7 +514,8 @@ class RenameTag(Action):
             Resources=ids,
             Tags=[{'Key': key, 'Value': value}])
 
-    def process_rename(self, client, tag_value, resource_set):
+    def process_rename(self, tag_value, resource_set):
+        client = self.get_client()
         """
         Move source tag value to destination tag value
 
@@ -559,12 +568,11 @@ class RenameTag(Action):
         self.id_key = self.manager.get_model().id
         resource_set = self.create_set(resources)
 
-        client = self.get_client()
         with self.executor_factory(max_workers=3) as w:
             futures = []
             for r in resource_set:
                 futures.append(
-                    w.submit(self.process_rename, client, r, resource_set[r]))
+                    w.submit(self.process_rename, r, resource_set[r]))
             for f in as_completed(futures):
                 if f.exception():
                     self.log.error(
@@ -679,9 +687,9 @@ class TagDelayedAction(Action):
         batch_size = getattr(
             self.manager.action_registry.get('tag'), 'batch_size', self.batch_size)
 
-        client = self.get_client()
         _common_tag_processer(
-            self.executor_factory, batch_size, self.concurrency, client,
+            self.executor_factory, batch_size, self.concurrency,
+            self.get_client,
             self.process_resource_set, self.id_key, resources, tags, self.log)
 
     def process_resource_set(self, client, resource_set, tags):
@@ -866,10 +874,10 @@ class UniversalTag(Tag):
         self.interpolate_values(tags)
 
         batch_size = self.data.get('batch_size', self.batch_size)
-        client = self.get_client()
 
         _common_tag_processer(
-            self.executor_factory, batch_size, self.concurrency, client,
+            self.executor_factory, batch_size, self.concurrency,
+            self.get_client,
             self.process_resource_set, self.id_key, resources, tags, self.log)
 
     def process_resource_set(self, client, resource_set, tags):
@@ -1034,10 +1042,10 @@ class UniversalTagDelayedAction(TagDelayedAction):
         tags = {tag: msg}
 
         batch_size = self.data.get('batch_size', self.batch_size)
-        client = self.get_client()
 
         _common_tag_processer(
-            self.executor_factory, batch_size, self.concurrency, client,
+            self.executor_factory, batch_size, self.concurrency,
+            self.get_client,
             self.process_resource_set, self.id_key, resources, tags, self.log)
 
     def process_resource_set(self, client, resource_set, tags):
