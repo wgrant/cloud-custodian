@@ -16,13 +16,6 @@ from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universa
 
 class InstanceDescribe(DescribeSource):
 
-    def get_resources(self, resource_ids):
-        return self.query.filter(
-            self.manager,
-            **{
-                'Filters': [
-                    {'Name': 'replication-instance-id', 'Values': resource_ids}]})
-
     def augment(self, resources):
         client = local_session(self.manager.session_factory).client('dms')
         with self.manager.executor_factory(max_workers=2) as w:
@@ -57,6 +50,8 @@ class ReplicationInstance(QueryResourceManager):
         enum_spec = (
             'describe_replication_instances', 'ReplicationInstances', None)
         name = id = 'ReplicationInstanceIdentifier'
+        filter_name = 'replication-instance-id'
+        filter_type = 'ec2-filter'
         arn = 'ReplicationInstanceArn'
         date = 'InstanceCreateTime'
         config_type = cfn_type = 'AWS::DMS::ReplicationInstance'

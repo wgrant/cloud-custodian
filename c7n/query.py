@@ -92,6 +92,18 @@ class ResourceQuery:
             elif m.filter_type == 'scalar' and len(identities) == 1:
                 params[m.filter_name] = identities[0]
                 client_filter = False
+            elif m.filter_type == 'ec2-filter':
+                max_values = getattr(m, 'filter_max_values', None)
+                if max_values:
+                    resources = list(itertools.chain.from_iterable(
+                        self.filter(
+                            resource_manager,
+                            Filters=[{'Name': m.filter_name, 'Values': chunk}])
+                        for chunk in chunks(identities, max_values)))
+                    return resources
+                params['Filters'] = [
+                    {'Name': m.filter_name, 'Values': identities}]
+                client_filter = False
 
         resources = self.filter(resource_manager, **params)
         if client_filter:

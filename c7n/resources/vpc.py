@@ -118,13 +118,6 @@ class DeleteVpc(BaseAction):
             )
 
 
-class DescribeFlow(query.DescribeSource):
-
-    def get_resources(self, ids, cache=True):
-        params = {'Filters': [{'Name': 'flow-log-id', 'Values': ids}]}
-        return self.query.filter(self.resource_manager, **params)
-
-
 @resources.register('flow-log')
 class FlowLog(query.QueryResourceManager):
 
@@ -134,13 +127,10 @@ class FlowLog(query.QueryResourceManager):
         arn_type = 'vpc-flow-log'
         enum_spec = ('describe_flow_logs', 'FlowLogs', None)
         name = id = 'FlowLogId'
+        filter_name = 'flow-log-id'
+        filter_type = 'ec2-filter'
         cfn_type = config_type = 'AWS::EC2::FlowLog'
         id_prefix = 'fl-'
-
-    source_mapping = {
-        'describe': DescribeFlow,
-        'config': query.ConfigSource
-    }
 
 
 @Vpc.filter_registry.register('flow-logs')

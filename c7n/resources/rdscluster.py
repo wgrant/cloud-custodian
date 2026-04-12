@@ -29,18 +29,6 @@ log = logging.getLogger('custodian.rds-cluster')
 
 class DescribeCluster(DescribeSource):
 
-    def get_resources(self, ids):
-        resources = chain.from_iterable(
-            self.query.filter(
-                self.manager,
-                Filters=[
-                    {'Name': 'db-cluster-id', 'Values': ids_chunk}
-                ]
-            )
-            for ids_chunk in chunks(ids, 100)  # DescribeCluster filter length limit
-        )
-        return list(resources)
-
     def augment(self, resources):
         for r in resources:
             r['Tags'] = r.pop('TagList', ())
@@ -75,6 +63,9 @@ class RDSCluster(QueryResourceManager):
         arn_separator = ":"
         enum_spec = ('describe_db_clusters', 'DBClusters', None)
         name = id = 'DBClusterIdentifier'
+        filter_name = 'db-cluster-id'
+        filter_type = 'ec2-filter'
+        filter_max_values = 100
         config_id = 'DbClusterResourceId'
         dimension = 'DBClusterIdentifier'
         universal_taggable = True
@@ -395,14 +386,6 @@ class ModifyDbCluster(BaseAction):
 
 class DescribeClusterSnapshot(DescribeSource):
 
-    def get_resources(self, resource_ids, cache=True):
-        client = local_session(self.manager.session_factory).client('rds')
-        return self.manager.retry(
-            client.describe_db_cluster_snapshots,
-            Filters=[{
-                'Name': 'db-cluster-snapshot-id',
-                'Values': resource_ids}]).get('DBClusterSnapshots', ())
-
     def augment(self, resources):
         for r in resources:
             r['Tags'] = r.pop('TagList', ())
@@ -440,6 +423,8 @@ class RDSClusterSnapshot(QueryResourceManager):
         enum_spec = (
             'describe_db_cluster_snapshots', 'DBClusterSnapshots', None)
         name = id = 'DBClusterSnapshotIdentifier'
+        filter_name = 'db-cluster-snapshot-id'
+        filter_type = 'ec2-filter'
         date = 'SnapshotCreateTime'
         universal_taggable = object()
         config_type = 'AWS::RDS::DBClusterSnapshot'
