@@ -105,6 +105,17 @@ class ResourceQuery:
                     {'Name': m.filter_name, 'Values': identities}]
                 client_filter = False
 
+        # When no server-side filter is available but we have a detail_spec
+        # or get_spec, fetch individually rather than listing the full
+        # population and filtering client-side.
+        if client_filter:
+            get_spec = getattr(m, 'get_spec', None)
+            if get_spec is None and getattr(m, 'detail_spec', None):
+                ds = m.detail_spec
+                get_spec = (ds[0], ds[1], ds[3])
+            if get_spec:
+                return self._get_by_spec(resource_manager, m, identities, get_spec)
+
         resources = self.filter(resource_manager, **params)
         if client_filter:
             # This logic was added to prevent the issue from:
@@ -117,6 +128,29 @@ class ResourceQuery:
             else:
                 resources = [r for r in resources if r[m.id] in identities]
 
+        return resources
+
+    def _get_by_spec(self, resource_manager, m, identities, get_spec):
+        api_call, param_name, response_path = get_spec
+        if resource_manager.get_client:
+            client = resource_manager.get_client()
+        else:
+            client = local_session(self.session_factory).client(
+                m.service, resource_manager.config.region)
+        op = getattr(client, api_call)
+        retry = getattr(resource_manager, 'retry', None)
+        resources = []
+        for rid in identities:
+            try:
+                result = retry(op, **{param_name: rid}) if retry else op(**{param_name: rid})
+                if response_path:
+                    result = result[response_path]
+                resources.append(result)
+            except ClientError as e:
+                code = e.response['Error']['Code']
+                if 'NotFound' in code or 'NoSuch' in code:
+                    continue
+                raise
         return resources
 
 
