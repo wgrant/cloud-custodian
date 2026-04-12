@@ -1,24 +1,30 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
-"""Central worker pool for managing concurrent execution.
+"""Central worker pool for managing concurrent execution and sessions.
 
 Provides a shared thread pool that resource managers, filters, and actions
 use instead of creating their own ThreadPoolExecutors. This gives callers
 a single place to manage concurrency limits, and avoids the overhead of
 repeatedly creating and destroying thread pools.
 
-The primary interface is ``WorkerPool``, which owns a shared
-``ThreadPoolExecutor`` and hands out ``ScopedExecutor`` instances that
-honour per-operation concurrency limits while sharing the underlying
-threads.
+The pool also centralises session management: ``get_session()`` returns a
+thread-local cached session from the pool's session factory, so worker
+functions don't need to independently worry about thread safety of cloud
+library clients.
 
 Usage::
 
-    pool = WorkerPool(max_workers=16)
+    pool = WorkerPool(max_workers=16, session_factory=sf)
 
     # Use pool.executor as a drop-in for ThreadPoolExecutor
     with pool.executor(max_workers=3) as w:
         results = list(w.map(func, items))
+
+    # In a worker function, get a thread-safe session
+    def worker(resource_set):
+        session = pool.get_session()
+        client = session.client('ec2')
+        ...
 
     pool.shutdown()
 
@@ -28,6 +34,7 @@ runs everything synchronously on the calling thread.
 import logging
 import os
 import threading
+import time
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -35,6 +42,9 @@ log = logging.getLogger('custodian.worker')
 
 # Default ceiling for the shared thread pool.
 DEFAULT_MAX_WORKERS = 16
+
+# Sessions are cached per-thread for this many seconds (45 minutes).
+SESSION_CACHE_TTL = 60 * 45
 
 
 def _resolve_max_workers(max_workers=None):
@@ -98,7 +108,7 @@ class ScopedExecutor:
 
 
 class WorkerPool:
-    """Central shared thread pool.
+    """Central shared thread pool with session management.
 
     A single ``WorkerPool`` is meant to live for the duration of a policy
     execution (owned by ``ExecutionContext``).  All resource managers,
@@ -107,12 +117,26 @@ class WorkerPool:
 
     The pool lazily creates the underlying ``ThreadPoolExecutor`` on first
     use so that no threads are spawned if a policy never needs them.
+
+    Session management
+    ------------------
+    Pass a *session_factory* to the constructor (or set the attribute
+    later) to enable ``get_session()``.  Worker functions can then call
+    ``pool.get_session()`` to obtain a **thread-local** cached session,
+    instead of each caller independently calling ``local_session()``.
+
+    Sessions are cached per (factory, region) key for up to 45 minutes.
+    They are cleaned up when the pool shuts down.
     """
 
-    def __init__(self, max_workers=None):
+    def __init__(self, max_workers=None, session_factory=None):
         self.max_workers = _resolve_max_workers(max_workers)
+        self.session_factory = session_factory
         self._pool = None
         self._lock = threading.Lock()
+        self._session_cache = threading.local()
+
+    # -- thread pool --------------------------------------------------
 
     def _ensure_pool(self):
         if self._pool is None:
@@ -132,6 +156,47 @@ class WorkerPool:
         self._ensure_pool()
         return ScopedExecutor(self, max_workers)
 
+    # -- session management -------------------------------------------
+
+    def get_session(self, session_factory=None, region=None):
+        """Return a thread-local cached session.
+
+        Each worker thread gets its own session instance so that
+        non-thread-safe cloud clients (boto3 clients, httplib2, etc.)
+        are never shared between threads.
+
+        The *session_factory* defaults to the pool's ``session_factory``.
+        *region* overrides the factory's default region for the cache
+        key (useful when the same factory is used across regions).
+
+        Sessions are cached for up to 45 minutes (matching the
+        behaviour of ``c7n.utils.local_session``).
+        """
+        factory = session_factory or self.session_factory
+        if factory is None:
+            raise ValueError(
+                "No session_factory configured; pass one to "
+                "WorkerPool() or get_session()"
+            )
+        factory_region = region or getattr(factory, 'region', 'default')
+
+        cache = self._session_cache
+        sessions = getattr(cache, 'sessions', None)
+        if sessions is None:
+            cache.sessions = {}
+            sessions = cache.sessions
+
+        entry = sessions.get(factory_region)
+        now = time.time()
+        if entry is not None and now - entry['time'] < SESSION_CACHE_TTL:
+            return entry['session']
+
+        session = factory()
+        sessions[factory_region] = {'session': session, 'time': now}
+        return session
+
+    # -- lifecycle ----------------------------------------------------
+
     def shutdown(self, wait=True):
         """Shut down the underlying thread pool, if it was created."""
         if self._pool is not None:
@@ -150,22 +215,46 @@ class MainThreadWorkerPool:
     """A synchronous worker pool for testing.
 
     Drop-in replacement for ``WorkerPool`` that runs every task on the
-    calling thread via ``MainThreadExecutor``.
+    calling thread via ``MainThreadExecutor``.  ``get_session()`` also
+    works but skips the thread-local indirection since tests run
+    single-threaded.
     """
 
-    def __init__(self, max_workers=None):
+    def __init__(self, max_workers=None, session_factory=None):
         self.max_workers = max_workers or DEFAULT_MAX_WORKERS
+        self.session_factory = session_factory
+        self._sessions = {}
 
     def executor(self, max_workers=3):
         # Lazy import to avoid circular dependency with c7n.executor.
         from c7n.executor import MainThreadExecutor
         return MainThreadExecutor(max_workers=max_workers)
 
+    def get_session(self, session_factory=None, region=None):
+        """Return a cached session (single-threaded variant)."""
+        factory = session_factory or self.session_factory
+        if factory is None:
+            raise ValueError(
+                "No session_factory configured; pass one to "
+                "MainThreadWorkerPool() or get_session()"
+            )
+        factory_region = region or getattr(factory, 'region', 'default')
+
+        entry = self._sessions.get(factory_region)
+        now = time.time()
+        if entry is not None and now - entry['time'] < SESSION_CACHE_TTL:
+            return entry['session']
+
+        session = factory()
+        self._sessions[factory_region] = {'session': session, 'time': now}
+        return session
+
     def shutdown(self, wait=True):
-        pass
+        self._sessions.clear()
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
+        self.shutdown()
         return False

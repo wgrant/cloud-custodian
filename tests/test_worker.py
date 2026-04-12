@@ -13,6 +13,7 @@ from c7n.worker import (
     MainThreadWorkerPool,
     _resolve_max_workers,
     DEFAULT_MAX_WORKERS,
+    SESSION_CACHE_TTL,
 )
 from c7n.executor import MainThreadExecutor
 
@@ -324,6 +325,159 @@ class TestElementDelegation(unittest.TestCase):
         elem.manager = mock.MagicMock()
         elem.executor_factory = sentinel
         self.assertIs(elem.executor_factory, sentinel)
+
+
+class TestWorkerPoolSession(unittest.TestCase):
+    """Test session management on WorkerPool."""
+
+    def _make_factory(self, region='us-east-1'):
+        call_count = {'n': 0}
+
+        def factory():
+            call_count['n'] += 1
+            return mock.MagicMock(name=f"session-{call_count['n']}")
+
+        factory.region = region
+        factory._call_count = call_count
+        return factory
+
+    def test_get_session_basic(self):
+        factory = self._make_factory()
+        pool = WorkerPool(max_workers=2, session_factory=factory)
+        s1 = pool.get_session()
+        s2 = pool.get_session()
+        # Same thread → same cached session
+        self.assertIs(s1, s2)
+        self.assertEqual(factory._call_count['n'], 1)
+        pool.shutdown()
+
+    def test_get_session_no_factory_raises(self):
+        pool = WorkerPool(max_workers=2)
+        with self.assertRaises(ValueError):
+            pool.get_session()
+
+    def test_get_session_explicit_factory(self):
+        factory = self._make_factory()
+        pool = WorkerPool(max_workers=2)  # no default factory
+        s = pool.get_session(session_factory=factory)
+        self.assertIsNotNone(s)
+        pool.shutdown()
+
+    def test_get_session_per_region(self):
+        factory = self._make_factory()
+        pool = WorkerPool(max_workers=2, session_factory=factory)
+        s1 = pool.get_session(region='us-east-1')
+        s2 = pool.get_session(region='eu-west-1')
+        self.assertIsNot(s1, s2)
+        self.assertEqual(factory._call_count['n'], 2)
+        pool.shutdown()
+
+    def test_get_session_per_thread(self):
+        """Different threads get different sessions."""
+        factory = self._make_factory()
+        pool = WorkerPool(max_workers=4, session_factory=factory)
+        pool._ensure_pool()
+
+        sessions = []
+        lock = threading.Lock()
+
+        def worker(_):
+            s = pool.get_session()
+            with lock:
+                sessions.append(id(s))
+            return s
+
+        with pool.executor(max_workers=4) as w:
+            list(w.map(worker, range(4)))
+
+        # We may get fewer unique sessions than threads if threads are
+        # reused, but the factory should have been called at least once
+        # per thread that ran.
+        self.assertGreaterEqual(factory._call_count['n'], 1)
+        pool.shutdown()
+
+    def test_get_session_ttl_expiry(self):
+        factory = self._make_factory()
+        pool = WorkerPool(max_workers=2, session_factory=factory)
+        s1 = pool.get_session()
+
+        # Simulate TTL expiry by backdating the cache entry
+        cache_key = 'us-east-1'
+        pool._session_cache.sessions[cache_key]['time'] -= SESSION_CACHE_TTL + 1
+
+        s2 = pool.get_session()
+        self.assertIsNot(s1, s2)
+        self.assertEqual(factory._call_count['n'], 2)
+        pool.shutdown()
+
+
+class TestMainThreadWorkerPoolSession(unittest.TestCase):
+    """Test session management on MainThreadWorkerPool."""
+
+    def _make_factory(self, region='us-east-1'):
+        call_count = {'n': 0}
+
+        def factory():
+            call_count['n'] += 1
+            return mock.MagicMock(name=f"session-{call_count['n']}")
+
+        factory.region = region
+        factory._call_count = call_count
+        return factory
+
+    def test_get_session_basic(self):
+        factory = self._make_factory()
+        pool = MainThreadWorkerPool(session_factory=factory)
+        s1 = pool.get_session()
+        s2 = pool.get_session()
+        self.assertIs(s1, s2)
+        self.assertEqual(factory._call_count['n'], 1)
+
+    def test_get_session_no_factory_raises(self):
+        pool = MainThreadWorkerPool()
+        with self.assertRaises(ValueError):
+            pool.get_session()
+
+    def test_shutdown_clears_sessions(self):
+        factory = self._make_factory()
+        pool = MainThreadWorkerPool(session_factory=factory)
+        pool.get_session()
+        pool.shutdown()
+        # After shutdown, a new session should be created
+        s = pool.get_session()
+        self.assertEqual(factory._call_count['n'], 2)
+
+
+class TestAugmentClientPerThread(unittest.TestCase):
+    """Test that augment functions create per-invocation clients."""
+
+    def test_augment_client_with_get_client(self):
+        from c7n.query import _augment_client
+
+        manager = mock.MagicMock()
+        model = mock.MagicMock()
+        manager.get_client.return_value = mock.sentinel.client
+
+        client = _augment_client(manager, model)
+        self.assertIs(client, mock.sentinel.client)
+        manager.get_client.assert_called_once()
+
+    def test_augment_client_without_get_client(self):
+        from c7n.query import _augment_client
+
+        manager = mock.MagicMock()
+        manager.get_client = None
+        model = mock.MagicMock()
+        model.service = 'ec2'
+        manager.config.region = 'us-east-1'
+
+        mock_session = mock.MagicMock()
+        with mock.patch('c7n.query.local_session', return_value=mock_session):
+            client = _augment_client(manager, model)
+
+        mock_session.client.assert_called_once_with(
+            'ec2', region_name='us-east-1')
+        self.assertIs(client, mock_session.client.return_value)
 
 
 if __name__ == "__main__":

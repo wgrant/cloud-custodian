@@ -30,12 +30,19 @@ class ExecutionContext:
         # Central worker pool for concurrent execution.  The pool is
         # shared across all resource managers, filters, and actions
         # within this execution context.  Use ``worker_pool.executor()``
-        # as a drop-in replacement for ``ThreadPoolExecutor``.
+        # as a drop-in replacement for ``ThreadPoolExecutor``, and
+        # ``worker_pool.get_session()`` for thread-safe sessions.
         max_workers = getattr(options, 'max_workers', None)
         if os.environ.get('C7N_TEST_RUN'):
-            self.worker_pool = MainThreadWorkerPool(max_workers=max_workers)
+            self.worker_pool = MainThreadWorkerPool(
+                max_workers=max_workers,
+                session_factory=session_factory,
+            )
         else:
-            self.worker_pool = WorkerPool(max_workers=max_workers)
+            self.worker_pool = WorkerPool(
+                max_workers=max_workers,
+                session_factory=session_factory,
+            )
 
         # Runtime initialized during policy execution
         # We treat policies as a fly weight pre-execution.

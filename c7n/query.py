@@ -263,13 +263,12 @@ class DescribeSource:
             _augment = _batch_augment
         else:
             return resources
-        if self.manager.get_client:
-            client = self.manager.get_client()
-        else:
-            client = local_session(self.manager.session_factory).client(
-                model.service, region_name=self.manager.config.region)
+        # Each worker thread creates its own client via the augment
+        # function (which calls local_session internally) rather than
+        # sharing a single client from the main thread.  Cloud library
+        # clients (e.g. boto3) are generally not thread-safe.
         _augment = functools.partial(
-            _augment, self.manager, model, detail_spec, client)
+            _augment, self.manager, model, detail_spec)
         with self.manager.executor_factory(
                 max_workers=self.manager.max_workers) as w:
             results = list(w.map(
@@ -719,8 +718,22 @@ class ChildResourceManager(QueryResourceManager):
         return self.get_resource_manager(self.resource_type.parent_spec[0])
 
 
-def _batch_augment(manager, model, detail_spec, client, resource_set):
+def _augment_client(manager, model):
+    """Return a service client for augmentation.
+
+    Called inside each worker thread so that every thread gets its own
+    client via ``local_session`` (cloud library clients like boto3 are
+    generally not thread-safe and must not be shared across threads).
+    """
+    if manager.get_client:
+        return manager.get_client()
+    return local_session(manager.session_factory).client(
+        model.service, region_name=manager.config.region)
+
+
+def _batch_augment(manager, model, detail_spec, resource_set):
     detail_op, param_name, param_key, detail_path, detail_args = detail_spec
+    client = _augment_client(manager, model)
     op = getattr(client, detail_op)
     if manager.retry:
         args = (op,)
@@ -734,8 +747,9 @@ def _batch_augment(manager, model, detail_spec, client, resource_set):
     return response[detail_path]
 
 
-def _scalar_augment(manager, model, detail_spec, client, resource_set):
+def _scalar_augment(manager, model, detail_spec, resource_set):
     detail_op, param_name, param_key, detail_path = detail_spec
+    client = _augment_client(manager, model)
     op = getattr(client, detail_op)
     if manager.retry:
         args = (op,)
