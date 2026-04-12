@@ -266,12 +266,15 @@ class DescribeSource:
             client = local_session(self.manager.session_factory).client(
                 m.service, self.manager.config.region)
         op = getattr(client, api_call)
+        postprocess = getattr(self, 'get_spec_postprocess', None)
         resources = []
         for rid in ids:
             try:
                 result = self.manager.retry(op, **{param_name: rid})
                 if response_path:
                     result = result[response_path]
+                if postprocess:
+                    result = postprocess(result)
                 resources.append(result)
             except ClientError as e:
                 code = e.response['Error']['Code']

@@ -40,19 +40,11 @@ from c7n.resources.securityhub import OtherResourcePostFinding
 
 class DescribeGroup(DescribeSource):
 
-    def get_resources(self, resource_ids, cache=True):
-        """For IAM Groups on events, resource ids are Group Names."""
-        client = local_session(self.manager.session_factory).client('iam')
-        resources = []
-        for rid in resource_ids:
-            try:
-                result = self.manager.retry(client.get_group, GroupName=rid)
-            except client.exceptions.NoSuchEntityException:
-                continue
-            group = result.pop('Group')
-            group['c7n:Users'] = result['Users']
-            resources.append(group)
-        return resources
+    @staticmethod
+    def get_spec_postprocess(result):
+        group = result.pop('Group')
+        group['c7n:Users'] = result['Users']
+        return group
 
 
 @resources.register('iam-group')
@@ -62,6 +54,7 @@ class Group(QueryResourceManager):
         service = 'iam'
         arn_type = 'group'
         enum_spec = ('list_groups', 'Groups', None)
+        get_spec = ('get_group', 'GroupName', None)
         id = name = 'GroupName'
         date = 'CreateDate'
         cfn_type = config_type = "AWS::IAM::Group"

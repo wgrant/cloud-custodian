@@ -9,6 +9,12 @@ from c7n.utils import local_session
 
 class DescribeBackup(DescribeSource):
 
+    @staticmethod
+    def get_spec_postprocess(result):
+        plan = result.pop('BackupPlan', {})
+        result.update(plan)
+        return result
+
     def augment(self, resources):
         resources = super(DescribeBackup, self).augment(resources)
         client = local_session(self.manager.session_factory).client('backup')
@@ -23,20 +29,6 @@ class DescribeBackup(DescribeSource):
             r['Tags'] = [{'Key': k, 'Value': v} for k, v in tags.items()]
             results.append(r)
         return results
-
-    def get_resources(self, resource_ids, cache=True):
-        client = local_session(self.manager.session_factory).client('backup')
-        resources = []
-
-        for rid in resource_ids:
-            try:
-                r = client.get_backup_plan(BackupPlanId=rid)
-                plan = r.pop('BackupPlan', {})
-                r.update(plan)
-                resources.append(r)
-            except client.exceptions.ResourceNotFoundException:
-                continue
-        return resources
 
 
 @resources.register('backup-plan')

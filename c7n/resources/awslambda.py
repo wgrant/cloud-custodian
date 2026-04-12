@@ -36,25 +36,18 @@ ErrAccessDenied = "AccessDeniedException"
 
 class DescribeLambda(query.DescribeSource):
 
+    @staticmethod
+    def get_spec_postprocess(result):
+        config = result.pop('Configuration')
+        config.update(result)
+        if 'Tags' in config:
+            config['Tags'] = [
+                {'Key': k, 'Value': v} for k, v in config['Tags'].items()]
+        return config
+
     def augment(self, resources):
         return universal_augment(
             self.manager, super(DescribeLambda, self).augment(resources))
-
-    def get_resources(self, ids):
-        client = local_session(self.manager.session_factory).client('lambda')
-        resources = []
-        for rid in ids:
-            try:
-                func = self.manager.retry(client.get_function, FunctionName=rid)
-            except client.exceptions.ResourceNotFoundException:
-                continue
-            config = func.pop('Configuration')
-            config.update(func)
-            if 'Tags' in config:
-                config['Tags'] = [
-                    {'Key': k, 'Value': v} for k, v in config['Tags'].items()]
-            resources.append(config)
-        return resources
 
 
 class ConfigLambda(query.ConfigSource):
@@ -75,6 +68,7 @@ class AWSLambda(query.QueryResourceManager):
         arn_type = 'function'
         arn_separator = ":"
         enum_spec = ('list_functions', 'Functions', None)
+        get_spec = ('get_function', 'FunctionName', None)
         name = id = 'FunctionName'
         date = 'LastModified'
         dimension = 'FunctionName'
