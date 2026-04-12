@@ -104,6 +104,11 @@ def _default_options(p, exclude=[]):
                        action=LoadSessionPolicyJson,
                        help="[OPTIONAL] AWS IAM Policy Document to be used as a session policy")
 
+    p.add_argument(
+        "--max-workers", default=None, type=int, dest='max_workers',
+        help="Max threads for the shared worker pool "
+             "(default: C7N_MAX_WORKERS env var or %(default)s)")
+
 
 def _report_options(p):
     """ Add options specific to the report subcommand. """

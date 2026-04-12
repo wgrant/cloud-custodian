@@ -16,6 +16,7 @@ from c7n.output import (
 
 from c7n.utils import reset_session_cache, dumps, local_session
 from c7n.version import version
+from c7n.worker import WorkerPool, MainThreadWorkerPool
 
 
 class ExecutionContext:
@@ -25,6 +26,16 @@ class ExecutionContext:
         self.policy = policy
         self.options = options
         self.session_factory = session_factory
+
+        # Central worker pool for concurrent execution.  The pool is
+        # shared across all resource managers, filters, and actions
+        # within this execution context.  Use ``worker_pool.executor()``
+        # as a drop-in replacement for ``ThreadPoolExecutor``.
+        max_workers = getattr(options, 'max_workers', None)
+        if os.environ.get('C7N_TEST_RUN'):
+            self.worker_pool = MainThreadWorkerPool(max_workers=max_workers)
+        else:
+            self.worker_pool = WorkerPool(max_workers=max_workers)
 
         # Runtime initialized during policy execution
         # We treat policies as a fly weight pre-execution.
@@ -103,6 +114,8 @@ class ExecutionContext:
             self.output.__exit__(exc_type, exc_value, exc_traceback)
 
         self.tracer.__exit__()
+
+        self.worker_pool.shutdown()
 
         self.session_factory.policy_name = None
         # IMPORTANT: multi-account execution (c7n-org and others) need

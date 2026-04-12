@@ -4,6 +4,11 @@ from concurrent.futures import (ProcessPoolExecutor, ThreadPoolExecutor)  # noqa
 
 import threading
 
+# Central worker pool classes live in c7n.worker.  They are not
+# re-exported here to avoid a circular import; use
+#     from c7n.worker import WorkerPool, MainThreadWorkerPool
+# directly.
+
 
 class MainThreadExecutor:
     """ For running tests.

@@ -51,6 +51,12 @@ class ResourceManager:
         self.log = logging.getLogger('custodian.resources.%s' % (
             self.__class__.__name__.lower()))
 
+        # Use the central worker pool from the execution context.
+        # This replaces per-operation ThreadPoolExecutor creation with
+        # a shared pool, while keeping the same executor_factory interface.
+        if hasattr(ctx, 'worker_pool'):
+            self.executor_factory = ctx.worker_pool.executor
+
         if self.filter_registry:
             self.filters = self.filter_registry.parse(
                 self.data.get('filters', []), self)

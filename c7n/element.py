@@ -14,7 +14,40 @@ class Element:
     permissions = ()
     metrics = ()
 
-    executor_factory = ThreadPoolExecutor
+    # Fallback used when no manager (and therefore no worker pool) is
+    # available.  At runtime, the property below will delegate to the
+    # manager's executor_factory so that filters and actions share the
+    # central worker pool.
+    _default_executor_factory = ThreadPoolExecutor
+
+    @property
+    def executor_factory(self):
+        """Return the executor factory from the parent resource manager.
+
+        When a manager is available its ``executor_factory`` is backed by
+        the central ``WorkerPool`` (set up by ``ExecutionContext``).  If
+        there is no manager — e.g. during standalone testing — fall back
+        to the plain ``ThreadPoolExecutor`` class.
+
+        An explicitly assigned value (via the setter) takes highest
+        priority so that test patches on individual instances work.
+        """
+        # Check for an explicit per-instance override first.  This is
+        # needed because data descriptors (property with __set__)
+        # take precedence over the instance __dict__ during normal
+        # attribute lookup.
+        if 'executor_factory' in self.__dict__:
+            return self.__dict__['executor_factory']
+        manager = getattr(self, 'manager', None)
+        if manager is not None and hasattr(manager, 'executor_factory'):
+            return manager.executor_factory
+        return self._default_executor_factory
+
+    @executor_factory.setter
+    def executor_factory(self, value):
+        # Allow direct assignment (used by some tests that patch the
+        # executor on a specific filter/action class or instance).
+        self.__dict__['executor_factory'] = value
 
     schema = {'type': 'object'}
     # schema aliases get hoisted into a jsonschema definition
