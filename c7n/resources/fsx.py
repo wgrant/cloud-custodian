@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from c7n.manager import resources
 from c7n.query import (
-    QueryResourceManager, TypeInfo, DescribeSource, RetryPageIterator,
+    QueryResourceManager, TypeInfo, RetryPageIterator,
     DescribeWithResourceTags)
 from c7n.actions import BaseAction
 from c7n.tags import Tag, TagDelayedAction, RemoveTag, coalesce_copy_user_tags, TagActionFilter
@@ -17,34 +17,21 @@ from c7n.filters.vpc import SubnetFilter, VpcFilter
 from c7n.filters.backup import ConsecutiveAwsBackupsFilter
 
 
-class DescribeFSx(DescribeSource):
-
-    def get_resources(self, ids):
-        """Support server side filtering on arns
-        """
-        for n in range(len(ids)):
-            if ids[n].startswith('arn:'):
-                ids[n] = ids[n].rsplit('/', 1)[-1]
-        params = {'FileSystemIds': ids}
-        return self.query.filter(self.manager, **params)
-
-
 @resources.register('fsx')
 class FSx(QueryResourceManager):
 
     class resource_type(TypeInfo):
         service = 'fsx'
         enum_spec = ('describe_file_systems', 'FileSystems', None)
+        normalize_arn_for_get = True
+        filter_name = 'FileSystemIds'
+        filter_type = 'list'
         name = id = 'FileSystemId'
         arn = "ResourceARN"
         date = 'CreationTime'
         cfn_type = 'AWS::FSx::FileSystem'
         id_prefix = 'fs-'
         dimension = 'FileSystemId'
-
-    source_mapping = {
-        'describe': DescribeFSx
-    }
 
 
 @resources.register('fsx-volume')

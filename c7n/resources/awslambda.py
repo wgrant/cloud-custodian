@@ -88,8 +88,7 @@ class AWSLambda(query.QueryResourceManager):
         'config': ConfigLambda
     }
 
-    def get_resources(self, ids, cache=True, augment=False):
-        return super(AWSLambda, self).get_resources(ids, cache, augment)
+    get_resources_augment = False
 
 
 @AWSLambda.filter_registry.register('security-group')

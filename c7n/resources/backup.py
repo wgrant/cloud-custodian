@@ -64,17 +64,6 @@ class DescribeVault(DescribeSource):
     def augment(self, resources):
         return universal_augment(self.manager, super(DescribeVault, self).augment(resources))
 
-    def get_resources(self, resource_ids, cache=True):
-        client = local_session(self.manager.session_factory).client('backup')
-        resources = []
-        for rid in resource_ids:
-            try:
-                resources.append(
-                    client.describe_backup_vault(BackupVaultName=rid))
-            except client.exceptions.ResourceNotFoundException:
-                continue
-        return resources
-
 
 @resources.register('backup-vault')
 class BackupVault(QueryResourceManager):
@@ -82,6 +71,7 @@ class BackupVault(QueryResourceManager):
     class resource_type(TypeInfo):
         service = 'backup'
         enum_spec = ('list_backup_vaults', 'BackupVaultList', None)
+        get_spec = ('describe_backup_vault', 'BackupVaultName', None)
         name = id = 'BackupVaultName'
         arn = 'BackupVaultArn'
         arn_type = 'backup-vault'

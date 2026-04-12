@@ -535,11 +535,7 @@ class DynamoDbAccelerator(query.QueryResourceManager):
         'config': query.ConfigSource
     }
 
-    def get_resources(self, ids, cache=True, augment=True):
-        """Override in order to disable the augment for serverless policies.
-           list_tags on dax resources always fail until the cluster is finished creating.
-        """
-        return super(DynamoDbAccelerator, self).get_resources(ids, cache, augment=False)
+    get_resources_augment = False
 
 
 def _dax_cluster_tags(tables, session_factory, retry, log):

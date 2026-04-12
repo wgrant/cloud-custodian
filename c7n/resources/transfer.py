@@ -180,8 +180,7 @@ class TransferUser(ChildResourceManager):
         'describe-child': DescribeTransferUser
     }
 
-    def get_resources(self, ids, cache=True, augment=True):
-        return super(TransferUser, self).get_resources(ids, cache, augment=False)
+    get_resources_augment = False
 
 
 @TransferUser.action_registry.register('delete')

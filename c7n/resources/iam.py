@@ -75,22 +75,6 @@ class Group(QueryResourceManager):
     }
 
 
-class DescribeRole(DescribeSource):
-
-    def get_resources(self, resource_ids, cache=True):
-        client = local_session(self.manager.session_factory).client('iam')
-        resources = []
-        for rid in resource_ids:
-            if rid.startswith('arn:'):
-                rid = Arn.parse(rid).resource
-            try:
-                result = self.manager.retry(client.get_role, RoleName=rid)
-            except client.exceptions.NoSuchEntityException:
-                continue
-            resources.append(result.pop('Role'))
-        return resources
-
-
 @resources.register('iam-role')
 class Role(QueryResourceManager):
 
@@ -99,6 +83,7 @@ class Role(QueryResourceManager):
         arn_type = 'role'
         enum_spec = ('list_roles', 'Roles', None)
         detail_spec = ('get_role', 'RoleName', 'RoleName', 'Role')
+        normalize_arn_for_get = True
         id = name = 'RoleName'
         config_id = 'RoleId'
         date = 'CreateDate'
@@ -106,11 +91,6 @@ class Role(QueryResourceManager):
         # Denotes this resource type exists across regions
         global_resource = True
         arn = 'Arn'
-
-    source_mapping = {
-        'describe': DescribeRole,
-        'config': ConfigSource
-    }
 
 
 Role.action_registry.register('mark-for-op', TagDelayedAction)
@@ -231,17 +211,6 @@ class DescribeUser(DescribeSource):
             if ru:
                 results.append(ru['User'])
         return list(filter(None, results))
-
-    def get_resources(self, resource_ids, cache=True):
-        client = local_session(self.manager.session_factory).client('iam')
-        results = []
-
-        for r in resource_ids:
-            try:
-                results.append(client.get_user(UserName=r)['User'])
-            except client.exceptions.NoSuchEntityException:
-                continue
-        return results
 
 
 @resources.register('iam-user')
@@ -380,18 +349,6 @@ class DescribePolicy(DescribeSource):
             query = {t['Name']: t['Value'] for t in qfilters}
         return super(DescribePolicy, self).resources(query=query)
 
-    def get_resources(self, resource_ids, cache=True):
-        client = local_session(self.manager.session_factory).client('iam')
-        results = []
-
-        for r in resource_ids:
-            try:
-                results.append(client.get_policy(PolicyArn=r)['Policy'])
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'NoSuchEntityException':
-                    continue
-        return results
-
     def augment(self, resources):
         return universal_augment(self.manager, super().augment(resources))
 
@@ -403,6 +360,7 @@ class Policy(QueryResourceManager):
         service = 'iam'
         arn_type = 'policy'
         enum_spec = ('list_policies', 'Policies', {'Scope': 'Local'})
+        get_spec = ('get_policy', 'PolicyArn', 'Policy')
         id = 'PolicyId'
         name = 'PolicyName'
         date = 'CreateDate'

@@ -225,8 +225,7 @@ class Service(query.ChildResourceManager):
         'describe': ECSServiceDescribeSource,
     }
 
-    def get_resources(self, ids, cache=True, augment=True):
-        return super(Service, self).get_resources(ids, cache, augment=False)
+    get_resources_augment = False
 
 
 @Service.filter_registry.register('metrics')
@@ -696,8 +695,7 @@ class Task(query.ChildResourceManager):
             source = 'describe-ecs-task'
         return source
 
-    def get_resources(self, ids, cache=True, augment=True):
-        return super(Task, self).get_resources(ids, cache, augment=False)
+    get_resources_augment = False
 
 
 @Task.filter_registry.register('subnet')
@@ -855,8 +853,7 @@ class TaskDefinition(query.QueryResourceManager):
         'describe': DescribeTaskDefinition
     }
 
-    def get_resources(self, ids, cache=True, augment=True):
-        return super(TaskDefinition, self).get_resources(ids, cache, augment=False)
+    get_resources_augment = False
 
 
 @TaskDefinition.action_registry.register('delete')

@@ -236,7 +236,49 @@ class DescribeSource:
         self.query = self.get_query()
 
     def get_resources(self, ids, cache=True):
+        m = self.manager.get_model()
+
+        # Normalize ARN identifiers to plain resource IDs
+        if getattr(m, 'normalize_arn_for_get', False):
+            ids = self._normalize_arns(ids)
+
+        # Use get_spec for single-resource fetch if available,
+        # or derive from detail_spec when no server-side filter exists
+        get_spec = getattr(m, 'get_spec', None)
+        if get_spec is None and not m.filter_name and getattr(m, 'detail_spec', None):
+            ds = m.detail_spec
+            get_spec = (ds[0], ds[1], ds[3])
+        if get_spec:
+            return self._get_resources_by_spec(ids, get_spec)
+
         return self.query.get(self.manager, ids)
+
+    def _normalize_arns(self, ids):
+        from c7n.resources.aws import Arn
+        return [Arn.parse(i).resource if i.startswith('arn:') else i for i in ids]
+
+    def _get_resources_by_spec(self, ids, get_spec):
+        api_call, param_name, response_path = get_spec
+        m = self.manager.get_model()
+        if self.manager.get_client:
+            client = self.manager.get_client()
+        else:
+            client = local_session(self.manager.session_factory).client(
+                m.service, self.manager.config.region)
+        op = getattr(client, api_call)
+        resources = []
+        for rid in ids:
+            try:
+                result = self.manager.retry(op, **{param_name: rid})
+                if response_path:
+                    result = result[response_path]
+                resources.append(result)
+            except ClientError as e:
+                code = e.response['Error']['Code']
+                if 'NotFound' in code or 'NoSuch' in code:
+                    continue
+                raise
+        return resources
 
     def resources(self, query):
         return self.query.filter(self.manager, **query)
@@ -468,6 +510,7 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
     chunk_size = 20
 
     _generate_arn = None
+    get_resources_augment = True
 
     retry = staticmethod(
         get_retry((
@@ -595,7 +638,7 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
                 return resources
         try:
             resources = self.source.get_resources(ids)
-            if augment:
+            if augment and self.get_resources_augment:
                 resources = self.augment(resources)
             return resources
         except ClientError as e:
