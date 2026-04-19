@@ -40,3 +40,10 @@ class PolicyAssignments(ArmResourceManager):
             'name',
             'resourceGroup'
         )
+
+        @classmethod
+        def extra_args(cls, resource_manager):
+            # Without a filter, Azure returns assignments inherited from parent
+            # management groups and tenant root, which would duplicate the same
+            # assignment across every subscription in an org-wide sync.
+            return {'filter': 'atExactScope()'}

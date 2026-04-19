@@ -1,5 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n_azure.resources.policy_assignments import PolicyAssignments
+
 from ..azure_common import BaseTest
 
 
@@ -12,6 +14,16 @@ class PolicyAssignmentTest(BaseTest):
                 'resource': 'azure.policyassignments'
             }, validate=True)
             self.assertTrue(p)
+
+    def test_extra_args_uses_at_exact_scope_filter(self):
+        # Without this filter, policy_assignments.list() returns assignments
+        # inherited from parent management groups and the tenant root, which
+        # would duplicate the same assignment across every subscription during
+        # an org-wide inventory sync.
+        self.assertEqual(
+            PolicyAssignments.resource_type.extra_args(None),
+            {'filter': 'atExactScope()'},
+        )
 
     # run ./templates/provision.sh policyassignment to deploy required resource.
     def test_find_by_name(self):
