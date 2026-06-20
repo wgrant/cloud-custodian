@@ -60,6 +60,8 @@ class OrganizationSetIamPolicy(SetIamPolicy):
 class Folder(QueryResourceManager):
     """GCP resource: https://cloud.google.com/resource-manager/reference/rest/v1/folders
     """
+    policy_query_key = 'parent'
+
     class resource_type(TypeInfo):
         service = 'cloudresourcemanager'
         version = 'v2'
@@ -84,14 +86,13 @@ class Folder(QueryResourceManager):
             results.append(client.execute_query('get', {'name': rid}))
         return results
 
-    def get_resource_query(self):
-        return self.get_policy_query_param('parent')
-
 
 @resources.register('project')
 class Project(QueryResourceManager):
     """GCP resource: https://cloud.google.com/compute/docs/reference/rest/v1/projects
     """
+    policy_query_key = 'filter'
+
     class resource_type(TypeInfo):
         service = 'cloudresourcemanager'
         version = 'v1'
@@ -121,10 +122,6 @@ class Project(QueryResourceManager):
         def get(client, resource_info):
             return client.execute_query(
                 'get', {'projectId': resource_info['resourceName'].rsplit('/', 1)[-1]})
-
-    def get_resource_query(self):
-        # https://cloud.google.com/resource-manager/reference/rest/v1/projects/list
-        return self.get_policy_query_param('filter')
 
 
 Project.filter_registry.register('missing', Missing)

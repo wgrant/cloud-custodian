@@ -75,6 +75,8 @@ class KmsCryptoKey(ChildResourceManager):
     """GCP Resource
     https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys
     """
+    default_query_filter = False
+
     def _get_parent_resource_info(self, child_instance):
         project_id, location, key_ring_id = re.match(
             'projects/(.*?)/locations/(.*?)/keyRings/(.*?)/cryptoKeys/.*',
@@ -82,11 +84,6 @@ class KmsCryptoKey(ChildResourceManager):
         return {'project_id': project_id,
                 'location': location,
                 'key_ring_id': key_ring_id}
-
-    def get_resource_query(self):
-        """Does nothing as self does not need query values unlike its parent
-        which receives them with the use_child_query flag."""
-        pass
 
     class resource_type(ChildTypeInfo):
         service = 'cloudkms'
@@ -152,6 +149,8 @@ class KmsCryptoKeyVersion(ChildResourceManager):
     """GCP Resource
     https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys.cryptoKeyVersions
     """
+    default_query_filter = False
+
     def _get_parent_resource_info(self, child_instance):
         path = 'projects/(.*?)/locations/(.*?)/keyRings/(.*?)/cryptoKeys/(.*?)/cryptoKeyVersions/.*'
         project_id, location, key_ring_id, crypto_key_id = \
@@ -160,11 +159,6 @@ class KmsCryptoKeyVersion(ChildResourceManager):
                 'location': location,
                 'key_ring_id': key_ring_id,
                 'crypto_key_id': crypto_key_id}
-
-    def get_resource_query(self):
-        """Does nothing as self does not need query values unlike its parent
-        which receives them with the use_child_query flag."""
-        pass
 
     class resource_type(ChildTypeInfo):
         service = 'cloudkms'

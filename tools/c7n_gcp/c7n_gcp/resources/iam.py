@@ -113,17 +113,14 @@ class ServiceAccountKey(ChildResourceManager):
     """GCP Resource
     https://cloud.google.com/iam/docs/reference/rest/v1/projects.serviceAccounts.keys
     """
+    default_query_filter = False
+
     def _get_parent_resource_info(self, child_instance):
         project_id, sa = re.match(
             'projects/(.*?)/serviceAccounts/(.*?)/keys/.*',
             child_instance['name']).groups()
         return {'project_id': project_id,
                 'email_id': sa}
-
-    def get_resource_query(self):
-        """Does nothing as self does not need query values unlike its parent
-        which receives them with the use_child_query flag."""
-        pass
 
     class resource_type(ChildTypeInfo):
         service = 'iam'

@@ -11,6 +11,8 @@ from c7n_gcp.filters.recommender import RecommenderFilter
 class DataSet(QueryResourceManager):
     """GCP resource: https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets
     """
+    policy_query_key = 'filter'
+
     class resource_type(TypeInfo):
         service = 'bigquery'
         version = 'v2'
@@ -62,9 +64,6 @@ class DataSet(QueryResourceManager):
                     'get', verb_arguments=ref))
         return results
 
-    def get_resource_query(self):
-        return self.get_policy_query_param('filter')
-
 
 @resources.register('bq-job')
 class BigQueryJob(QueryResourceManager):
@@ -103,6 +102,8 @@ class BigQueryJob(QueryResourceManager):
 class BigQueryTable(ChildResourceManager):
     """GCP resource: https://cloud.google.com/bigquery/docs/reference/rest/v2/tables
     """
+    default_query_filter = False
+
 
     class resource_type(ChildTypeInfo):
         service = 'bigquery'
@@ -156,11 +157,6 @@ class BigQueryTable(ChildResourceManager):
             ref = r['tableReference']
             results.append(client.execute_query('get', verb_arguments=ref))
         return results
-
-    def get_resource_query(self):
-        # Allow query values to be consumed by parent dataset listing only.
-        # BigQuery tables.list does not accept a top-level "filter" argument.
-        return None
 
 
 @BigQueryTable.action_registry.register('delete')

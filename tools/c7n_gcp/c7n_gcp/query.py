@@ -154,6 +154,9 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     # decorator.
     type: str
     resource_type: 'TypeInfo'
+    default_query_filter = True
+    policy_query_key = None
+    policy_query_param = None
 
     def __init__(self, ctx, data):
         super(QueryResourceManager, self).__init__(ctx, data)
@@ -188,6 +191,11 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         return self.data.get('source', 'describe-gcp')
 
     def get_resource_query(self):
+        if self.policy_query_key:
+            return self.get_policy_query_param(
+                self.policy_query_key, self.policy_query_param)
+        if not self.default_query_filter:
+            return None
         if 'query' in self.data:
             return {'filter': self.data.get('query')}
 
