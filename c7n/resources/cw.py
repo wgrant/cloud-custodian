@@ -15,7 +15,7 @@ from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
 from c7n.query import (
     QueryResourceManager,
-    TagAugmentSpec, TypeInfo, ConfigSource, DescribeWithResourceTags)
+    TagsFromField, TypeInfo, ConfigSource, DescribeWithResourceTags)
 from c7n.resolver import ValuesFrom
 from c7n.tags import universal_augment
 from c7n.utils import type_schema, local_session, chunks, get_retry, jmespath_search
@@ -860,7 +860,7 @@ class SyntheticsCanary(QueryResourceManager):
         enum_spec = ('describe_canaries', 'Canaries', None)
         universal_taggable = object()
 
-    tag_normalize = TagAugmentSpec(source='Tags')
+    tag_augment = TagsFromField('Tags')
 
 
 @SyntheticsCanary.action_registry.register('start')

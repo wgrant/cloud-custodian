@@ -215,68 +215,72 @@ def _napi(op_name):
 sources = PluginRegistry('sources')
 
 
-_TAG_SOURCE_MISSING = object()
+def normalize_tags(tags, tag_format='aws-list'):
+    if tag_format == 'dict':
+        return tag_dict_to_list(tags or {})
+    if tag_format == 'lower-list':
+        return lower_key_tag_list(tags or ())
+    return tags or []
 
 
-class TagAugmentSpec:
-    def __init__(self, source=None, dest='Tags', shape=None, pop=False,
-                 op='list_tags_for_resource', arn_key=None, arg='ResourceArn',
-                 result='Tags', service=None, ignore_errors=(),
-                 default=_TAG_SOURCE_MISSING):
-        self.source = source
-        self.dest = dest
-        self.shape = shape or ('dict' if source else 'identity')
-        self.pop = pop
+class TagsFromField:
+    def __init__(self, field, target='Tags', tag_format='dict',
+                 remove=False, missing='skip'):
+        self.field = field
+        self.target = target
+        self.tag_format = tag_format
+        self.remove = remove
+        self.missing = missing
+
+    def __call__(self, manager, resources):
+        for resource in resources:
+            if self.field not in resource:
+                if self.missing == 'skip':
+                    continue
+                tags = ()
+            else:
+                tags = resource.pop(self.field) if self.remove else resource.get(self.field)
+            resource[self.target] = normalize_tags(tags, self.tag_format)
+        return resources
+
+
+class TagsFromApi:
+    def __init__(self, op='list_tags_for_resource', resource_path=None,
+                 request_arg='ResourceArn', result_path='Tags',
+                 service=None, tag_format='aws-list', ignore_errors=()):
         self.op = op
-        self.arn_key = arn_key
-        self.arg = arg
-        self.result = result
+        self.resource_path = resource_path
+        self.request_arg = request_arg
+        self.result_path = result_path
         self.service = service
+        self.tag_format = tag_format
         self.ignore_errors = ignore_errors
-        self.default = default
 
-    def normalize(self, tags):
-        if self.shape == 'dict':
-            return tag_dict_to_list(tags or {})
-        if self.shape == 'lower-list':
-            return lower_key_tag_list(tags or ())
-        return tags or []
-
-
-def _normalize_tags(resources, spec):
-    for resource in resources:
-        if spec.source not in resource:
-            if spec.default is _TAG_SOURCE_MISSING:
-                continue
-            tags = spec.default
-        else:
-            tags = resource.pop(spec.source) if spec.pop else resource.get(spec.source)
-        resource[spec.dest] = spec.normalize(tags)
-    return resources
+    def __call__(self, manager, resources):
+        return augment_resource_tags(
+            manager, resources, op=self.op, arn_key=self.resource_path,
+            arn_arg=self.request_arg, result_key=self.result_path,
+            service=self.service,
+            normalizer=lambda tags: normalize_tags(tags, self.tag_format),
+            ignore_errors=self.ignore_errors)
 
 
-def _fetch_tags(manager, resources, spec):
-    return augment_resource_tags(
-        manager, resources, op=spec.op, arn_key=spec.arn_key, arn_arg=spec.arg,
-        result_key=spec.result, service=spec.service, normalizer=spec.normalize,
-        ignore_errors=spec.ignore_errors)
+class UniversalTags:
+    def __call__(self, manager, resources):
+        return universal_augment(manager, resources)
 
 
-def _iter_tag_specs(specs):
-    if specs is None:
+def _iter_tag_augments(augments):
+    if augments is None:
         return ()
-    if isinstance(specs, (list, tuple)):
-        return specs
-    return (specs,)
+    if isinstance(augments, (list, tuple)):
+        return augments
+    return (augments,)
 
 
-def _apply_tag_augment(manager, resources, normalize=None, fetch=None, universal=False):
-    for spec in _iter_tag_specs(normalize):
-        resources = _normalize_tags(resources, spec)
-    for spec in _iter_tag_specs(fetch):
-        resources = _fetch_tags(manager, resources, spec)
-    if universal:
-        resources = universal_augment(manager, resources)
+def _apply_tag_augment(manager, resources, augments=None):
+    for augment in _iter_tag_augments(augments):
+        resources = augment(manager, resources)
     return resources
 
 
@@ -284,9 +288,7 @@ def _apply_tag_augment(manager, resources, normalize=None, fetch=None, universal
 class DescribeSource:
 
     resource_query_factory = ResourceQuery
-    tag_normalize = None
     tag_augment = None
-    universal_tag_augment = False
 
     def __init__(self, manager):
         self.manager = manager
@@ -376,25 +378,19 @@ class DescribeSource:
                     _augment, chunks(resources, self.manager.chunk_size)))
                 resources = list(itertools.chain(*results))
         return _apply_tag_augment(
-            self.manager, resources, self.tag_normalize,
-            self.tag_augment, self.universal_tag_augment)
+            self.manager, resources, self.tag_augment)
 
 
 class DescribeWithResourceTags(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+    tag_augment = UniversalTags()
 
 
 class DescribeWithInlineTags(DescribeSource):
     tag_source_key = 'TagList'
     tag_key = 'Tags'
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        for r in resources:
-            r[self.tag_key] = r.pop(self.tag_source_key, ())
-        return resources
+    tag_augment = TagsFromField(
+        tag_source_key, target=tag_key, tag_format='aws-list',
+        remove=True, missing='empty')
 
 
 def tag_dict_to_list(tags):
@@ -438,9 +434,7 @@ class ChildDescribeSource(DescribeSource):
 
 
 class ChildDescribeWithResourceTags(ChildDescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+    tag_augment = UniversalTags()
 
 
 @sources.register('config')
@@ -611,9 +605,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     policy_query_default = None
     permission_override = None
     ignore_fetch_error_message = None
-    tag_normalize = None
     tag_augment = None
-    universal_tag_augment = False
 
     retry = staticmethod(
         get_retry((
@@ -808,9 +800,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         s3 buckets.
         """
         resources = self.source.augment(resources)
-        return _apply_tag_augment(
-            self, resources, self.tag_normalize,
-            self.tag_augment, self.universal_tag_augment)
+        return _apply_tag_augment(self, resources, self.tag_augment)
 
     @property
     def account_id(self):

@@ -2009,8 +2009,8 @@ class SecurityGroupPostFinding(OtherResourcePostFinding):
 
 
 class DescribeENI(query.DescribeSource):
-    tag_normalize = query.TagAugmentSpec(
-        source='TagSet', shape='identity', pop=True, default=())
+    tag_augment = query.TagsFromField(
+        'TagSet', tag_format='aws-list', remove=True, missing='empty')
 
 
 @resources.register('eni')

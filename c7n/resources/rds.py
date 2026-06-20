@@ -58,7 +58,7 @@ import c7n.filters.vpc as net_filters
 from c7n.manager import resources
 from c7n.query import (
     ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
-    RetryPageIterator, TagAugmentSpec, TypeInfo)
+    RetryPageIterator, TagsFromField, TypeInfo)
 from c7n import deprecated, tags
 from c7n.tags import universal_augment
 
@@ -76,8 +76,8 @@ actions = ActionRegistry('rds.actions')
 
 
 class DescribeRDS(DescribeSource):
-    tag_normalize = TagAugmentSpec(
-        source='TagList', shape='identity', pop=True, default=())
+    tag_augment = TagsFromField(
+        'TagList', tag_format='aws-list', remove=True, missing='empty')
 
 
 class ConfigRDS(ConfigSource):
@@ -1070,8 +1070,8 @@ class DescribeRDSSnapshot(DescribeSource):
     def get_resources(self, ids, cache=True):
         super_get = super().get_resources
         return list(itertools.chain(*[super_get((i,)) for i in ids]))
-    tag_normalize = TagAugmentSpec(
-        source='TagList', shape='identity', pop=True, default=())
+    tag_augment = TagsFromField(
+        'TagList', tag_format='aws-list', remove=True, missing='empty')
 
 
 @resources.register('rds-snapshot')

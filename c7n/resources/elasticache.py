@@ -14,7 +14,7 @@ from c7n.filters.core import ComparableVersion
 import c7n.filters.vpc as net_filters
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource, UniversalTags
 from c7n.tags import universal_augment
 from c7n.utils import (
     local_session, chunks, snapshot_identifier, type_schema, jmespath_search,
@@ -474,7 +474,7 @@ class ElastiCacheSnapshot(QueryResourceManager):
         universal_taggable = True
 
     permissions = ('elasticache:ListTagsForResource',)
-    universal_tag_augment = True
+    tag_augment = UniversalTags()
 
 
 @ElastiCacheSnapshot.filter_registry.register('age')

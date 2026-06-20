@@ -7,13 +7,13 @@ from c7n.actions import BaseAction
 from c7n.filters import Filter
 from c7n.manager import resources
 from c7n.query import (QueryResourceManager, RetryPageIterator, TypeInfo,
-    DescribeSource, ConfigSource, TagAugmentSpec)
+    DescribeSource, ConfigSource, TagsFromApi)
 from c7n.tags import RemoveTag, Tag, TagDelayedAction, TagActionFilter
 from c7n.utils import local_session, type_schema, get_retry
 
 
 class DescribeShieldProtection(DescribeSource):
-    tag_augment = TagAugmentSpec(arn_key='ProtectionArn', arg='ResourceARN')
+    tag_augment = TagsFromApi(resource_path='ProtectionArn', request_arg='ResourceARN')
 
 
 @resources.register('shield-protection')

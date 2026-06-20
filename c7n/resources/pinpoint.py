@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TagAugmentSpec, TypeInfo
+from c7n.query import QueryResourceManager, TagsFromField, TypeInfo
 
 
 @resources.register('pinpoint-app')
@@ -17,4 +17,4 @@ class PinpointApp(QueryResourceManager):
         cfn_type = 'AWS::Pinpoint::App'
         arn = "Arn"
         permission_prefix = 'mobiletargeting'
-    tag_normalize = TagAugmentSpec(source='tags', default=())
+    tag_augment = TagsFromField('tags', missing='empty')

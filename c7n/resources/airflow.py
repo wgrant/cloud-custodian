@@ -1,7 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TagAugmentSpec, TypeInfo
+from c7n.query import QueryResourceManager, TagsFromField, TypeInfo
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.tags import RemoveTag, Tag, TagDelayedAction, TagActionFilter
 from c7n.actions import Action
@@ -24,7 +24,7 @@ class ApacheAirflow(QueryResourceManager):
         'airflow:GetEnvironment',
         'airflow:ListEnvironments',
     )
-    tag_normalize = TagAugmentSpec(source='Tags', default=())
+    tag_augment = TagsFromField('Tags', missing='empty')
 
 
 @ApacheAirflow.filter_registry.register('kms-key')

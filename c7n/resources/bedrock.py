@@ -4,7 +4,7 @@
 from c7n.manager import resources
 from c7n.query import (
     QueryResourceManager, TypeInfo, DescribeSource, DescribeWithResourceTags,
-    TagAugmentSpec, augment_resource_tags, tag_dict_to_list)
+    TagsFromApi, augment_resource_tags, tag_dict_to_list)
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universal_augment
 from c7n.utils import local_session, type_schema, QueryParser
 from c7n.actions import BaseAction
@@ -92,7 +92,9 @@ class BedrockCustomModel(QueryResourceManager):
         id = arn = "modelArn"
         permission_prefix = 'bedrock'
 
-    tag_augment = TagAugmentSpec(arg='resourceARN', result='tags', shape='lower-list')
+    tag_augment = TagsFromApi(
+        request_arg='resourceARN', result_path='tags',
+        tag_format='lower-list')
 
 
 @BedrockCustomModel.action_registry.register('tag')
@@ -568,7 +570,8 @@ class BedrockKnowledgeBase(QueryResourceManager):
         arn = "knowledgeBaseArn"
         permission_prefix = 'bedrock'
 
-    tag_augment = TagAugmentSpec(arg='resourceArn', result='tags', shape='dict')
+    tag_augment = TagsFromApi(
+        request_arg='resourceArn', result_path='tags', tag_format='dict')
 
 
 @BedrockKnowledgeBase.action_registry.register('tag')

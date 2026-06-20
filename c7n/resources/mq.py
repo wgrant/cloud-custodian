@@ -5,13 +5,13 @@ from c7n.filters.metrics import MetricsFilter
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TagAugmentSpec, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import QueryResourceManager, TagsFromField, TypeInfo, DescribeSource, ConfigSource
 from c7n.utils import local_session, type_schema
 from c7n.tags import RemoveTag, Tag, TagDelayedAction, TagActionFilter, universal_augment
 
 
 class DescribeMessageBroker(DescribeSource):
-    tag_normalize = TagAugmentSpec(source='Tags', default=())
+    tag_augment = TagsFromField('Tags', missing='empty')
 
 
 @resources.register('message-broker')

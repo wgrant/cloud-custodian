@@ -1116,7 +1116,7 @@ class DomainNameRemediateTls(BaseAction):
 
 
 class ApiGwV2DescribeSource(query.DescribeSource):
-    tag_normalize = query.TagAugmentSpec(source='Tags', pop=True, default=())
+    tag_augment = query.TagsFromField('Tags', remove=True, missing='empty')
 
 
 @resources.register('apigwv2')
@@ -1216,7 +1216,7 @@ class DeleteApiV2(BaseAction):
 
 
 class StageDescribe(query.ChildDescribeSource):
-    tag_normalize = query.TagAugmentSpec(source='Tags', pop=True, default=())
+    tag_augment = query.TagsFromField('Tags', remove=True, missing='empty')
 
 
 @resources.register("apigwv2-stage")

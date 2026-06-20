@@ -135,8 +135,8 @@ class DescribeQuicksightWithAccountId(query.DescribeSource):
             return []
         return super().handle_fetch_error(error, query)
 
-    tag_augment = query.TagAugmentSpec(
-        arn_key='Arn', ignore_errors=("ResourceNotFoundException",))
+    tag_augment = query.TagsFromApi(
+        resource_path='Arn', ignore_errors=("ResourceNotFoundException",))
 
 
 @resources.register("quicksight-dashboard")

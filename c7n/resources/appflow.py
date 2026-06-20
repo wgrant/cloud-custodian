@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 from c7n.actions import BaseAction
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TagAugmentSpec, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import QueryResourceManager, TagsFromField, TypeInfo, DescribeSource, ConfigSource
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 from c7n.utils import local_session, type_schema
 
 
 class AppFlowDescribe(DescribeSource):
-    tag_normalize = TagAugmentSpec(source='tags')
+    tag_augment = TagsFromField('tags')
 
 
 @resources.register('app-flow')

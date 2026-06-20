@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 from c7n.actions import Action
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TagAugmentSpec, TypeInfo, ConfigSource, DescribeSource
+from c7n.query import QueryResourceManager, TagsFromField, TypeInfo, ConfigSource, DescribeSource
 from c7n.tags import Tag, RemoveTag, TagDelayedAction, TagActionFilter
 from c7n.utils import type_schema, local_session, get_partition
 
 
 class ExperimentTemplateDescribe(DescribeSource):
-    tag_normalize = TagAugmentSpec(source='tags', pop=True)
+    tag_augment = TagsFromField('tags', remove=True)
 
 
 @resources.register('fis-template')
@@ -82,7 +82,7 @@ class Delete(Action):
 
 
 class ExperimentDescribe(DescribeSource):
-    tag_normalize = TagAugmentSpec(source='tags', pop=True, default=())
+    tag_augment = TagsFromField('tags', remove=True, missing='empty')
 
 
 @resources.register('fis-experiment')
