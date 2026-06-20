@@ -225,8 +225,19 @@ class DescribeSource:
         self.manager = manager
         self.query = self.get_query()
 
-    def get_resources(self, ids, cache=True):
+    def prepare_resource_ids(self, ids):
+        return ids
+
+    def fetch_resource_set(self, ids):
         return self.query.get(self.manager, ids)
+
+    def normalize_resource_set(self, resources, ids):
+        return self.normalize_resources(resources, None)
+
+    def get_resources(self, ids, cache=True):
+        ids = self.prepare_resource_ids(ids)
+        resources = self.fetch_resource_set(ids)
+        return self.normalize_resource_set(resources, ids)
 
     def prepare_query(self, query):
         return query or {}
@@ -624,21 +635,46 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
                 return [r for r in resources if r[m.id] in id_set]
         return None
 
+    def prepare_resource_ids(self, ids):
+        return ids
+
+    def get_cached_resources(self, ids):
+        return self._get_cached_resources(ids)
+
+    def fetch_resource_set(self, ids):
+        return self.source.get_resources(ids)
+
+    def handle_get_resources_error(self, error, ids):
+        if isinstance(error, ClientError):
+            self.log.warning("event ids not resolved: %s error:%s" % (ids, error))
+            return []
+        raise error
+
+    def normalize_resource_set(self, resources, ids):
+        return self.normalize_resources(resources, None)
+
+    def augment_resource_set(self, resources):
+        return self.augment_resources(resources)
+
+    def finalize_resource_set(self, resources, ids):
+        return resources
+
     def get_resources(self, ids, cache=True, augment=True):
+        ids = self.prepare_resource_ids(ids)
         if not ids:
             return []
         if cache:
-            resources = self._get_cached_resources(ids)
+            resources = self.get_cached_resources(ids)
             if resources is not None:
                 return resources
         try:
-            resources = self.source.get_resources(ids)
-            if augment:
-                resources = self.augment(resources)
-            return resources
-        except ClientError as e:
-            self.log.warning("event ids not resolved: %s error:%s" % (ids, e))
-            return []
+            resources = self.fetch_resource_set(ids)
+        except Exception as e:
+            resources = self.handle_get_resources_error(e, ids)
+        resources = self.normalize_resource_set(resources, ids)
+        if augment:
+            resources = self.augment_resource_set(resources)
+        return self.finalize_resource_set(resources, ids)
 
     def augment(self, resources):
         """subclasses may want to augment resources with additional information.

@@ -10,7 +10,7 @@ class DescribeRemoved(DescribeSource):
     def fetch_resources(self, query):
         return []
 
-    def get_resources(self, resource_ids):
+    def fetch_resource_set(self, resource_ids):
         return []
 
 

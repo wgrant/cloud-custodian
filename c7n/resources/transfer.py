@@ -227,8 +227,8 @@ class TransferUser(ChildResourceManager):
         'describe-child': DescribeTransferUser
     }
 
-    def get_resources(self, ids, cache=True, augment=True):
-        return super(TransferUser, self).get_resources(ids, cache, augment=False)
+    def augment_resource_set(self, resources):
+        return resources
 
 
 @TransferUser.action_registry.register('delete')

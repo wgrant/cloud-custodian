@@ -16,7 +16,7 @@ from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universa
 
 class InstanceDescribe(DescribeSource):
 
-    def get_resources(self, resource_ids):
+    def fetch_resource_set(self, resource_ids):
         return self.query.filter(
             self.manager,
             **{

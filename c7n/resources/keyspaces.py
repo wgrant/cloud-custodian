@@ -27,12 +27,6 @@ class DescribeKeyspaces(DescribeWithResourceTags):
         perms.remove('cassandra:GetKeyspace')
         return perms
 
-    def get_resources(self, resource_ids, cache=True):
-        return [
-            r for r in super().get_resources(resource_ids, cache)
-            if r['keyspaceName'] not in SYSTEM_KEYSPACES
-        ]
-
     def normalize_resources(self, resources, query):
         return [r for r in resources
                 if r['keyspaceName'] not in SYSTEM_KEYSPACES]

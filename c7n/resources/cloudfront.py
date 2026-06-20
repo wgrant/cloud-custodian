@@ -25,8 +25,7 @@ class DescribeDistribution(DescribeSource):
     def augment(self, resources):
         return universal_augment(self.manager, resources)
 
-    def get_resources(self, ids, cache=True):
-        results = []
+    def prepare_resource_ids(self, ids):
         distribution_ids = []
         for i in ids:
             # if we get cloudfront distribution arn, we pick distribution id
@@ -34,9 +33,7 @@ class DescribeDistribution(DescribeSource):
                 distribution_ids.append(Arn.parse(i).resource)
             else:
                 distribution_ids.append(i)
-        if distribution_ids:
-            results = super().get_resources(distribution_ids, cache)
-        return results
+        return distribution_ids
 
 
 @resources.register('distribution')

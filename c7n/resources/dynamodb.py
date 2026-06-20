@@ -642,7 +642,7 @@ class Stream(query.QueryResourceManager):
 
 class DescribeDaxCluster(query.DescribeSource):
 
-    def get_resources(self, ids, cache=True):
+    def fetch_resource_set(self, ids):
         """Retrieve dax resources for serverless policies or related resources
         """
         client = local_session(self.manager.session_factory).client('dax')
@@ -674,11 +674,12 @@ class DynamoDbAccelerator(query.QueryResourceManager):
         'config': query.ConfigSource
     }
 
-    def get_resources(self, ids, cache=True, augment=True):
-        """Override in order to disable the augment for serverless policies.
-           list_tags on dax resources always fail until the cluster is finished creating.
+    def augment_resource_set(self, resources):
+        """Disable augment for serverless policies.
+
+        list_tags on dax resources always fail until the cluster is finished creating.
         """
-        return super(DynamoDbAccelerator, self).get_resources(ids, cache, augment=False)
+        return resources
 
 
 def _dax_cluster_tags(tables, session_factory, retry, log):

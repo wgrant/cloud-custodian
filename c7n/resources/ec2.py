@@ -63,10 +63,6 @@ class DescribeEC2(query.DescribeSource):
     def normalize_resources(self, resources, query):
         return self._flatten_reservations(resources)
 
-    def get_resources(self, ids, cache=True):
-        reservations = self.query.get(self.manager, ids)
-        return self._flatten_reservations(reservations)
-
     def augment(self, resources):
         """EC2 API and AWOL Tags
 
