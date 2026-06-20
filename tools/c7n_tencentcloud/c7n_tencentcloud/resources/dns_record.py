@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import MapBatch
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod
@@ -35,9 +36,10 @@ class DnsRecord(QueryResourceManager):
         resource_prefix = "domain"
         taggable = True
 
-    def augment(self, resources):
+    @staticmethod
+    def expand_records(manager, resources):
         record_resources = []
-        cli = self.get_client()
+        cli = manager.get_client()
         for resource in resources:
             paging_def = {"method": PageMethod.Offset, "limit": {"key": "Limit", "value": 100}}
             resp = cli.execute_paged_query("DescribeRecordList",
@@ -48,3 +50,5 @@ class DnsRecord(QueryResourceManager):
                 item["domain"] = "{}.{}".format(item["Name"], resource["Name"])
             record_resources += resp
         return record_resources
+
+    augment_pipeline = MapBatch(expand_records)

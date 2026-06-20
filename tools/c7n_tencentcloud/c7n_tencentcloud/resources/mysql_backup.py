@@ -4,6 +4,7 @@ from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod, isoformat_datetime_str
 import pytz
+from c7n.query import MapBatch
 
 
 @resources.register("mysql-backup")
@@ -42,14 +43,15 @@ class MySQLBackUp(QueryResourceManager):
             "Date": ("%Y-%m-%d %H:%M:%S", pytz.timezone("Asia/Shanghai"))
         }
 
-    def augment(self, resources):
+    @staticmethod
+    def expand_backups(manager, resources):
         backup_resources = []
-        cli = self.get_client()
+        cli = manager.get_client()
         for resource in resources:
             resp = cli.execute_query("DescribeBackups",
                                      {"InstanceId": resource["InstanceId"]})
             items = resp["Response"]["Items"]
-            field_format = self.resource_type.datetime_fields_format["Date"]
+            field_format = manager.resource_type.datetime_fields_format["Date"]
             for item in items:
                 # backups in non SUCCESS status don't have a proper date yet
                 if item["Status"] != "SUCCESS":
@@ -59,3 +61,5 @@ class MySQLBackUp(QueryResourceManager):
                                                       field_format[1])
             backup_resources += items
         return backup_resources
+
+    augment_pipeline = MapBatch(expand_backups)

@@ -13,9 +13,7 @@ from c7n_tencentcloud.utils import PageMethod
 
 
 class CVMDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return resources
+    tag_augment = False
 
 
 @resources.register("cvm")

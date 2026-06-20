@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import pytz
 from c7n_tencentcloud.provider import resources
-from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
-from c7n_tencentcloud.utils import PageMethod, isoformat_datetime_str
+from c7n_tencentcloud.query import NormalizeDateField, ResourceTypeInfo, QueryResourceManager
+from c7n_tencentcloud.utils import PageMethod
 
 
 @resources.register("cbs-snapshot")
@@ -42,10 +42,4 @@ class CBSSnapshot(QueryResourceManager):
             "CreateTime": ("%Y-%m-%d %H:%M:%S", pytz.timezone("Asia/Shanghai"))
         }
 
-    def augment(self, resources):
-        for resource in resources:
-            field_format = self.resource_type.datetime_fields_format["CreateTime"]
-            resource["CreateTime"] = isoformat_datetime_str(resource["CreateTime"],
-                                                            field_format[0],
-                                                            field_format[1])
-        return resources
+    augment_pipeline = NormalizeDateField("CreateTime")

@@ -9,10 +9,11 @@ from c7n.ctx import ExecutionContext
 from c7n.exceptions import PolicyExecutionError
 from c7n.filters import FilterRegistry
 from c7n.manager import ResourceManager, ResourceQueryLifecycle
-from c7n.query import sources
+from c7n.query import _apply_augment_pipeline, sources
 from c7n.utils import local_session, chunks, jmespath_search
 from .actions.tags import register_tag_actions, register_tag_filters
 from .client import Session
+from .utils import isoformat_datetime_str
 
 DESC_SOURCE_NAME = "describe-tencentcloud"
 
@@ -51,6 +52,18 @@ class ResourceTypeInfo(metaclass=TypeMeta):
     metrics_instance_id_name: str = ""
 
     resource_prefix: str = ""
+
+
+class NormalizeDateField:
+    def __init__(self, field):
+        self.field = field
+
+    def __call__(self, manager, resources):
+        field_format = manager.resource_type.datetime_fields_format[self.field]
+        for resource in resources:
+            resource[self.field] = isoformat_datetime_str(
+                resource[self.field], field_format[0], field_format[1])
+        return resources
 
 
 class ResourceQuery:
@@ -138,6 +151,8 @@ class DescribeSource:
         self.tag_batch_size: int = 9
 
     _query_helper = None
+    augment_pipeline = None
+    tag_augment = True
 
     @property
     def query_helper(self):
@@ -187,7 +202,10 @@ class DescribeSource:
         return []
 
     def augment(self, resources):
-        return self.get_resource_tag(resources)
+        if self.tag_augment:
+            resources = self.get_resource_tag(resources)
+        return _apply_augment_pipeline(
+            self.resource_manager, resources, self.augment_pipeline)
 
     def get_resource_tag(self, resources):
         """
@@ -261,6 +279,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     """QueryResourceManager"""
 
     source_mapping = {'describe': DescribeSource}
+    augment_pipeline = None
 
     class resource_type(ResourceTypeInfo):
         pass
@@ -337,7 +356,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         self.check_resource_limit(resources)
 
     def augment(self, resources):
-        return resources
+        return _apply_augment_pipeline(self, resources, self.augment_pipeline)
 
     # TODO
     # to support configs: max-resources, max-resources-percent

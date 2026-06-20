@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 from c7n.utils import type_schema, chunks
+from c7n.query import MutateResource
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod
@@ -41,15 +42,17 @@ class SecurityGroup(QueryResourceManager):
         resource_prefix = "sg"
         taggable = True
 
-    def augment(self, resources_param):
-        cli = self.get_client()
-        for resource in resources_param:
-            resp = cli.execute_query("DescribeSecurityGroupPolicies",
-                                     {"SecurityGroupId": resource["SecurityGroupId"]})
-            policy_set = resp["Response"]["SecurityGroupPolicySet"]
-            resource["IpPermissions"] = policy_set["Ingress"]
-            resource["IpPermissionsEgress"] = policy_set["Egress"]
-        return resources_param
+    @staticmethod
+    def augment_policies(manager, resource):
+        cli = manager.get_client()
+        resp = cli.execute_query(
+            "DescribeSecurityGroupPolicies",
+            {"SecurityGroupId": resource["SecurityGroupId"]})
+        policy_set = resp["Response"]["SecurityGroupPolicySet"]
+        resource["IpPermissions"] = policy_set["Ingress"]
+        resource["IpPermissionsEgress"] = policy_set["Egress"]
+
+    augment_pipeline = MutateResource(augment_policies)
 
 
 class SGPermission(Filter):
