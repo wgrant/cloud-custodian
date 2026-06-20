@@ -6,7 +6,7 @@ import re
 
 from c7n.filters import Filter, FilterValidationError, ValueFilter
 from c7n.filters.related import RelatedResourceFilter
-from c7n.query import sources
+from c7n.query import MapBatch, sources
 from c7n.resources import load_resources
 from c7n.utils import local_session, type_schema
 from c7n_azure.actions.base import AzureBaseAction
@@ -102,8 +102,9 @@ class RoleAssignment(QueryResourceManager):
             'properties.roleDefinitionId'
         )
 
-    def augment(self, resources):
-        s = self.get_session().get_session_for_resource(GRAPH_AUTH_ENDPOINT)
+    @staticmethod
+    def augment_principals(manager, resources):
+        s = manager.get_session().get_session_for_resource(GRAPH_AUTH_ENDPOINT)
         graph_client = s.client('azure.graphrbac.GraphRbacManagementClient')
 
         object_ids = list(set(
@@ -121,6 +122,8 @@ class RoleAssignment(QueryResourceManager):
                     resource['aadType'] = graph_resource.object_type
 
         return resources
+
+    augment_pipeline = MapBatch(augment_principals)
 
 
 @resources.register('roledefinition')

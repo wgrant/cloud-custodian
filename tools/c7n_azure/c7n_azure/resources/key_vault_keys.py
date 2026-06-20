@@ -7,6 +7,7 @@ import logging
 from azure.keyvault.keys import KeyProperties
 
 from c7n.filters import Filter
+from c7n.query import FilterResources
 from c7n.utils import type_schema
 
 from c7n_azure import constants
@@ -100,11 +101,12 @@ class KeyVaultKeys(ChildResourceManager):
 
         keyvault_child = True
 
-    def augment(self, resources):
-        resources = super(KeyVaultKeys, self).augment(resources)
-        # When KeyVault contains certificates, it creates corresponding key and secret objects to
-        # store cert data. They are managed by KeyVault it is not possible to do any actions.
-        return [r for r in resources if not r.get('managed')]
+    @staticmethod
+    def is_unmanaged(manager, resource):
+        # Key Vault creates managed keys for certificates; those cannot be acted on directly.
+        return not resource.get('managed')
+
+    augment_pipeline = FilterResources(is_unmanaged)
 
 
 @KeyVaultKeys.filter_registry.register('keyvault')

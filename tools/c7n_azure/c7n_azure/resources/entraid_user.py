@@ -6,6 +6,7 @@ import requests
 from datetime import datetime
 
 from c7n.filters import Filter, ValueFilter
+from c7n.query import MutateResource
 from c7n.utils import local_session, type_schema
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.constants import MSGRAPH_RESOURCE_ID
@@ -103,20 +104,17 @@ class EntraIDUser(GraphResourceManager):
                 )
             return []
 
-    def augment(self, resources):
-        """Augment user resources with additional Graph API data"""
+    @staticmethod
+    def augment_user(manager, resource):
         try:
-            # Enhance with additional properties
-            for resource in resources:
-                # Add computed fields for policy evaluation
-                resource['c7n:LastSignInDays'] = self._calculate_last_signin_days(resource)
-                resource['c7n:IsHighPrivileged'] = self._is_high_privileged_user(resource)
-                resource['c7n:PasswordAge'] = self._calculate_password_age(resource)
-
+            # Add computed fields for policy evaluation
+            resource['c7n:LastSignInDays'] = manager._calculate_last_signin_days(resource)
+            resource['c7n:IsHighPrivileged'] = manager._is_high_privileged_user(resource)
+            resource['c7n:PasswordAge'] = manager._calculate_password_age(resource)
         except Exception as e:
             log.warning(f"Failed to augment EntraID users: {e}")
 
-        return resources
+    augment_pipeline = MutateResource(augment_user)
 
     def _calculate_last_signin_days(self, user):
         """Calculate days since last sign-in"""

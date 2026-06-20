@@ -6,6 +6,7 @@ from c7n_azure.resources.arm import ArmResourceManager
 from c7n_azure.utils import ResourceIdParser
 
 from c7n.filters import Filter
+from c7n.query import MutateResource
 from c7n.utils import type_schema
 
 
@@ -76,10 +77,11 @@ class ResourceGroup(ArmResourceManager):
             d.type = RESOURCE_GROUPS_TYPE
         return [r.serialize(True) for r in data]
 
-    def augment(self, resources):
-        for resource in resources:
-            resource['type'] = RESOURCE_GROUPS_TYPE
-        return resources
+    @staticmethod
+    def set_resource_type(manager, resource):
+        resource['type'] = RESOURCE_GROUPS_TYPE
+
+    augment_pipeline = MutateResource(set_resource_type)
 
 
 @ResourceGroup.filter_registry.register('empty-group')

@@ -13,7 +13,7 @@ from c7n.actions import ActionRegistry
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import FilterRegistry
 from c7n.manager import ResourceManager, ResourceQueryLifecycle
-from c7n.query import MaxResourceLimit, sources
+from c7n.query import _apply_augment_pipeline, MaxResourceLimit, sources
 from c7n.utils import local_session
 
 from c7n_azure.actions.logic_app import LogicAppAction
@@ -229,13 +229,15 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     class resource_type(TypeInfo):
         pass
 
+    augment_pipeline = None
+
     def __init__(self, ctx, data):
         super(QueryResourceManager, self).__init__(ctx, data)
         self.source = self.get_source(self.source_type)
         self._session = None
 
     def augment(self, resources):
-        return resources
+        return _apply_augment_pipeline(self, resources, self.augment_pipeline)
 
     def get_permissions(self):
         return ()
