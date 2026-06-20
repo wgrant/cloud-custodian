@@ -29,12 +29,12 @@ from c7n.manager import resources
 from c7n.query import (
     ChildResourceManager,
     ConfigSource,
-    DescribeSource,
+    DescribeSource, DescribeWithResourceTags,
     QueryResourceManager,
     TypeInfo,
 )
 from c7n.resolver import ValuesFrom
-from c7n.tags import TagActionFilter, TagDelayedAction, Tag, RemoveTag, universal_augment
+from c7n.tags import TagActionFilter, TagDelayedAction, Tag, RemoveTag
 from c7n.utils import (
     get_partition, local_session, type_schema, chunks, filter_empty, QueryParser,
     select_keys
@@ -377,7 +377,7 @@ class UserSetBoundary(SetBoundary):
                 'UserName': resource['UserName']}
 
 
-class DescribePolicy(DescribeSource):
+class DescribePolicy(DescribeWithResourceTags):
 
     def prepare_query(self, query=None):
         queries = PolicyQueryParser.parse(self.manager.data.get('query', []))
@@ -399,9 +399,6 @@ class DescribePolicy(DescribeSource):
                 if e.response['Error']['Code'] == 'NoSuchEntityException':
                     continue
         return results
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
 
 
 @resources.register('iam-policy')

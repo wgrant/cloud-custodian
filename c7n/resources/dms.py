@@ -11,7 +11,7 @@ from c7n.utils import local_session, chunks, type_schema, get_retry
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter, VpcFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters import FilterRegistry
-from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universal_augment
+from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 
 
 class InstanceDescribe(DescribeSource):
@@ -73,10 +73,8 @@ class ReplicationInstance(QueryResourceManager):
     }
 
 
-class EndpointDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class EndpointDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('dms-endpoint')

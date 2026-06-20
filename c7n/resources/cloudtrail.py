@@ -6,8 +6,7 @@ from c7n.actions import Action, BaseAction
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import ValueFilter, Filter
 from c7n.manager import resources
-from c7n.tags import universal_augment
-from c7n.query import ConfigSource, DescribeSource, QueryResourceManager, TypeInfo
+from c7n.query import ConfigSource, DescribeWithResourceTags, QueryResourceManager, TypeInfo
 from c7n.utils import local_session, type_schema
 
 from .aws import shape_validate, Arn
@@ -15,10 +14,8 @@ from .aws import shape_validate, Arn
 log = logging.getLogger('c7n.resources.cloudtrail')
 
 
-class DescribeTrail(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class DescribeTrail(DescribeWithResourceTags):
+    pass
 
 
 def get_trail_groups(session_factory, trails):

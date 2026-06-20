@@ -1,7 +1,9 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 from c7n.manager import resources
-from c7n.query import ConfigSource, QueryResourceManager, TypeInfo, DescribeSource, ResourceQuery
+from c7n.query import (
+    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
+    ResourceQuery, TypeInfo)
 from c7n.tags import universal_augment
 from c7n.filters import ValueFilter, ListItemFilter
 from c7n.utils import type_schema, local_session
@@ -10,15 +12,11 @@ from c7n.exceptions import PolicyValidationError
 from c7n.resources.aws import shape_validate
 
 
-class DescribeRegionalWaf(DescribeSource):
+class DescribeRegionalWaf(DescribeWithResourceTags):
     def get_permissions(self):
         perms = super().get_permissions()
         perms.remove('waf-regional:GetWebAcl')
         return perms
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return universal_augment(self.manager, resources)
 
 
 class WafV2ResourceQuery(ResourceQuery):

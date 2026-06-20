@@ -3,9 +3,10 @@
 
 from c7n.actions import BaseAction
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import (
+    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager, TypeInfo)
 from c7n.utils import local_session, type_schema, QueryParser
-from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universal_augment
+from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 from c7n.filters.vpc import SubnetFilter, SecurityGroupFilter, NetworkLocation
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.offhours import OffHour, OnHour
@@ -127,10 +128,8 @@ class SagemakerTransformJob(SagemakerQueryManager):
         return list(map(_augment, super(SagemakerTransformJob, self).augment(jobs)))
 
 
-class SagemakerHyperParameterTuningJobDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerHyperParameterTuningJobDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-hyperparameter-tuning-job')
@@ -156,15 +155,12 @@ class SagemakerHyperParameterTuningJob(SagemakerQueryManager):
                 {'StatusEquals': 'InProgress'}]))
 
 
-class SagemakerAutoMLDescribeV2(DescribeSource):
+class SagemakerAutoMLDescribeV2(DescribeWithResourceTags):
 
     def get_permissions(self):
         perms = super().get_permissions()
         perms.remove('sagemaker:DescribeAutoMlJobV2')
         return perms
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
 
 
 @resources.register('sagemaker-auto-ml-job')
@@ -192,10 +188,8 @@ class SagemakerAutoMLJob(SagemakerQueryManager):
                 {'StatusEquals': 'InProgress'}]))
 
 
-class SagemakerCompilationJobDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerCompilationJobDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-compilation-job')
@@ -221,10 +215,8 @@ class SagemakerCompilationJob(SagemakerQueryManager):
                 {'StatusEquals': 'INPROGRESS'}]))
 
 
-class SagemakerProcessingJobDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerProcessingJobDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-processing-job')
@@ -250,10 +242,8 @@ class SagemakerProcessingJob(SagemakerQueryManager):
                 {'StatusEquals': 'InProgress'}]))
 
 
-class SagemakerModelBiasJobDefinitionDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerModelBiasJobDefinitionDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-model-bias-job-definition')
@@ -417,10 +407,8 @@ class Model(QueryResourceManager):
 Model.filter_registry.register('marked-for-op', TagActionFilter)
 
 
-class SagemakerClusterDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerClusterDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-cluster')
@@ -442,10 +430,8 @@ class Cluster(QueryResourceManager):
     source_mapping = {'describe': SagemakerClusterDescribe}
 
 
-class SagemakerDataQualityJobDefinitionDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerDataQualityJobDefinitionDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-data-quality-job-definition')
@@ -467,10 +453,8 @@ class SagemakerDataQualityJobDefinition(QueryResourceManager):
     source_mapping = {'describe': SagemakerDataQualityJobDefinitionDescribe}
 
 
-class SagemakerModelExplainabilityJobDefinitionDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerModelExplainabilityJobDefinitionDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-model-explainability-job-definition')
@@ -492,10 +476,8 @@ class SagemakerModelExplainabilityJobDefinition(QueryResourceManager):
     source_mapping = {'describe': SagemakerModelExplainabilityJobDefinitionDescribe}
 
 
-class SagemakerModelQualityJobDefinitionDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerModelQualityJobDefinitionDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-model-quality-job-definition')
@@ -1208,10 +1190,8 @@ class ClusterDelete(BaseAction):
                 pass
 
 
-class SagemakerDomainDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerDomainDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-domain')

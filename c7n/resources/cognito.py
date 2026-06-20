@@ -5,21 +5,16 @@ from botocore.exceptions import ClientError
 from c7n.actions import BaseAction
 from c7n.filters import WafV2FilterBase
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource
-from c7n.tags import universal_augment
+from c7n.query import QueryResourceManager, TypeInfo, DescribeWithResourceTags
 from c7n.utils import local_session, type_schema
 
 
-class DescribeIdentityPool(DescribeSource):
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return universal_augment(self.manager, resources)
+class DescribeIdentityPool(DescribeWithResourceTags):
+    pass
 
 
-class DescribeUserPool(DescribeSource):
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return universal_augment(self.manager, resources)
+class DescribeUserPool(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('identity-pool')

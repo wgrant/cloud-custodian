@@ -15,15 +15,14 @@ from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
 from c7n.query import (
     QueryResourceManager,
-    TypeInfo, DescribeSource, ConfigSource, DescribeWithResourceTags)
+    TypeInfo, ConfigSource, DescribeWithResourceTags)
 from c7n.resolver import ValuesFrom
 from c7n.tags import universal_augment
 from c7n.utils import type_schema, local_session, chunks, get_retry, jmespath_search
 
 
-class DescribeAlarm(DescribeSource):
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class DescribeAlarm(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('alarm')

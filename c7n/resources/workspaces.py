@@ -7,7 +7,7 @@ from c7n.actions import BaseAction
 from c7n.filters import ValueFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import QueryResourceManager, TypeInfo, DescribeWithResourceTags, ConfigSource
 from c7n.tags import universal_augment, Tag, RemoveTag
 from c7n.exceptions import PolicyValidationError, PolicyExecutionError
 from c7n.utils import get_retry, local_session, type_schema, chunks, jmespath_search
@@ -17,10 +17,8 @@ import c7n.filters.vpc as net_filters
 import json
 
 
-class DescribeWorkspace(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class DescribeWorkspace(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('workspaces')

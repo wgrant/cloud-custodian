@@ -7,9 +7,7 @@ from botocore.exceptions import ClientError
 from c7n.actions import BaseAction
 from c7n.filters import MetricsFilter, ShieldMetrics, Filter
 from c7n.manager import resources
-from c7n.query import (ConfigSource, QueryResourceManager, DescribeSource,
-                       TypeInfo, DescribeWithResourceTags)
-from c7n.tags import universal_augment
+from c7n.query import (ConfigSource, QueryResourceManager, TypeInfo, DescribeWithResourceTags)
 from c7n.utils import local_session, merge_dict, type_schema, get_retry
 from c7n.filters import ValueFilter, WafV2FilterBase
 from .aws import shape_validate
@@ -20,10 +18,7 @@ from c7n.resources.shield import IsShieldProtected, SetShieldProtection
 from c7n.resources.securityhub import PostFinding
 
 
-class DescribeDistribution(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class DescribeDistribution(DescribeWithResourceTags):
 
     def prepare_resource_ids(self, ids):
         distribution_ids = []
@@ -60,10 +55,8 @@ class Distribution(QueryResourceManager):
     }
 
 
-class DescribeStreamingDistribution(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class DescribeStreamingDistribution(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('streaming-distribution')

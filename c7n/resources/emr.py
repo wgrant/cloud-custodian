@@ -7,8 +7,7 @@ import json
 from c7n.actions import ActionRegistry, BaseAction
 from c7n.filters import FilterRegistry, MetricsFilter, ValueFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, ConfigSource, DescribeSource
-from c7n.tags import universal_augment
+from c7n.query import QueryResourceManager, TypeInfo, ConfigSource, DescribeWithResourceTags
 from c7n.utils import (
     local_session, type_schema, get_retry, jmespath_search, QueryParser)
 from c7n.tags import (
@@ -324,12 +323,8 @@ class DeleteEMRSecurityConfiguration(BaseAction):
                 continue
 
 
-class DescribeEMRServerlessApp(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(
-            self.manager,
-            super().augment(resources))
+class DescribeEMRServerlessApp(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('emr-serverless-app')

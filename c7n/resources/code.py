@@ -7,7 +7,8 @@ from c7n.filters.vpc import SubnetFilter, SecurityGroupFilter, VpcFilter
 from c7n.filters import ValueFilter
 from c7n.manager import resources
 from c7n.query import (
-    QueryResourceManager, DescribeSource, ConfigSource, TypeInfo, ChildResourceManager)
+    ChildResourceManager, ConfigSource, DescribeSource, DescribeWithResourceTags,
+    QueryResourceManager, TypeInfo)
 from c7n.tags import universal_augment
 from c7n.utils import local_session, type_schema, jmespath_search
 from c7n import query
@@ -15,13 +16,8 @@ from c7n import query
 from .securityhub import OtherResourcePostFinding
 
 
-class DescribeRepo(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(
-            self.manager,
-            super().augment(resources)
-        )
+class DescribeRepo(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('codecommit')
@@ -83,12 +79,8 @@ class DeleteRepository(BaseAction):
                 "Exception deleting repo:\n %s" % e)
 
 
-class DescribeBuild(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(
-            self.manager,
-            super(DescribeBuild, self).augment(resources))
+class DescribeBuild(DescribeWithResourceTags):
+    pass
 
 
 class ConfigBuild(ConfigSource):
@@ -252,11 +244,8 @@ class ConfigPipeline(ConfigSource):
         return resource
 
 
-class DescribePipeline(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return universal_augment(self.manager, resources)
+class DescribePipeline(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('codepipeline')

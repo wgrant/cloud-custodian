@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 from c7n.manager import resources
 from c7n.filters.kms import KmsRelatedFilter
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
-from c7n.tags import universal_augment
+from c7n.query import (
+    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager, TypeInfo)
 from c7n.utils import local_session
 
 
@@ -59,10 +59,7 @@ class BackupPlan(QueryResourceManager):
     }
 
 
-class DescribeVault(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super(DescribeVault, self).augment(resources))
+class DescribeVault(DescribeWithResourceTags):
 
     def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('backup')

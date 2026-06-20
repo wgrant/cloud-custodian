@@ -11,18 +11,15 @@ from c7n.manager import resources
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter, NetworkLocation
 from c7n.filters.policystatement import HasStatementFilter
 from c7n.query import (
-    QueryResourceManager, ChildResourceManager, TypeInfo, DescribeSource, ConfigSource
+    QueryResourceManager, ChildResourceManager, TypeInfo, DescribeWithResourceTags, ConfigSource
 )
-from c7n.tags import universal_augment
 from c7n.utils import local_session, type_schema, get_retry
 from .aws import shape_validate
 from c7n.filters.backup import ConsecutiveAwsBackupsFilter
 
 
-class EFSDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class EFSDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('efs')

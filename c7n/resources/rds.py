@@ -57,7 +57,8 @@ from c7n.filters import related
 import c7n.filters.vpc as net_filters
 from c7n.manager import resources
 from c7n.query import (
-    QueryResourceManager, DescribeSource, ConfigSource, TypeInfo, RetryPageIterator)
+    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
+    RetryPageIterator, TypeInfo)
 from c7n import deprecated, tags
 from c7n.tags import universal_augment
 
@@ -2167,9 +2168,8 @@ class DbRecommendations(Filter):
         return results
 
 
-class DescribeDBProxy(DescribeSource):
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class DescribeDBProxy(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('rds-proxy')

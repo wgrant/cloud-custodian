@@ -6,7 +6,7 @@ from c7n.query import (
     ChildResourceManager,
     QueryResourceManager,
     TypeInfo,
-    DescribeSource,
+    DescribeWithResourceTags,
     ChildDescribeSource,
     ConfigSource,
 )
@@ -18,12 +18,9 @@ from c7n.utils import (
 )
 
 
-class DescribeMesh(DescribeSource):
+class DescribeMesh(DescribeWithResourceTags):
     # override default describe augment to get tags
-    def augment(self, resources):
-        detailed_resources = super(DescribeMesh, self).augment(resources)
-        tagged_resources = universal_augment(self.manager, detailed_resources)
-        return tagged_resources
+    pass
 
 
 @resources.register('appmesh-mesh')

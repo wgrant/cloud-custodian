@@ -15,7 +15,7 @@ import c7n.filters.vpc as net_filters
 from datetime import datetime
 from c7n import tags
 from c7n.manager import resources
-from c7n.query import ConfigSource, QueryResourceManager, DescribeSource, TypeInfo
+from c7n.query import ConfigSource, QueryResourceManager, DescribeWithResourceTags, TypeInfo
 from c7n.utils import local_session, chunks, type_schema
 
 from c7n.resources.shield import IsShieldProtected, SetShieldProtection
@@ -30,10 +30,8 @@ filters.register('shield-enabled', IsShieldProtected)
 filters.register('shield-metrics', ShieldMetrics)
 
 
-class DescribeELB(DescribeSource):
-
-    def augment(self, resources):
-        return tags.universal_augment(self.manager, resources)
+class DescribeELB(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('elb')

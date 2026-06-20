@@ -10,7 +10,7 @@ from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n import query
 from c7n.manager import resources
 from c7n.tags import (
-    TagDelayedAction, RemoveTag, TagActionFilter, Tag, universal_augment)
+    TagDelayedAction, RemoveTag, TagActionFilter, Tag)
 from c7n.utils import (
     local_session, chunks, type_schema, snapshot_identifier)
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
@@ -37,12 +37,8 @@ class ConfigTable(query.ConfigSource):
         return resource
 
 
-class DescribeTable(query.DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(
-            self.manager,
-            super(DescribeTable, self).augment(resources))
+class DescribeTable(query.DescribeWithResourceTags):
+    pass
 
 
 @resources.register('dynamodb-table')

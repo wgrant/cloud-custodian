@@ -18,7 +18,6 @@ from c7n.manager import resources
 from c7n import query, utils
 from c7n.resources.aws import shape_validate
 from c7n.resources.iam import CheckPermissions, SpecificIamRoleManagedPolicy
-from c7n.tags import universal_augment
 from c7n.utils import (
     local_session,
     type_schema,
@@ -35,11 +34,7 @@ from .securityhub import PostFinding
 ErrAccessDenied = "AccessDeniedException"
 
 
-class DescribeLambda(query.DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(
-            self.manager, super(DescribeLambda, self).augment(resources))
+class DescribeLambda(query.DescribeWithResourceTags):
 
     def get_resources(self, ids):
         client = local_session(self.manager.session_factory).client('lambda')
@@ -1009,12 +1004,8 @@ class LambdaEdgeFilter(Filter):
         return results
 
 
-class DescribeEventSourceMappings(query.DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(
-            self.manager,
-            super(DescribeEventSourceMappings, self).augment(resources))
+class DescribeEventSourceMappings(query.DescribeWithResourceTags):
+    pass
 
 
 @resources.register('lambda-event-source-mapping')
