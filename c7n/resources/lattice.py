@@ -4,13 +4,12 @@ from c7n.filters import ValueFilter
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.manager import resources
 from c7n.query import (
-    ChildDescribeSource,
+    ChildDescribeWithResourceTags,
     ChildResourceManager,
     DescribeWithResourceTags,
     QueryResourceManager,
     TypeInfo,
 )
-from c7n.tags import universal_augment
 from c7n.utils import local_session, type_schema
 
 
@@ -80,9 +79,8 @@ class VPCLatticeTargetGroup(QueryResourceManager):
         )
 
 
-class DescribeVPCLatticeListener(ChildDescribeSource):
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class DescribeVPCLatticeListener(ChildDescribeWithResourceTags):
+    pass
 
 
 @resources.register('vpc-lattice-listener')
@@ -117,9 +115,8 @@ class VPCLatticeListener(ChildResourceManager):
         permissions_enum = ('vpc-lattice:ListListeners',)
 
 
-class DescribeServiceNetworkAssociation(ChildDescribeSource):
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class DescribeServiceNetworkAssociation(ChildDescribeWithResourceTags):
+    pass
 
 
 @resources.register('vpc-lattice-service-network-association')

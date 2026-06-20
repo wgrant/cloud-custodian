@@ -313,6 +313,17 @@ class DescribeWithResourceTags(DescribeSource):
         return universal_augment(self.manager, super().augment(resources))
 
 
+class DescribeWithInlineTags(DescribeSource):
+    tag_source_key = 'TagList'
+    tag_key = 'Tags'
+
+    def augment(self, resources):
+        resources = super().augment(resources)
+        for r in resources:
+            r[self.tag_key] = r.pop(self.tag_source_key, ())
+        return resources
+
+
 @sources.register('describe-child')
 class ChildDescribeSource(DescribeSource):
 
@@ -321,6 +332,12 @@ class ChildDescribeSource(DescribeSource):
     def get_query(self, capture_parent_id=False):
         return self.resource_query_factory(
             self.manager.session_factory, self.manager, capture_parent_id=capture_parent_id)
+
+
+class ChildDescribeWithResourceTags(ChildDescribeSource):
+
+    def augment(self, resources):
+        return universal_augment(self.manager, super().augment(resources))
 
 
 @sources.register('config')

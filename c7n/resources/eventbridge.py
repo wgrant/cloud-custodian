@@ -11,12 +11,14 @@ from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.related import ChildResourceFilter
 from c7n.manager import resources
-from c7n.query import (ChildDescribeSource, ChildResourceManager, ChildResourceQuery, ConfigSource,
-    DescribeSource, DescribeWithResourceTags, QueryResourceManager, RetryPageIterator, TypeInfo)
+from c7n.query import (
+    ChildDescribeSource, ChildDescribeWithResourceTags, ChildResourceManager,
+    ChildResourceQuery, ConfigSource, DescribeSource, DescribeWithResourceTags,
+    QueryResourceManager, RetryPageIterator, TypeInfo)
 from c7n.resolver import ValuesFrom
 from c7n.resources import load_resources
 from c7n.resources.aws import ArnResolver
-from c7n.tags import RemoveTag, Tag, universal_augment
+from c7n.tags import RemoveTag, Tag
 from c7n.utils import chunks, get_retry, local_session, type_schema
 
 
@@ -115,12 +117,9 @@ class EventRuleQuery(ChildResourceQuery):
 
 
 @query.sources.register('event-rule')
-class EventRuleSource(ChildDescribeSource):
+class EventRuleSource(ChildDescribeWithResourceTags):
 
     resource_query_factory = EventRuleQuery
-
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
 
 
 @resources.register('event-rule')

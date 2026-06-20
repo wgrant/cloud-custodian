@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 from c7n.exceptions import ClientError
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource
+from c7n.query import QueryResourceManager, TypeInfo, DescribeWithInlineTags
 import c7n.filters.vpc as net_filters
 from c7n.actions import BaseAction
 from c7n.utils import local_session, type_schema
 import c7n.filters.policystatement as polstmt_filter
 
 
-class DescribeCloudHSMCluster(DescribeSource):
+class DescribeCloudHSMCluster(DescribeWithInlineTags):
 
     def get_resources(self, resource_ids, cache=True):
         client = local_session(self.manager.session_factory).client('cloudhsmv2')
@@ -17,11 +17,6 @@ class DescribeCloudHSMCluster(DescribeSource):
             client.describe_clusters,
             Filters={
                 'clusterIds': resource_ids}).get('Clusters', ())
-
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = r.pop('TagList', ())
-        return resources
 
 
 @resources.register('cloudhsm-cluster')
@@ -110,12 +105,7 @@ class HSMClient(QueryResourceManager):
         name = 'Label'
 
 
-class DescribeCloudHSMBackup(DescribeSource):
-
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = r.pop('TagList', ())
-        return resources
+class DescribeCloudHSMBackup(DescribeWithInlineTags):
 
     def normalize_resources(self, resources, query):
         return [r for r in resources if r['BackupState'] != 'PENDING_DELETION']
