@@ -19,6 +19,7 @@ class OpsworkStack(QueryResourceManager):
     """OpsWorks Stack is no longer an available service. This resource
     soley exists for policy compatiblity.
     """
+    permission_override = ()
 
     class resource_type(TypeInfo):
         id = 'StackId'
@@ -27,9 +28,6 @@ class OpsworkStack(QueryResourceManager):
         cfn_type = 'AWS::OpsWorks::App'
 
     source_mapping = {'describe': DescribeRemoved}
-
-    def get_permissions(self):
-        return []
 
 
 @OpsworkStack.action_registry.register('delete')
@@ -59,6 +57,7 @@ class OpsworksCM(QueryResourceManager):
     """OpsWorks CM is no longer an available service. This resource
     soley exists for policy compatiblity.
     """
+    permission_override = ()
 
     class resource_type(TypeInfo):
         name = id = 'ServerName'
@@ -66,9 +65,6 @@ class OpsworksCM(QueryResourceManager):
         cfn_type = 'AWS::OpsWorksCM::Server'
 
     source_mapping = {'describe': DescribeRemoved}
-
-    def get_permissions(self):
-        return []
 
 
 @OpsworksCM.action_registry.register('delete')

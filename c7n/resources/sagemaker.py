@@ -53,6 +53,13 @@ NotebookInstance.filter_registry.register('onhour', OnHour)
 
 
 class SagemakerQueryManager(QueryResourceManager):
+    query_parser = None
+    query_default = ()
+
+    def __init__(self, ctx, data):
+        super(SagemakerQueryManager, self).__init__(ctx, data)
+        self.queries = self.query_parser.parse(
+            self.data.get('query', self.query_default))
 
     def prepare_query(self, query):
         query = query or {}
@@ -74,12 +81,6 @@ class SagemakerJob(SagemakerQueryManager):
         date = 'CreationTime'
         permission_augment = (
             'sagemaker:DescribeTrainingJob', 'sagemaker:ListTags')
-
-    def __init__(self, ctx, data):
-        super(SagemakerJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
 
     def augment(self, jobs):
         client = local_session(self.session_factory).client('sagemaker')
@@ -109,12 +110,6 @@ class SagemakerTransformJob(SagemakerQueryManager):
         filter_name = 'NameContains'
         filter_type = 'scalar'
         permission_augment = ('sagemaker:DescribeTransformJob', 'sagemaker:ListTags')
-
-    def __init__(self, ctx, data):
-        super(SagemakerTransformJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
 
     def augment(self, jobs):
         client = local_session(self.session_factory).client('sagemaker')
@@ -148,12 +143,6 @@ class SagemakerHyperParameterTuningJob(SagemakerQueryManager):
 
     source_mapping = {'describe': SagemakerHyperParameterTuningJobDescribe}
 
-    def __init__(self, ctx, data):
-        super(SagemakerHyperParameterTuningJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
-
 
 class SagemakerAutoMLDescribeV2(DescribeWithResourceTags):
 
@@ -181,12 +170,6 @@ class SagemakerAutoMLJob(SagemakerQueryManager):
 
     source_mapping = {'describe': SagemakerAutoMLDescribeV2}
 
-    def __init__(self, ctx, data):
-        super(SagemakerAutoMLJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
-
 
 class SagemakerCompilationJobDescribe(DescribeWithResourceTags):
     pass
@@ -208,12 +191,6 @@ class SagemakerCompilationJob(SagemakerQueryManager):
 
     source_mapping = {'describe': SagemakerCompilationJobDescribe}
 
-    def __init__(self, ctx, data):
-        super(SagemakerCompilationJob, self).__init__(ctx, data)
-        self.queries = CompilationJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'INPROGRESS'}]))
-
 
 class SagemakerProcessingJobDescribe(DescribeWithResourceTags):
     pass
@@ -234,12 +211,6 @@ class SagemakerProcessingJob(SagemakerQueryManager):
         universal_taggable = object()
 
     source_mapping = {'describe': SagemakerProcessingJobDescribe}
-
-    def __init__(self, ctx, data):
-        super(SagemakerProcessingJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
 
 
 class SagemakerModelBiasJobDefinitionDescribe(DescribeWithResourceTags):
@@ -291,6 +262,16 @@ class CompilationJobQueryParser(SagemakerJobQueryParser):
         'LastModifiedTimeBefore': 'date',
         'MaxResults': int,
     }
+
+
+SagemakerJob.query_parser = SagemakerTransformJob.query_parser = \
+    SagemakerHyperParameterTuningJob.query_parser = SagemakerAutoMLJob.query_parser = \
+    SagemakerProcessingJob.query_parser = SagemakerJobQueryParser
+SagemakerJob.query_default = SagemakerTransformJob.query_default = \
+    SagemakerHyperParameterTuningJob.query_default = SagemakerAutoMLJob.query_default = \
+    SagemakerProcessingJob.query_default = [{'StatusEquals': 'InProgress'}]
+SagemakerCompilationJob.query_parser = CompilationJobQueryParser
+SagemakerCompilationJob.query_default = [{'StatusEquals': 'INPROGRESS'}]
 
 
 class EndpointDescribe(DescribeSource):

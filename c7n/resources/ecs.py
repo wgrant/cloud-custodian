@@ -209,6 +209,7 @@ class ECSServiceConfigSource(ContainerConfigSource):
 class Service(query.ChildResourceManager):
 
     chunk_size = 10
+    augment_by_id = False
 
     class resource_type(query.TypeInfo):
         service = 'ecs'
@@ -224,9 +225,6 @@ class Service(query.ChildResourceManager):
         'describe-child': ECSServiceDescribeSource,
         'describe': ECSServiceDescribeSource,
     }
-
-    def augment_resources_by_ids(self, resources):
-        return resources
 
 
 @Service.filter_registry.register('metrics')
@@ -679,6 +677,8 @@ class ECSTaskDescribeSource(ECSClusterResourceDescribeSource):
 class Task(query.ChildResourceManager):
 
     chunk_size = 100
+    augment_by_id = False
+    default_child_source = 'describe-ecs-task'
 
     class resource_type(query.TypeInfo):
         service = 'ecs'
@@ -688,16 +688,6 @@ class Task(query.ChildResourceManager):
         parent_spec = ('ecs', 'cluster', None)
         supports_trailevents = True
         cfn_type = 'AWS::ECS::TaskSet'
-
-    @property
-    def source_type(self):
-        source = self.data.get('source', 'describe')
-        if source in ('describe', 'describe-child'):
-            source = 'describe-ecs-task'
-        return source
-
-    def augment_resources_by_ids(self, resources):
-        return resources
 
 
 @Task.filter_registry.register('subnet')
@@ -842,6 +832,7 @@ class ConfigECSTaskDefinition(ContainerConfigSource):
 
 @resources.register('ecs-task-definition')
 class TaskDefinition(query.QueryResourceManager):
+    augment_by_id = False
 
     class resource_type(query.TypeInfo):
         service = 'ecs'
@@ -854,9 +845,6 @@ class TaskDefinition(query.QueryResourceManager):
         'config': ConfigECSTaskDefinition,
         'describe': DescribeTaskDefinition
     }
-
-    def augment_resources_by_ids(self, resources):
-        return resources
 
 
 @TaskDefinition.action_registry.register('delete')
@@ -921,6 +909,7 @@ class DeleteTaskDefinition(BaseAction):
 class ContainerInstance(query.ChildResourceManager):
 
     chunk_size = 100
+    default_child_source = 'describe-ecs-container-instance'
 
     class resource_type(query.TypeInfo):
         service = 'ecs'
@@ -928,13 +917,6 @@ class ContainerInstance(query.ChildResourceManager):
         enum_spec = ('list_container_instances', 'containerInstanceArns', None)
         parent_spec = ('ecs', 'cluster', None)
         arn = "containerInstanceArn"
-
-    @property
-    def source_type(self):
-        source = self.data.get('source', 'describe')
-        if source in ('describe', 'describe-child'):
-            source = 'describe-ecs-container-instance'
-        return source
 
 
 @query.sources.register('describe-ecs-container-instance')

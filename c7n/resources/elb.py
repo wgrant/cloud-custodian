@@ -37,6 +37,10 @@ class DescribeELB(DescribeWithResourceTags):
 
 @resources.register('elb')
 class ELB(QueryResourceManager):
+    permission_override = (
+        'elasticloadbalancing:DescribeLoadBalancers',
+        'elasticloadbalancing:DescribeLoadBalancerAttributes',
+        'elasticloadbalancing:DescribeTags')
 
     class resource_type(TypeInfo):
         service = 'elb'
@@ -65,12 +69,6 @@ class ELB(QueryResourceManager):
         'describe': DescribeELB,
         'config': ConfigSource
     }
-
-    @classmethod
-    def get_permissions(cls):
-        return ('elasticloadbalancing:DescribeLoadBalancers',
-                'elasticloadbalancing:DescribeLoadBalancerAttributes',
-                'elasticloadbalancing:DescribeTags')
 
 
 @actions.register('set-shield')

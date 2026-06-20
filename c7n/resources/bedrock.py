@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, DescribeWithResourceTags
+from c7n.query import (
+    QueryResourceManager, TypeInfo, DescribeSource, DescribeWithResourceTags,
+    augment_resource_tags, lower_key_tag_list, tag_dict_to_list)
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universal_augment
 from c7n.utils import local_session, type_schema, QueryParser
 from c7n.actions import BaseAction
@@ -91,15 +93,10 @@ class BedrockCustomModel(QueryResourceManager):
         permission_prefix = 'bedrock'
 
     def augment(self, resources):
-        client = local_session(self.session_factory).client('bedrock')
-
-        def _augment(r):
-            tags = self.retry(client.list_tags_for_resource,
-                resourceARN=r['modelArn'])['tags']
-            r['Tags'] = [{'Key': t['key'], 'Value': t['value']} for t in tags]
-            return r
         resources = super().augment(resources)
-        return list(map(_augment, resources))
+        return augment_resource_tags(
+            self, resources, arn_arg='resourceARN', result_key='tags',
+            normalizer=lower_key_tag_list)
 
 
 @BedrockCustomModel.action_registry.register('tag')
@@ -430,16 +427,13 @@ class BedrockAgent(QueryResourceManager):
         permission_prefix = 'bedrock'
 
     def augment(self, resources):
-        client = local_session(self.session_factory).client('bedrock-agent')
-
-        def _augment(r):
-            tags = self.retry(client.list_tags_for_resource,
-                resourceArn=r['agentArn'])['tags']
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in tags.items()]
-            r.pop('promptOverrideConfiguration', None)
-            return r
         resources = super().augment(resources)
-        return list(map(_augment, resources))
+        resources = augment_resource_tags(
+            self, resources, arn_arg='resourceArn', result_key='tags',
+            normalizer=tag_dict_to_list)
+        for r in resources:
+            r.pop('promptOverrideConfiguration', None)
+        return resources
 
 
 @BedrockAgent.filter_registry.register('kms-key')
@@ -579,15 +573,10 @@ class BedrockKnowledgeBase(QueryResourceManager):
         permission_prefix = 'bedrock'
 
     def augment(self, resources):
-        client = local_session(self.session_factory).client('bedrock-agent')
-
-        def _augment(r):
-            tags = self.retry(client.list_tags_for_resource,
-                resourceArn=r['knowledgeBaseArn'])['tags']
-            r['Tags'] = [{'Key': key, 'Value': value} for key, value in tags.items()]
-            return r
         resources = super().augment(resources)
-        return list(map(_augment, resources))
+        return augment_resource_tags(
+            self, resources, arn_arg='resourceArn', result_key='tags',
+            normalizer=tag_dict_to_list)
 
 
 @BedrockKnowledgeBase.action_registry.register('tag')

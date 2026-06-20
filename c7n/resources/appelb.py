@@ -75,6 +75,10 @@ class ConfigAppElb(ConfigSource):
 class AppELB(QueryResourceManager):
     """Resource manager for v2 ELBs (AKA ALBs and NLBs).
     """
+    permission_override = (
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+        "elasticloadbalancing:DescribeTags")
 
     class resource_type(TypeInfo):
         service = 'elbv2'
@@ -97,13 +101,6 @@ class AppELB(QueryResourceManager):
         'describe': DescribeAppElb,
         'config': ConfigAppElb
     }
-
-    @classmethod
-    def get_permissions(cls):
-        # override as the service is not the iam prefix
-        return ("elasticloadbalancing:DescribeLoadBalancers",
-                "elasticloadbalancing:DescribeLoadBalancerAttributes",
-                "elasticloadbalancing:DescribeTags")
 
 
 def _describe_appelb_tags(albs, session_factory, executor_factory, retry):
@@ -1284,6 +1281,9 @@ class DescribeAppELBTargetGroup(DescribeSource):
 class AppELBTargetGroup(QueryResourceManager):
     """Resource manager for v2 ELB target groups.
     """
+    permission_override = (
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTags")
 
     class resource_type(TypeInfo):
         service = 'elbv2'
@@ -1305,12 +1305,6 @@ class AppELBTargetGroup(QueryResourceManager):
 
     filter_registry.register('tag-count', tags.TagCountFilter)
     filter_registry.register('marked-for-op', tags.TagActionFilter)
-
-    @classmethod
-    def get_permissions(cls):
-        # override as the service is not the iam prefix
-        return ("elasticloadbalancing:DescribeTargetGroups",
-                "elasticloadbalancing:DescribeTags")
 
 
 def _describe_target_group_tags(target_groups, session_factory,

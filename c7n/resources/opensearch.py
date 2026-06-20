@@ -6,7 +6,7 @@ from c7n.filters import ValueFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo
+from c7n.query import QueryResourceManager, TypeInfo, augment_resource_tags, lower_key_tag_list
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 from c7n.utils import local_session, type_schema, yaml_load
 
@@ -28,15 +28,10 @@ class OpensearchServerless(QueryResourceManager):
         permissions_augment = ("aoss:ListTagsForResource",)
 
     def augment(self, resources):
-        client = local_session(self.session_factory).client('opensearchserverless')
-
-        def _augment(r):
-            tags = self.retry(client.list_tags_for_resource,
-                resourceArn=r['arn'])['tags']
-            r['Tags'] = [{'Key': t['key'], 'Value': t['value']} for t in tags]
-            return r
         resources = super().augment(resources)
-        return list(map(_augment, resources))
+        return augment_resource_tags(
+            self, resources, arn_arg='resourceArn', result_key='tags',
+            normalizer=lower_key_tag_list)
 
 
 @OpensearchServerless.filter_registry.register('kms-key')

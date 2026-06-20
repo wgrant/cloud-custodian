@@ -1,6 +1,5 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
-from c7n.exceptions import ClientError
 from c7n.manager import resources
 from c7n.query import QueryResourceManager, TypeInfo, DescribeWithInlineTags
 import c7n.filters.vpc as net_filters
@@ -66,6 +65,8 @@ class DeleteHSMCluster(BaseAction):
 
 @resources.register('hsm')
 class CloudHSM(QueryResourceManager):
+    # Classic CloudHSM is not available for new accounts; use CloudHSMv2.
+    ignore_fetch_error_message = 'service is unavailable'
 
     class resource_type(TypeInfo):
         service = 'cloudhsm'
@@ -74,12 +75,6 @@ class CloudHSM(QueryResourceManager):
         arn_type = 'cluster'
         name = 'Name'
         detail_spec = ("describe_hsm", "HsmArn", None, None)
-
-    def handle_fetch_error(self, error, query):
-        # cloudhsm is not available for new accounts, use cloudhsmV2
-        if isinstance(error, ClientError) and 'service is unavailable' in str(error):
-            return []
-        return super().handle_fetch_error(error, query)
 
 
 @resources.register('hsm-hapg')

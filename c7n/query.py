@@ -19,7 +19,8 @@ from c7n.registry import PluginRegistry
 from c7n.tags import register_ec2_tags, register_universal_tags, universal_augment
 from c7n.utils import (
     local_session, generate_arn, get_retry,
-    chunks, camelResource, jmespath_compile, get_path, is_not_found
+    chunks, camelResource, jmespath_compile, get_path, is_not_found,
+    merge_dict_list
 )
 
 try:
@@ -324,6 +325,29 @@ class DescribeWithInlineTags(DescribeSource):
         return resources
 
 
+def tag_dict_to_list(tags):
+    return [{'Key': k, 'Value': v} for k, v in tags.items()]
+
+
+def lower_key_tag_list(tags):
+    return [{'Key': t['key'], 'Value': t['value']} for t in tags]
+
+
+def augment_resource_tags(manager, resources, op='list_tags_for_resource',
+                          arn_key=None, arn_arg='ResourceArn', result_key='Tags',
+                          service=None, normalizer=None):
+    client = local_session(manager.session_factory).client(
+        service or manager.resource_type.service)
+    normalizer = normalizer or (lambda tags: tags)
+    arn_key = arn_key or manager.resource_type.arn
+    for resource in resources:
+        response = manager.retry(
+            getattr(client, op),
+            **{arn_arg: get_path(arn_key, resource)})
+        resource['Tags'] = normalizer(response.get(result_key, ()))
+    return resources
+
+
 @sources.register('describe-child')
 class ChildDescribeSource(DescribeSource):
 
@@ -503,6 +527,11 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     chunk_size = 20
 
     _generate_arn = None
+    augment_by_id = True
+    policy_query_parser = None
+    policy_query_default = None
+    permission_override = None
+    ignore_fetch_error_message = None
 
     retry = staticmethod(
         get_retry((
@@ -554,6 +583,8 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         return ids
 
     def get_permissions(self):
+        if self.permission_override is not None:
+            return list(self.permission_override)
         perms = self.source.get_permissions()
         if getattr(self, 'permissions', None):
             perms.extend(self.permissions)
@@ -569,7 +600,36 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         }
 
     def prepare_query(self, query):
+        query = self.get_query_params(query)
         return self.source.get_query_params(query)
+
+    def get_policy_query(self):
+        if self.policy_query_parser is None or 'query' not in self.data:
+            return None
+        parser = self.policy_query_parser
+        if parser is True:
+            return merge_dict_list(self.data['query'])
+        parsed = parser.parse(self.data.get('query', []))
+        return merge_dict_list(parsed)
+
+    def get_query_params(self, query):
+        policy_query = self.get_policy_query()
+        if query is None:
+            query = {}
+        if policy_query:
+            query.update(policy_query)
+        default_query = self.get_default_query_params()
+        for key, value in default_query.items():
+            query.setdefault(key, value)
+        return query
+
+    def get_default_query_params(self):
+        default = self.policy_query_default
+        if default is None:
+            return {}
+        if callable(default):
+            default = default(self)
+        return dict(default)
 
     def fetch_resources(self, query):
         if query is None:
@@ -578,6 +638,9 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
             return self.source.resources(query)
 
     def handle_fetch_error(self, error, query):
+        if (self.ignore_fetch_error_message and isinstance(error, ClientError) and
+                self.ignore_fetch_error_message in str(error)):
+            return []
         raise error
 
     def normalize_resources(self, resources, query):
@@ -635,6 +698,8 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         return self.normalize_resources(resources, None)
 
     def augment_resources_by_ids(self, resources):
+        if not self.augment_by_id:
+            return resources
         return self.augment_resources(resources)
 
     def get_resources(self, ids, cache=True, augment=True):
@@ -714,6 +779,41 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         return self._generate_arn
 
 
+class AccountlessArnMixin:
+    """Generate ARNs for services such as API Gateway that omit account id."""
+
+    def get_arn_service(self):
+        return self.resource_type.arn_service or self.resource_type.service
+
+    @property
+    def generate_arn(self):
+        if self._generate_arn is None:
+            self._generate_arn = functools.partial(
+                generate_arn,
+                self.get_arn_service(),
+                region=not self.resource_type.global_resource and self.config.region or "",
+                resource_type=self.resource_type.arn_type,
+                separator=self.resource_type.arn_separator)
+        return self._generate_arn
+
+
+class ArnPathMixin:
+    arn_id_path = None
+
+    def get_arns(self, resources):
+        return [self.generate_arn(get_path(self.arn_id_path, r)) for r in resources]
+
+
+class ArnFormatMixin:
+    arn_id_template = None
+
+    def get_arn_id(self, resource):
+        return self.arn_id_template.format(**resource)
+
+    def get_arns(self, resources):
+        return [self.generate_arn(self.get_arn_id(r)) for r in resources]
+
+
 class FixedRegionClientMixin:
     client_region = None
 
@@ -783,11 +883,14 @@ class MaxResourceLimit:
 class ChildResourceManager(QueryResourceManager):
 
     child_source = 'describe-child'
+    default_child_source = None
 
     @property
     def source_type(self):
         source = self.data.get('source', self.child_source)
-        if source == 'describe':
+        if self.default_child_source and source in ('describe', self.child_source):
+            source = self.default_child_source
+        elif source == 'describe':
             source = self.child_source
         return source
 

@@ -129,7 +129,7 @@ class ApiDescribeSource(query.DescribeSource):
 
 
 @resources.register('rest-api')
-class RestApi(query.QueryResourceManager):
+class RestApi(query.AccountlessArnMixin, query.QueryResourceManager):
 
     class resource_type(query.TypeInfo):
         service = 'apigateway'
@@ -147,21 +147,6 @@ class RestApi(query.QueryResourceManager):
         'config': query.ConfigSource,
         'describe': ApiDescribeSource
     }
-
-    @property
-    def generate_arn(self):
-        """
-         Sample arn: arn:aws:apigateway:us-east-1::/restapis/rest-api-id
-         This method overrides c7n.utils.generate_arn and drops
-         account id from the generic arn.
-        """
-        if self._generate_arn is None:
-            self._generate_arn = functools.partial(
-                generate_arn,
-                self.resource_type.service,
-                region=self.config.region,
-                resource_type=self.resource_type.arn_type)
-        return self._generate_arn
 
 
 @RestApi.filter_registry.register('metrics')
@@ -1083,7 +1068,8 @@ class UpdateRestMethod(BaseAction):
 
 
 @resources.register('apigw-domain-name')
-class CustomDomainName(query.QueryResourceManager):
+class CustomDomainName(query.AccountlessArnMixin, query.QueryResourceManager):
+    permission_override = ('apigateway:GET',)
 
     class resource_type(query.TypeInfo):
         enum_spec = ('get_domain_names', 'items', None)
@@ -1093,25 +1079,6 @@ class CustomDomainName(query.QueryResourceManager):
         universal_taggable = True
         cfn_type = 'AWS::ApiGateway::DomainName'
         date = 'createdDate'
-
-    @classmethod
-    def get_permissions(cls):
-        return ('apigateway:GET',)
-
-    @property
-    def generate_arn(self):
-        """
-         Sample arn: arn:aws:apigateway:us-east-1::/restapis/rest-api-id
-         This method overrides c7n.utils.generate_arn and drops
-         account id from the generic arn.
-        """
-        if self._generate_arn is None:
-            self._generate_arn = functools.partial(
-                generate_arn,
-                self.resource_type.service,
-                region=self.config.region,
-                resource_type=self.resource_type.arn_type)
-        return self._generate_arn
 
 
 @CustomDomainName.action_registry.register('update-security')
@@ -1159,10 +1126,11 @@ class ApiGwV2DescribeSource(query.DescribeSource):
 
 
 @resources.register('apigwv2')
-class ApiGwV2(query.QueryResourceManager):
+class ApiGwV2(query.AccountlessArnMixin, query.QueryResourceManager):
 
     class resource_type(query.TypeInfo):
         service = 'apigatewayv2'
+        arn_service = 'apigateway'
         arn_type = '/apis'
         enum_spec = ('get_apis', 'Items', None)
         id = 'ApiId'
@@ -1178,23 +1146,6 @@ class ApiGwV2(query.QueryResourceManager):
         'config': query.ConfigSource,
         'describe': ApiGwV2DescribeSource
     }
-
-    @property
-    def generate_arn(self):
-        """
-         Sample arn: arn:aws:apigateway:us-east-1::/apis/api-id
-         This method overrides c7n.utils.generate_arn and drops
-         account id from the generic arn.
-        """
-        if self._generate_arn is None:
-            self._generate_arn = functools.partial(
-                generate_arn,
-                "apigateway",
-                region=self.config.region,
-                resource_type=self.resource_type.arn_type,
-            )
-
-        return self._generate_arn
 
 
 @ApiGwV2.action_registry.register('update')

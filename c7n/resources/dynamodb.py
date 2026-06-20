@@ -655,6 +655,8 @@ class DescribeDaxCluster(query.DescribeSource):
 
 @resources.register('dax')
 class DynamoDbAccelerator(query.QueryResourceManager):
+    # list_tags on DAX resources can fail until the cluster is finished creating.
+    augment_by_id = False
 
     class resource_type(query.TypeInfo):
         service = 'dax'
@@ -669,13 +671,6 @@ class DynamoDbAccelerator(query.QueryResourceManager):
         'describe': DescribeDaxCluster,
         'config': query.ConfigSource
     }
-
-    def augment_resources_by_ids(self, resources):
-        """Disable augment for serverless policies.
-
-        list_tags on dax resources always fail until the cluster is finished creating.
-        """
-        return resources
 
 
 def _dax_cluster_tags(tables, session_factory, retry, log):

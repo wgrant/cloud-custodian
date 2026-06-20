@@ -212,6 +212,7 @@ class DescribeTransferUser(ChildDescribeSource):
 
 @resources.register('transfer-user')
 class TransferUser(ChildResourceManager):
+    augment_by_id = False
 
     class resource_type(TypeInfo):
         service = 'transfer'
@@ -226,9 +227,6 @@ class TransferUser(ChildResourceManager):
     source_mapping = {
         'describe-child': DescribeTransferUser
     }
-
-    def augment_resources_by_ids(self, resources):
-        return resources
 
 
 @TransferUser.action_registry.register('delete')

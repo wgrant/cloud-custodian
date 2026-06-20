@@ -64,7 +64,7 @@ from c7n.tags import universal_augment
 
 from c7n.utils import (
     local_session, type_schema, get_retry, chunks, snapshot_identifier,
-    merge_dict_list, filter_empty, jmespath_search)
+    filter_empty, jmespath_search)
 from c7n.resources.kms import ResourceKmsKeyAlias
 from c7n.resources.securityhub import PostFinding
 from c7n.filters.backup import ConsecutiveAwsBackupsFilter
@@ -97,6 +97,7 @@ class ConfigRDS(ConfigSource):
 class RDS(QueryResourceManager):
     """Resource manager for RDS DB instances.
     """
+    policy_query_parser = True
 
     class resource_type(TypeInfo):
         service = 'rds'
@@ -128,13 +129,6 @@ class RDS(QueryResourceManager):
 
     filter_registry = filters
     action_registry = actions
-
-    def prepare_query(self, query):
-        if query is None and 'query' in self.data:
-            query = merge_dict_list(self.data['query'])
-        elif query is None:
-            query = {}
-        return super().prepare_query(query)
 
     source_mapping = {
         'describe': DescribeRDS,

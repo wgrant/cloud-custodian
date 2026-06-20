@@ -19,6 +19,7 @@ class DescribeRemoved(DescribeSource):
 
 @resources.register('qldb')
 class QLDB(QueryResourceManager):
+    permission_override = ()
 
     class resource_type(TypeInfo):
         arn_type = 'ledger'
@@ -33,9 +34,6 @@ class QLDB(QueryResourceManager):
         'describe': DescribeRemoved,
         'config': ConfigSource
     }
-
-    def get_permissions(self):
-        return []
 
 
 @QLDB.action_registry.register('delete')

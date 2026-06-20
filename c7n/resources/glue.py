@@ -352,9 +352,10 @@ class DeleteDatabase(BaseAction):
 
 
 @resources.register('glue-table')
-class GlueTable(query.ChildResourceManager):
+class GlueTable(query.ArnFormatMixin, query.ChildResourceManager):
 
     child_source = 'describe-table'
+    arn_id_template = '{DatabaseName}/{Name}'
 
     class resource_type(TypeInfo):
         service = 'glue'
@@ -363,9 +364,6 @@ class GlueTable(query.ChildResourceManager):
         id = name = 'Name'
         date = 'CreatedOn'
         arn_type = 'table'
-
-    def get_arns(self, resources):
-        return [self.generate_arn(r['DatabaseName'] + '/' + r['Name']) for r in resources]
 
 
 @query.sources.register('describe-table')
@@ -429,6 +427,7 @@ class DeleteClassifier(BaseAction):
 
 @resources.register('glue-ml-transform')
 class GlueMLTransform(QueryResourceManager):
+    permission_override = ('glue:GetMLTransforms',)
 
     class resource_type(TypeInfo):
         service = 'glue'
@@ -441,9 +440,6 @@ class GlueMLTransform(QueryResourceManager):
 
     source_mapping = {'describe': query.DescribeWithResourceTags,
                       'config': query.ConfigSource}
-
-    def get_permissions(self):
-        return ('glue:GetMLTransforms',)
 
 
 @GlueMLTransform.action_registry.register('delete')

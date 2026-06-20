@@ -21,7 +21,6 @@ from c7n.utils import (
     local_session,
     type_schema,
     chunks,
-    merge_dict_list,
     parse_date,
     jmespath_compile
 )
@@ -49,6 +48,8 @@ class DescribeImageSource(DescribeSource):
 
 @resources.register('ami')
 class AMI(QueryResourceManager):
+    policy_query_parser = True
+    policy_query_default = {'Owners': ['self']}
 
     class resource_type(TypeInfo):
         service = 'ec2'
@@ -65,15 +66,6 @@ class AMI(QueryResourceManager):
     source_mapping = {
         'describe': DescribeImageSource
     }
-
-    def prepare_query(self, query):
-        if query is None and 'query' in self.data:
-            query = merge_dict_list(self.data['query'])
-        elif query is None:
-            query = {}
-        if query.get('Owners') is None:
-            query['Owners'] = ['self']
-        return super().prepare_query(query)
 
 
 class ErrorHandler:

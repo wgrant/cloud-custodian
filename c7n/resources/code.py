@@ -8,7 +8,7 @@ from c7n.filters import ValueFilter
 from c7n.manager import resources
 from c7n.query import (
     ChildResourceManager, ConfigSource, DescribeSource, DescribeWithResourceTags,
-    QueryResourceManager, TypeInfo)
+    QueryResourceManager, TypeInfo, ArnFormatMixin, ArnPathMixin)
 from c7n.tags import universal_augment
 from c7n.utils import local_session, type_schema, jmespath_search
 from c7n import query
@@ -295,7 +295,8 @@ class DescribeApplication(DescribeSource):
 
 
 @resources.register('codedeploy-app')
-class CodeDeployApplication(QueryResourceManager):
+class CodeDeployApplication(ArnPathMixin, QueryResourceManager):
+    arn_id_path = 'applicationName'
 
     class resource_type(TypeInfo):
         service = 'codedeploy'
@@ -314,9 +315,6 @@ class CodeDeployApplication(QueryResourceManager):
         'describe': DescribeApplication,
         'config': ConfigSource
     }
-
-    def get_arns(self, resources):
-        return [self.generate_arn(r['applicationName']) for r in resources]
 
 
 @CodeDeployApplication.action_registry.register('delete')
@@ -374,7 +372,8 @@ class DescribeDeploymentGroup(query.ChildDescribeSource):
 
 
 @resources.register('codedeploy-group')
-class CodeDeployDeploymentGroup(ChildResourceManager):
+class CodeDeployDeploymentGroup(ArnFormatMixin, ChildResourceManager):
+    arn_id_template = '{applicationName}/{deploymentGroupName}'
 
     class resource_type(TypeInfo):
         service = 'codedeploy'
@@ -391,12 +390,6 @@ class CodeDeployDeploymentGroup(ChildResourceManager):
     source_mapping = {
         'describe-child': DescribeDeploymentGroup
     }
-
-    def get_arns(self, resources):
-        arns = []
-        for r in resources:
-            arns.append(self.generate_arn(r['applicationName'] + '/' + r['deploymentGroupName']))
-        return arns
 
 
 @resources.register('codedeploy-config')

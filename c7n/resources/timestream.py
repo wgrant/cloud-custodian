@@ -3,7 +3,8 @@ from c7n.actions import Action
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 import c7n.filters.vpc as net_filters
-from c7n.query import DescribeSource, QueryResourceManager, TypeInfo
+from c7n.query import (
+    DescribeSource, QueryResourceManager, TypeInfo, augment_resource_tags, tag_dict_to_list)
 from c7n.utils import local_session, type_schema
 from c7n.tags import (
     TagDelayedAction,
@@ -68,12 +69,9 @@ class TimestreamInfluxDB(QueryResourceManager):
 
     def augment(self, resources):
         resources = super().augment(resources)
-        for r in resources:
-            client = local_session(self.session_factory).client('timestream-influxdb')
-            tags = client.list_tags_for_resource(resourceArn=r['arn'])['tags']
-            if tags:
-                r['Tags'] = [{'Key': k, 'Value': v} for k, v in tags.items()]
-        return resources
+        return augment_resource_tags(
+            self, resources, arn_arg='resourceArn', result_key='tags',
+            normalizer=tag_dict_to_list)
 
 
 @resources.register('timestream-influxdb-cluster')
@@ -90,12 +88,9 @@ class TimestreamInfluxDBCluster(QueryResourceManager):
 
     def augment(self, resources):
         resources = super().augment(resources)
-        for r in resources:
-            client = local_session(self.session_factory).client('timestream-influxdb')
-            tags = client.list_tags_for_resource(resourceArn=r['arn'])['tags']
-            if tags:
-                r['Tags'] = [{'Key': k, 'Value': v} for k, v in tags.items()]
-        return resources
+        return augment_resource_tags(
+            self, resources, arn_arg='resourceArn', result_key='tags',
+            normalizer=tag_dict_to_list)
 
 
 @TimestreamDatabase.action_registry.register('tag')
