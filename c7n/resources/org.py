@@ -82,9 +82,7 @@ class OrgPolicy(QueryResourceManager, OrgAccess):
         if query is not None:
             q.update(query)
         return super().prepare_query(q)
-
-    def augment(self, resources):
-        return universal_augment(self, resources)
+    universal_tag_augment = True
 
     def parse_query(self, query=None):
         params = {}
@@ -170,8 +168,7 @@ class OrgAccount(QueryResourceManager, OrgAccess):
 
     org_session = None
 
-    def augment(self, resources):
-        return universal_augment(self, resources)
+    universal_tag_augment = True
 
     def validate(self):
         self.parse_query()

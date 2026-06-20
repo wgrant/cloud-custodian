@@ -14,7 +14,7 @@ from c7n.manager import resources
 from c7n.query import (
     ChildDescribeSource, ChildDescribeWithResourceTags, ChildResourceManager,
     ChildResourceQuery, ConfigSource, DescribeSource, DescribeWithResourceTags,
-    QueryResourceManager, RetryPageIterator, TypeInfo)
+    QueryResourceManager, RetryPageIterator, TagAugmentSpec, TypeInfo)
 from c7n.resolver import ValuesFrom
 from c7n.resources import load_resources
 from c7n.resources.aws import ArnResolver
@@ -518,13 +518,7 @@ class DeleteTarget(BaseAction):
 
 
 class EventBridgePipesDescribe(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        for r in resources:
-            if 'Tags' in r:
-                r['Tags'] = [{'Key': k, 'Value': v} for k, v in r['Tags'].items()]
-        return resources
+    tag_normalize = TagAugmentSpec(source='Tags')
 
 
 @resources.register('eventbridge-pipes')

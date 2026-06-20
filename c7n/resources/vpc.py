@@ -2009,11 +2009,8 @@ class SecurityGroupPostFinding(OtherResourcePostFinding):
 
 
 class DescribeENI(query.DescribeSource):
-
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = r.pop('TagSet', [])
-        return resources
+    tag_normalize = query.TagAugmentSpec(
+        source='TagSet', shape='identity', pop=True, default=())
 
 
 @resources.register('eni')

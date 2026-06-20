@@ -2,19 +2,13 @@ from c7n.actions import Action
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import Filter
 from c7n.manager import resources
-from c7n.query import DescribeSource, QueryResourceManager, TypeInfo
+from c7n.query import DescribeSource, QueryResourceManager, TagAugmentSpec, TypeInfo
 from c7n.resolver import ValuesFrom
 from c7n.utils import get_retry, local_session, type_schema
 
 
 class ResourceShareDescribe(DescribeSource):
-
-    def augment(self, resources):
-        def _augment(r):
-            r['Tags'] = [{'Key': t['key'], 'Value': t['value']} for t in r.get('tags', [])]
-            return r
-        resources = super().augment(resources)
-        return list(map(_augment, resources))
+    tag_normalize = TagAugmentSpec(source='tags', shape='lower-list', default=())
 
 
 @resources.register('resource-share-other')

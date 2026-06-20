@@ -4,7 +4,7 @@ from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 import c7n.filters.vpc as net_filters
 from c7n.query import (
-    DescribeSource, QueryResourceManager, TypeInfo, augment_resource_tags, tag_dict_to_list)
+    DescribeSource, QueryResourceManager, TagAugmentSpec, TypeInfo)
 from c7n.utils import local_session, type_schema
 from c7n.tags import (
     TagDelayedAction,
@@ -17,11 +17,7 @@ from c7n.filters import ValueFilter
 
 
 class DescribeTimestream(DescribeSource):
-    def augment(self, resources):
-        for r in resources:
-            client = local_session(self.manager.session_factory).client('timestream-write')
-            r['Tags'] = client.list_tags_for_resource(ResourceARN=r['Arn'])['Tags']
-        return resources
+    tag_augment = TagAugmentSpec(arn_key='Arn', arg='ResourceARN')
 
 
 @resources.register('timestream-database')
@@ -67,11 +63,7 @@ class TimestreamInfluxDB(QueryResourceManager):
         detail_spec = ('get_db_instance', 'identifier', 'id', None)
         permission_prefix = 'timestream-influxdb'
 
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return augment_resource_tags(
-            self, resources, arn_arg='resourceArn', result_key='tags',
-            normalizer=tag_dict_to_list)
+    tag_augment = TagAugmentSpec(arg='resourceArn', result='tags', shape='dict')
 
 
 @resources.register('timestream-influxdb-cluster')
@@ -86,11 +78,7 @@ class TimestreamInfluxDBCluster(QueryResourceManager):
         permissions_enum = ('timestream-influxdb:ListDbClusters',
                             'timestream-influxdb:GetDbCluster')
 
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return augment_resource_tags(
-            self, resources, arn_arg='resourceArn', result_key='tags',
-            normalizer=tag_dict_to_list)
+    tag_augment = TagAugmentSpec(arg='resourceArn', result='tags', shape='dict')
 
 
 @TimestreamDatabase.action_registry.register('tag')

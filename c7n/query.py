@@ -215,10 +215,78 @@ def _napi(op_name):
 sources = PluginRegistry('sources')
 
 
+_TAG_SOURCE_MISSING = object()
+
+
+class TagAugmentSpec:
+    def __init__(self, source=None, dest='Tags', shape=None, pop=False,
+                 op='list_tags_for_resource', arn_key=None, arg='ResourceArn',
+                 result='Tags', service=None, ignore_errors=(),
+                 default=_TAG_SOURCE_MISSING):
+        self.source = source
+        self.dest = dest
+        self.shape = shape or ('dict' if source else 'identity')
+        self.pop = pop
+        self.op = op
+        self.arn_key = arn_key
+        self.arg = arg
+        self.result = result
+        self.service = service
+        self.ignore_errors = ignore_errors
+        self.default = default
+
+    def normalize(self, tags):
+        if self.shape == 'dict':
+            return tag_dict_to_list(tags or {})
+        if self.shape == 'lower-list':
+            return lower_key_tag_list(tags or ())
+        return tags or []
+
+
+def _normalize_tags(resources, spec):
+    for resource in resources:
+        if spec.source not in resource:
+            if spec.default is _TAG_SOURCE_MISSING:
+                continue
+            tags = spec.default
+        else:
+            tags = resource.pop(spec.source) if spec.pop else resource.get(spec.source)
+        resource[spec.dest] = spec.normalize(tags)
+    return resources
+
+
+def _fetch_tags(manager, resources, spec):
+    return augment_resource_tags(
+        manager, resources, op=spec.op, arn_key=spec.arn_key, arn_arg=spec.arg,
+        result_key=spec.result, service=spec.service, normalizer=spec.normalize,
+        ignore_errors=spec.ignore_errors)
+
+
+def _iter_tag_specs(specs):
+    if specs is None:
+        return ()
+    if isinstance(specs, (list, tuple)):
+        return specs
+    return (specs,)
+
+
+def _apply_tag_augment(manager, resources, normalize=None, fetch=None, universal=False):
+    for spec in _iter_tag_specs(normalize):
+        resources = _normalize_tags(resources, spec)
+    for spec in _iter_tag_specs(fetch):
+        resources = _fetch_tags(manager, resources, spec)
+    if universal:
+        resources = universal_augment(manager, resources)
+    return resources
+
+
 @sources.register('describe')
 class DescribeSource:
 
     resource_query_factory = ResourceQuery
+    tag_normalize = None
+    tag_augment = None
+    universal_tag_augment = False
 
     def __init__(self, manager):
         self.manager = manager
@@ -293,19 +361,23 @@ class DescribeSource:
             detail_spec = getattr(model, 'batch_detail_spec', None)
             _augment = _batch_augment
         else:
-            return resources
-        if self.manager.get_client:
-            client = self.manager.get_client()
-        else:
-            client = local_session(self.manager.session_factory).client(
-                model.service, region_name=self.manager.config.region)
-        _augment = functools.partial(
-            _augment, self.manager, model, detail_spec, client)
-        with self.manager.executor_factory(
-                max_workers=self.manager.max_workers) as w:
-            results = list(w.map(
-                _augment, chunks(resources, self.manager.chunk_size)))
-            return list(itertools.chain(*results))
+            detail_spec = None
+        if detail_spec:
+            if self.manager.get_client:
+                client = self.manager.get_client()
+            else:
+                client = local_session(self.manager.session_factory).client(
+                    model.service, region_name=self.manager.config.region)
+            _augment = functools.partial(
+                _augment, self.manager, model, detail_spec, client)
+            with self.manager.executor_factory(
+                    max_workers=self.manager.max_workers) as w:
+                results = list(w.map(
+                    _augment, chunks(resources, self.manager.chunk_size)))
+                resources = list(itertools.chain(*results))
+        return _apply_tag_augment(
+            self.manager, resources, self.tag_normalize,
+            self.tag_augment, self.universal_tag_augment)
 
 
 class DescribeWithResourceTags(DescribeSource):
@@ -335,15 +407,22 @@ def lower_key_tag_list(tags):
 
 def augment_resource_tags(manager, resources, op='list_tags_for_resource',
                           arn_key=None, arn_arg='ResourceArn', result_key='Tags',
-                          service=None, normalizer=None):
-    client = local_session(manager.session_factory).client(
-        service or manager.resource_type.service)
+                          service=None, normalizer=None, ignore_errors=()):
+    if service is None and getattr(manager, 'get_client', None):
+        client = manager.get_client()
+    else:
+        client = local_session(manager.session_factory).client(
+            service or manager.resource_type.service)
     normalizer = normalizer or (lambda tags: tags)
     arn_key = arn_key or manager.resource_type.arn
     for resource in resources:
         response = manager.retry(
             getattr(client, op),
+            ignore_err_codes=ignore_errors,
             **{arn_arg: get_path(arn_key, resource)})
+        if response is None:
+            resource['Tags'] = []
+            continue
         resource['Tags'] = normalizer(response.get(result_key, ()))
     return resources
 
@@ -532,6 +611,9 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     policy_query_default = None
     permission_override = None
     ignore_fetch_error_message = None
+    tag_normalize = None
+    tag_augment = None
+    universal_tag_augment = False
 
     retry = staticmethod(
         get_retry((
@@ -725,7 +807,10 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         ie. we want tags by default (rds, elb), and policy, location, acl for
         s3 buckets.
         """
-        return self.source.augment(resources)
+        resources = self.source.augment(resources)
+        return _apply_tag_augment(
+            self, resources, self.tag_normalize,
+            self.tag_augment, self.universal_tag_augment)
 
     @property
     def account_id(self):

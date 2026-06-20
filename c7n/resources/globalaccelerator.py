@@ -3,7 +3,7 @@
 
 from .aws import AWS
 from c7n.query import (
-    FixedRegionClientMixin, QueryResourceManager, TypeInfo)
+    FixedRegionClientMixin, QueryResourceManager, TagAugmentSpec, TypeInfo)
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 from c7n.resources.shield import IsShieldProtected
 from c7n.filters import ValueFilter
@@ -38,16 +38,7 @@ class GlobalAccelerator(FixedRegionClientMixin, QueryResourceManager):
         arn_type = 'accelerator'
         cfn_type = 'AWS::GlobalAccelerator::Accelerator'
         permission_prefix = 'globalaccelerator'
-
-    def augment(self, resources):
-        client = self.get_client()
-
-        def _augment(r):
-            r['Tags'] = self.retry(client.list_tags_for_resource,
-                ResourceArn=r['AcceleratorArn'])['Tags']
-            return r
-        resources = super().augment(resources)
-        return list(map(_augment, resources))
+    tag_augment = TagAugmentSpec(arn_key='AcceleratorArn')
 
 
 # When taggingresource api is used in tagging operation, got the error:

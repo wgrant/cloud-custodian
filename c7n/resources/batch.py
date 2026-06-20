@@ -3,16 +3,12 @@
 from c7n.actions import BaseAction
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import QueryResourceManager, TagAugmentSpec, TypeInfo, DescribeSource, ConfigSource
 from c7n.utils import local_session, type_schema
 
 
 class DescribeBatch(DescribeSource):
-
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in r.get('tags', {}).items()]
-        return resources
+    tag_normalize = TagAugmentSpec(source='tags', default=())
 
 
 @resources.register('batch-compute')

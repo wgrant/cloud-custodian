@@ -135,14 +135,8 @@ class DescribeQuicksightWithAccountId(query.DescribeSource):
             return []
         return super().handle_fetch_error(error, query)
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('quicksight')
-        for r in resources:
-            result = self.manager.retry(client.list_tags_for_resource,
-                                ResourceArn=r['Arn'],
-                                ignore_err_codes=("ResourceNotFoundException",))
-            r['Tags'] = result.get('Tags', []) if result else []
-        return resources
+    tag_augment = query.TagAugmentSpec(
+        arn_key='Arn', ignore_errors=("ResourceNotFoundException",))
 
 
 @resources.register("quicksight-dashboard")

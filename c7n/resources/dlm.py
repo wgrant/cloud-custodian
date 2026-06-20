@@ -1,7 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo
+from c7n.query import QueryResourceManager, TagAugmentSpec, TypeInfo
 from c7n.tags import Tag, RemoveTag
 
 
@@ -21,11 +21,7 @@ class DLMPolicy(QueryResourceManager):
         cfn_type = 'AWS::DLM::LifecyclePolicy'
         # arn:aws:dlm:us-east-1:532725030595:policy/policy-0e23a047d0fdb7761
 
-    def augment(self, resources):
-        super().augment(resources)
-        for r in resources:
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in r.get('Tags', {}).items()]
-        return resources
+    tag_normalize = TagAugmentSpec(source='Tags', default=())
 
 
 @DLMPolicy.action_registry.register('tag')

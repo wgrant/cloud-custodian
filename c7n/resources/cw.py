@@ -15,7 +15,7 @@ from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
 from c7n.query import (
     QueryResourceManager,
-    TypeInfo, ConfigSource, DescribeWithResourceTags)
+    TagAugmentSpec, TypeInfo, ConfigSource, DescribeWithResourceTags)
 from c7n.resolver import ValuesFrom
 from c7n.tags import universal_augment
 from c7n.utils import type_schema, local_session, chunks, get_retry, jmespath_search
@@ -860,13 +860,7 @@ class SyntheticsCanary(QueryResourceManager):
         enum_spec = ('describe_canaries', 'Canaries', None)
         universal_taggable = object()
 
-    def augment(self, resources):
-        for r in resources:
-            # AWS returns tags as a dict { "Key": "Value" }
-            # Custodian expects [{"Key": k, "Value": v}, ...]
-            r["Tags"] = [{"Key": k, "Value": v} for k, v in r["Tags"].items()]
-
-        return resources
+    tag_normalize = TagAugmentSpec(source='Tags')
 
 
 @SyntheticsCanary.action_registry.register('start')

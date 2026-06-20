@@ -549,10 +549,7 @@ class GlueWorkflow(QueryResourceManager):
         arn_type = 'workflow'
         universal_taggable = object()
         cfn_type = 'AWS::Glue::Workflow'
-
-    def augment(self, resources):
-        return universal_augment(
-            self, super(GlueWorkflow, self).augment(resources))
+    universal_tag_augment = True
 
 
 @GlueWorkflow.action_registry.register('delete')

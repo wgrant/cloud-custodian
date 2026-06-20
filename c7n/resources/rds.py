@@ -58,7 +58,7 @@ import c7n.filters.vpc as net_filters
 from c7n.manager import resources
 from c7n.query import (
     ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
-    RetryPageIterator, TypeInfo)
+    RetryPageIterator, TagAugmentSpec, TypeInfo)
 from c7n import deprecated, tags
 from c7n.tags import universal_augment
 
@@ -76,11 +76,8 @@ actions = ActionRegistry('rds.actions')
 
 
 class DescribeRDS(DescribeSource):
-
-    def augment(self, dbs):
-        for d in dbs:
-            d['Tags'] = d.pop('TagList', ())
-        return dbs
+    tag_normalize = TagAugmentSpec(
+        source='TagList', shape='identity', pop=True, default=())
 
 
 class ConfigRDS(ConfigSource):
@@ -1073,11 +1070,8 @@ class DescribeRDSSnapshot(DescribeSource):
     def get_resources(self, ids, cache=True):
         super_get = super().get_resources
         return list(itertools.chain(*[super_get((i,)) for i in ids]))
-
-    def augment(self, snaps):
-        for s in snaps:
-            s['Tags'] = s.pop('TagList', ())
-        return snaps
+    tag_normalize = TagAugmentSpec(
+        source='TagList', shape='identity', pop=True, default=())
 
 
 @resources.register('rds-snapshot')

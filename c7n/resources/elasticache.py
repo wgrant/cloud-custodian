@@ -474,9 +474,7 @@ class ElastiCacheSnapshot(QueryResourceManager):
         universal_taggable = True
 
     permissions = ('elasticache:ListTagsForResource',)
-
-    def augment(self, resources):
-        return universal_augment(self, resources)
+    universal_tag_augment = True
 
 
 @ElastiCacheSnapshot.filter_registry.register('age')

@@ -1116,13 +1116,7 @@ class DomainNameRemediateTls(BaseAction):
 
 
 class ApiGwV2DescribeSource(query.DescribeSource):
-
-    def augment(self, resources):
-        # convert tags from {'Key': 'Value'} to standard aws format
-        for r in resources:
-            r['Tags'] = [
-                {'Key': k, 'Value': v} for k, v in r.pop('Tags', {}).items()]
-        return resources
+    tag_normalize = query.TagAugmentSpec(source='Tags', pop=True, default=())
 
 
 @resources.register('apigwv2')
@@ -1222,13 +1216,7 @@ class DeleteApiV2(BaseAction):
 
 
 class StageDescribe(query.ChildDescribeSource):
-
-    def augment(self, resources):
-        # convert tags from {'Key': 'Value'} to standard aws format
-        for r in resources:
-            r['Tags'] = [
-                {'Key': k, 'Value': v} for k, v in r.pop('Tags', {}).items()]
-        return resources
+    tag_normalize = query.TagAugmentSpec(source='Tags', pop=True, default=())
 
 
 @resources.register("apigwv2-stage")
