@@ -24,7 +24,7 @@ class DescribeBackup(DescribeSource):
             results.append(r)
         return results
 
-    def fetch_resource_set(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('backup')
         resources = []
 
@@ -64,7 +64,7 @@ class DescribeVault(DescribeSource):
     def augment(self, resources):
         return universal_augment(self.manager, super(DescribeVault, self).augment(resources))
 
-    def fetch_resource_set(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('backup')
         resources = []
         for rid in resource_ids:

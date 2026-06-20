@@ -227,7 +227,7 @@ class TransferUser(ChildResourceManager):
         'describe-child': DescribeTransferUser
     }
 
-    def augment_resource_set(self, resources):
+    def augment_resources_by_ids(self, resources):
         return resources
 
 

@@ -225,7 +225,7 @@ class Service(query.ChildResourceManager):
         'describe': ECSServiceDescribeSource,
     }
 
-    def augment_resource_set(self, resources):
+    def augment_resources_by_ids(self, resources):
         return resources
 
 
@@ -696,7 +696,7 @@ class Task(query.ChildResourceManager):
             source = 'describe-ecs-task'
         return source
 
-    def augment_resource_set(self, resources):
+    def augment_resources_by_ids(self, resources):
         return resources
 
 
@@ -810,7 +810,7 @@ class DescribeTaskDefinition(DescribeSource):
 
     def get_resources(self, ids, cache=True):
         if cache:
-            resources = self.manager._get_cached_resources(ids)
+            resources = self.manager._get_cached_resources_by_ids(ids)
             if resources is not None:
                 return resources
         try:
@@ -855,7 +855,7 @@ class TaskDefinition(query.QueryResourceManager):
         'describe': DescribeTaskDefinition
     }
 
-    def augment_resource_set(self, resources):
+    def augment_resources_by_ids(self, resources):
         return resources
 
 

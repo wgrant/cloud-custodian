@@ -47,7 +47,7 @@ class DescribeAccount(DescribeSource):
     def fetch_resources(self, query):
         return [self.get_account()]
 
-    def fetch_resource_set(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         return [self.get_account()]
 
 

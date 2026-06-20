@@ -36,7 +36,7 @@ log = logging.getLogger('custodian.app-elb')
 
 class DescribeAppElb(DescribeSource):
 
-    def fetch_resource_set(self, ids):
+    def fetch_resources_by_ids(self, ids):
         """Support server side filtering on arns or names
         """
         if ids[0].startswith('arn:'):

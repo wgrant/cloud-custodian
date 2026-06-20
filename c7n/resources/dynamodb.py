@@ -642,7 +642,7 @@ class Stream(query.QueryResourceManager):
 
 class DescribeDaxCluster(query.DescribeSource):
 
-    def fetch_resource_set(self, ids):
+    def fetch_resources_by_ids(self, ids):
         """Retrieve dax resources for serverless policies or related resources
         """
         client = local_session(self.manager.session_factory).client('dax')
@@ -674,7 +674,7 @@ class DynamoDbAccelerator(query.QueryResourceManager):
         'config': query.ConfigSource
     }
 
-    def augment_resource_set(self, resources):
+    def augment_resources_by_ids(self, resources):
         """Disable augment for serverless policies.
 
         list_tags on dax resources always fail until the cluster is finished creating.

@@ -228,16 +228,16 @@ class DescribeSource:
     def prepare_resource_ids(self, ids):
         return ids
 
-    def fetch_resource_set(self, ids):
+    def fetch_resources_by_ids(self, ids):
         return self.query.get(self.manager, ids)
 
-    def normalize_resource_set(self, resources, ids):
+    def normalize_resources_by_ids(self, resources, ids):
         return self.normalize_resources(resources, None)
 
     def get_resources(self, ids, cache=True):
         ids = self.prepare_resource_ids(ids)
-        resources = self.fetch_resource_set(ids)
-        return self.normalize_resource_set(resources, ids)
+        resources = self.fetch_resources_by_ids(ids)
+        return self.normalize_resources_by_ids(resources, ids)
 
     def prepare_query(self, query):
         return query or {}
@@ -580,9 +580,6 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         with self.ctx.tracer.subsegment('filter'):
             return self.filter_resources(resources)
 
-    def finalize_resources(self, resources, query):
-        return resources
-
     def resources(self, query=None, augment=True) -> List[dict]:
         query = self.prepare_query(query)
         cache_key = self.get_cache_key(query)
@@ -612,7 +609,7 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         # Check if we're out of a policies execution limits.
         if self.data == self.ctx.policy.data:
             self.check_resource_limit(len(resources), resource_count)
-        return self.finalize_resources(resources, query)
+        return resources
 
     def check_resource_limit(self, selection_count, population_count):
         """Check if policy's execution affects more resources then its limit.
@@ -624,7 +621,7 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         max_resource_limits = MaxResourceLimit(p, selection_count, population_count)
         return max_resource_limits.check_resource_limits()
 
-    def _get_cached_resources(self, ids):
+    def _get_cached_resources_by_ids(self, ids):
         key = self.get_cache_key(None)
         with self._cache:
             resources = self._cache.get(key)
@@ -638,43 +635,40 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
     def prepare_resource_ids(self, ids):
         return ids
 
-    def get_cached_resources(self, ids):
-        return self._get_cached_resources(ids)
+    def get_cached_resources_by_ids(self, ids):
+        return self._get_cached_resources_by_ids(ids)
 
-    def fetch_resource_set(self, ids):
+    def fetch_resources_by_ids(self, ids):
         return self.source.get_resources(ids)
 
-    def handle_get_resources_error(self, error, ids):
+    def handle_fetch_resources_by_ids_error(self, error, ids):
         if isinstance(error, ClientError):
             self.log.warning("event ids not resolved: %s error:%s" % (ids, error))
             return []
         raise error
 
-    def normalize_resource_set(self, resources, ids):
+    def normalize_resources_by_ids(self, resources, ids):
         return self.normalize_resources(resources, None)
 
-    def augment_resource_set(self, resources):
+    def augment_resources_by_ids(self, resources):
         return self.augment_resources(resources)
-
-    def finalize_resource_set(self, resources, ids):
-        return resources
 
     def get_resources(self, ids, cache=True, augment=True):
         ids = self.prepare_resource_ids(ids)
         if not ids:
             return []
         if cache:
-            resources = self.get_cached_resources(ids)
+            resources = self.get_cached_resources_by_ids(ids)
             if resources is not None:
                 return resources
         try:
-            resources = self.fetch_resource_set(ids)
+            resources = self.fetch_resources_by_ids(ids)
         except Exception as e:
-            resources = self.handle_get_resources_error(e, ids)
-        resources = self.normalize_resource_set(resources, ids)
+            resources = self.handle_fetch_resources_by_ids_error(e, ids)
+        resources = self.normalize_resources_by_ids(resources, ids)
         if augment:
-            resources = self.augment_resource_set(resources)
-        return self.finalize_resource_set(resources, ids)
+            resources = self.augment_resources_by_ids(resources)
+        return resources
 
     def augment(self, resources):
         """subclasses may want to augment resources with additional information.

@@ -211,9 +211,6 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         with self.ctx.tracer.subsegment('filter'):
             return self.filter_resources(resources)
 
-    def finalize_resources(self, resources, query):
-        return resources
-
     def resources(self, query=None):
         q = self.prepare_query(query)
         cache_key = self.get_cache_key(q)
@@ -243,7 +240,7 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         # Check resource limits if we're the current policy execution.
         if self.data == self.ctx.policy.data:
             self.check_resource_limit(len(resources), resource_count)
-        return self.finalize_resources(resources, q)
+        return resources
 
     def check_resource_limit(self, selection_count, population_count):
         """Check if policy's execution affects more resources then its limit.

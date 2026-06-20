@@ -333,9 +333,6 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
     def filter_resource_set(self, resources):
         return self.filter_resources(resources)
 
-    def finalize_resources(self, resources, query):
-        return resources
-
     def resources(self, query=None):
         query = self.prepare_query(query)
         try:
@@ -347,7 +344,7 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         resources = self.filter_resource_set(resources)
 
         self.check_resource_limit(resources)
-        return self.finalize_resources(resources, query)
+        return resources
 
     def augment(self, resources):
         return resources

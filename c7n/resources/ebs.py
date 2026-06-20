@@ -77,7 +77,7 @@ class Snapshot(QueryResourceManager):
 
     def get_resources(self, ids, cache=True, augment=True):
         if cache:
-            resources = self._get_cached_resources(ids)
+            resources = self._get_cached_resources_by_ids(ids)
             if resources is not None:
                 return resources
         while ids:
@@ -724,7 +724,7 @@ class EBS(QueryResourceManager):
 
     def get_resources(self, ids, cache=True, augment=True):
         if cache:
-            resources = self._get_cached_resources(ids)
+            resources = self._get_cached_resources_by_ids(ids)
             if resources is not None:
                 return resources
         while ids:

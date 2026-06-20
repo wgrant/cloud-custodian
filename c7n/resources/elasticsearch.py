@@ -50,7 +50,7 @@ def parse_es_version(version: str) -> Tuple[str, str]:
 
 class DescribeDomain(DescribeSource):
 
-    def fetch_resource_set(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         # augment will turn these into resource dictionaries
         return resource_ids
 

@@ -95,12 +95,12 @@ class DescribeWafV2(DescribeSource):
         # scope here in order to use it downstream for API calls
         return [{'Scope': scope, **r} for r in resources]
 
-    def fetch_resource_set(self, ids):
+    def fetch_resources_by_ids(self, ids):
         params = self.get_query_params(None)
         resources = self.query.filter(self.manager, **params)
         return [r for r in resources if r[self.manager.resource_type.id] in ids]
 
-    def normalize_resource_set(self, resources, ids):
+    def normalize_resources_by_ids(self, resources, ids):
         params = self.get_query_params(None)
         return self.normalize_resources(resources, params)
 

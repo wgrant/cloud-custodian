@@ -127,9 +127,6 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
     def filter_resource_set(self, resources):
         return self.filter_resources(resources)
 
-    def finalize_resources(self, resources, query):
-        return resources
-
     def resources(self, query=None):
         q = self.prepare_query(query)
         key = self.get_cache_key(q)
@@ -151,7 +148,7 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
                 self._cache.save(key, resources)
         self._cache.close()
         resources = self.filter_resource_set(resources)
-        return self.finalize_resources(resources, q)
+        return resources
 
     def augment(self, resources):
         return self.source.augment(resources)
