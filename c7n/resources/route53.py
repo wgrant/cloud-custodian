@@ -11,6 +11,7 @@ from botocore.paginate import Paginator
 from c7n.query import (
     DescribeSource,
     ChildResourceManager,
+    FixedRegionClientMixin,
     QueryResourceManager,
     RetryPageIterator,
     TypeInfo,
@@ -761,7 +762,7 @@ class DescribeCheck(query.DescribeSource):
 
 
 @resources.register('readiness-check')
-class ReadinessCheck(QueryResourceManager):
+class ReadinessCheck(FixedRegionClientMixin, QueryResourceManager):
 
     class resource_type(TypeInfo):
         service = 'route53-recovery-readiness'
@@ -773,9 +774,7 @@ class ReadinessCheck(QueryResourceManager):
 
     source_mapping = {'describe': DescribeCheck, 'config': query.ConfigSource}
 
-    def get_client(self):
-        return local_session(self.session_factory) \
-            .client('route53-recovery-readiness', region_name=ARC_REGION)
+    client_region = ARC_REGION
 
 
 @ReadinessCheck.action_registry.register('tag')
@@ -894,7 +893,7 @@ class DescribeCluster(query.DescribeSource):
 
 
 @resources.register('recovery-cluster')
-class RecoveryCluster(QueryResourceManager):
+class RecoveryCluster(FixedRegionClientMixin, QueryResourceManager):
 
     class resource_type(TypeInfo):
         service = 'route53-recovery-control-config'
@@ -909,9 +908,7 @@ class RecoveryCluster(QueryResourceManager):
         'config': query.ConfigSource
     }
 
-    def get_client(self):
-        return local_session(self.session_factory) \
-            .client('route53-recovery-control-config', region_name=ARC_REGION)
+    client_region = ARC_REGION
 
 
 @RecoveryCluster.action_registry.register('tag')
@@ -994,7 +991,7 @@ class DescribeControlPanel(query.ChildDescribeSource):
 
 
 @resources.register('recovery-control-panel')
-class ControlPanel(query.ChildResourceManager):
+class ControlPanel(FixedRegionClientMixin, query.ChildResourceManager):
 
     class resource_type(query.TypeInfo):
         service = 'route53-recovery-control-config'
@@ -1011,9 +1008,7 @@ class ControlPanel(query.ChildResourceManager):
         'config': query.ConfigSource
     }
 
-    def get_client(self):
-        return local_session(self.session_factory) \
-            .client('route53-recovery-control-config', region_name=ARC_REGION)
+    client_region = ARC_REGION
 
 
 @ControlPanel.action_registry.register('tag')

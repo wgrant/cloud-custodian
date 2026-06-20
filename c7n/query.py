@@ -697,6 +697,18 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         return self._generate_arn
 
 
+class FixedRegionClientMixin:
+    client_region = None
+
+    def get_client_region(self):
+        return self.client_region
+
+    def get_client(self):
+        return local_session(self.session_factory).client(
+            self.resource_type.service,
+            region_name=self.get_client_region())
+
+
 class MaxResourceLimit:
 
     C7N_MAXRES_OP = os.environ.get("C7N_MAXRES_OP", 'or')
