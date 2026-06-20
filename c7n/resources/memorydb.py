@@ -10,6 +10,7 @@ from c7n.query import (
     DescribeSource,
     DescribeWithResourceTags,
     QueryResourceManager,
+    TagsFromApi,
     TypeInfo,
 )
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
@@ -19,16 +20,8 @@ from .aws import AWS
 
 
 class DescribeMemoryDb(DescribeSource):
-
-    def augment(self, resources):
-        resources = super(DescribeMemoryDb, self).augment(resources)
-        client = local_session(self.manager.session_factory).client('memorydb')
-        results = []
-        for r in resources:
-            r['Tags'] = self.manager.retry(
-                    client.list_tags, ResourceArn=r['ARN']).get('TagList', [])
-            results.append(r)
-        return results
+    tag_augment = TagsFromApi(
+        op='list_tags', resource_path='ARN', result_path='TagList')
 
 
 @AWS.resources.register('memorydb')

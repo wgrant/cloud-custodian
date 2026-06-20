@@ -82,11 +82,8 @@ class ContainerConfigSource(ConfigSource):
 
 
 class ClusterDescribe(query.DescribeSource):
-
-    def augment(self, resources):
-        resources = super(ClusterDescribe, self).augment(resources)
-        ecs_tag_normalize(resources)
-        return resources
+    tag_augment = query.TagsFromField(
+        'tags', tag_format='lower-list', remove=True)
 
 
 @resources.register('ecs')
@@ -797,6 +794,19 @@ class StopTask(BaseAction):
 
 
 class DescribeTaskDefinition(DescribeSource):
+    @staticmethod
+    def get_task_definition(manager, resource):
+        client = local_session(manager.session_factory).client('ecs')
+        response = manager.retry(
+            client.describe_task_definition,
+            taskDefinition=resource,
+            include=['TAGS'])
+        task_definition = response['taskDefinition']
+        task_definition['tags'] = response.get('tags', [])
+        ecs_tag_normalize([task_definition])
+        return task_definition
+
+    augment_pipeline = query.MapResource(get_task_definition)
 
     def get_resources(self, ids, cache=True):
         if cache:
@@ -809,21 +819,6 @@ class DescribeTaskDefinition(DescribeSource):
         except ClientError as e:
             self.manager.log.warning("event ids not resolved: %s error:%s" % (ids, e))
             return []
-
-    def augment(self, resources):
-        results = []
-        client = local_session(self.manager.session_factory).client('ecs')
-        for task_def_set in resources:
-            response = self.manager.retry(
-                client.describe_task_definition,
-                taskDefinition=task_def_set,
-                include=['TAGS'])
-            r = response['taskDefinition']
-            r['tags'] = response.get('tags', [])
-            results.append(r)
-        ecs_tag_normalize(results)
-        return results
-
 
 class ConfigECSTaskDefinition(ContainerConfigSource):
 

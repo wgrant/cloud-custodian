@@ -14,16 +14,18 @@ from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 
 class FirewallDescribe(DescribeSource):
 
-    def augment(self, resources):
-        resources = super().augment(resources)
-        augmented_resources = []
-        for r in resources:
-            status = r.pop('FirewallStatus', {})
-            r['Firewall']['UpdateToken'] = r['UpdateToken']
-            ar = r.pop('Firewall')
-            ar['FirewallStatus'] = status
-            augmented_resources.append(ar)
-        return augmented_resources
+    class NormalizeFirewall:
+        def __call__(self, manager, resources):
+            augmented_resources = []
+            for r in resources:
+                status = r.pop('FirewallStatus', {})
+                r['Firewall']['UpdateToken'] = r['UpdateToken']
+                ar = r.pop('Firewall')
+                ar['FirewallStatus'] = status
+                augmented_resources.append(ar)
+            return augmented_resources
+
+    augment_pipeline = NormalizeFirewall()
 
 
 class FirewallConfig(ConfigSource):

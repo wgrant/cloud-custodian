@@ -3,8 +3,7 @@
 from c7n.manager import resources
 from c7n.query import (
     ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
-    ResourceQuery, TypeInfo)
-from c7n.tags import universal_augment
+    MutateResource, ResourceQuery, TypeInfo, UniversalTags)
 from c7n.filters import ValueFilter, ListItemFilter
 from c7n.utils import type_schema, local_session
 from c7n.actions import BaseAction
@@ -48,32 +47,25 @@ class WafV2ResourceQuery(ResourceQuery):
 
 
 class DescribeWafV2(DescribeSource):
+    @staticmethod
+    def augment_web_acl(manager, resource):
+        # CloudFront WebACLs are always detailed from us-east-1.
+        region = 'us-east-1' if resource.get('Scope') == 'CLOUDFRONT' else manager.region
+        client = local_session(manager.session_factory).client('wafv2', region_name=region)
+        resource.update(manager.retry(
+            client.get_web_acl,
+            Name=resource['Name'],
+            Id=resource['Id'],
+            Scope=resource['Scope']).get('WebACL', {}))
+
     resource_query_factory = WafV2ResourceQuery
+    augment_pipeline = MutateResource(augment_web_acl)
+    tag_augment = UniversalTags()
 
     def get_permissions(self):
         perms = super().get_permissions()
         perms.remove('wafv2:GetWebAcl')
         return perms
-
-    def augment(self, resources):
-        # CloudFront WebACLs (Scope=CLOUDFRONT) must be queried from us-east-1
-        region = self.manager.region
-        if resources and resources[0].get('Scope') == 'CLOUDFRONT':
-            region = 'us-east-1'
-
-        client = local_session(self.manager.session_factory).client('wafv2', region_name=region)
-
-        def _detail(webacl):
-            response = client.get_web_acl(
-                Name=webacl['Name'], Id=webacl['Id'], Scope=webacl['Scope']
-            )
-            detail = response.get('WebACL', {})
-
-            return {**webacl, **detail}
-
-        with_tags = universal_augment(self.manager, resources)
-
-        return list(map(_detail, with_tags))
 
     # set REGIONAL for Scope as default
     def get_query_params(self, query_params):

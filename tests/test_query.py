@@ -5,7 +5,10 @@ import logging
 import os
 
 
-from c7n.query import MergeField, ResourceQuery, RetryPageIterator, TypeInfo
+from c7n.query import (
+    AnnotateParent, FilterResources, MapBatch, MapResource, MergeField,
+    MutateResource, ResourceQuery, RetryPageIterator, SetField, TagsFromApi,
+    TagsFromField, TypeInfo)
 from c7n.resources.vpc import InternetGateway
 
 from botocore.config import Config
@@ -151,6 +154,171 @@ class AugmentPipelineTest(BaseTest):
         resources = [{'Name': 'resource'}]
 
         self.assertEqual(MergeField('Provisioned')(None, resources), resources)
+
+    def test_tags_from_field_merge(self):
+        resources = [{'Tags': [{'Key': 'Owner', 'Value': 'Policy'}],
+                      'tags': {'App': 'Custodian'}}]
+
+        self.assertEqual(
+            TagsFromField('tags', remove=True, missing='empty', merge=True)(
+                None, resources),
+            [{'Tags': [
+                {'Key': 'Owner', 'Value': 'Policy'},
+                {'Key': 'App', 'Value': 'Custodian'}]}])
+
+    def test_tags_from_api_drop_on_error_allows_empty_result(self):
+        class Client:
+            def list_tags_for_resource(self, ResourceArn):
+                return None
+
+        class Manager:
+            def get_client(self):
+                return Client()
+
+            def retry(self, func, ignore_err_codes=(), **kw):
+                return func(**kw)
+
+            class resource_type:
+                arn = 'Arn'
+
+        resources = [{'Arn': 'arn:missing'}]
+
+        self.assertEqual(
+            TagsFromApi(drop_on_error=True)(Manager(), resources),
+            [])
+
+    def test_filter_resources(self):
+        resources = [{'Name': 'alias/aws/s3'}, {'Name': 'alias/app', 'TargetKeyId': 'abc'}]
+
+        def has_target_key(manager, resource):
+            return 'TargetKeyId' in resource
+
+        self.assertEqual(
+            FilterResources(has_target_key)(None, resources),
+            [{'Name': 'alias/app', 'TargetKeyId': 'abc'}])
+
+    def test_annotate_parent(self):
+        resources = [('db1', {'Name': 'table1'})]
+
+        self.assertEqual(
+            AnnotateParent('DatabaseName')(None, resources),
+            [{'Name': 'table1', 'DatabaseName': 'db1'}])
+
+    def test_set_field(self):
+        resources = [{'Id': '/hostedzone/abc'}, {'Name': 'skip'}]
+
+        def get_hosted_zone_id(manager, resource):
+            return resource['Id'].split('/')[-1]
+
+        def has_id(manager, resource):
+            return 'Id' in resource
+
+        self.assertEqual(
+            SetField(
+                'c7n:ConfigHostedZoneId',
+                get_hosted_zone_id,
+                when=has_id)(None, resources),
+            [{'Id': '/hostedzone/abc', 'c7n:ConfigHostedZoneId': 'abc'}, {'Name': 'skip'}])
+
+    def test_mutate_resource(self):
+        resources = [{'Name': 'resource'}]
+
+        def mark_seen(manager, resource):
+            resource.update({'Seen': True})
+
+        self.assertIs(
+            MutateResource(mark_seen)(None, resources),
+            resources)
+        self.assertEqual(resources, [{'Name': 'resource', 'Seen': True}])
+
+    def test_map_resource(self):
+        def expand_odd(manager, resource):
+            if resource % 2 == 0:
+                return None
+            return {'Value': resource}
+
+        self.assertEqual(
+            MapResource(expand_odd)(None, [1, 2, 3]),
+            [{'Value': 1}, {'Value': 3}])
+
+    def test_map_resource_uses_executor(self):
+        class Executor:
+            def __init__(self, max_workers):
+                self.max_workers = max_workers
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc_info):
+                return False
+
+            def map(self, func, resources):
+                return map(func, resources)
+
+        class Manager:
+            def __init__(self):
+                self.workers = []
+
+            def executor_factory(self, max_workers):
+                self.workers.append(max_workers)
+                return Executor(max_workers)
+
+        manager = Manager()
+
+        def expand_odd(manager, resource):
+            if resource % 2 == 0:
+                return None
+            return {'Value': resource}
+
+        self.assertEqual(
+            MapResource(expand_odd, max_workers=2)(manager, [1, 2, 3]),
+            [{'Value': 1}, {'Value': 3}])
+        self.assertEqual(manager.workers, [2])
+
+    def test_map_batch(self):
+        seen = []
+
+        def expand_batch(manager, resource_set):
+            seen.append(list(resource_set))
+            return [{'Value': r} for r in resource_set if r % 2]
+
+        self.assertEqual(
+            MapBatch(expand_batch, size=2)(None, [1, 2, 3]),
+            [{'Value': 1}, {'Value': 3}])
+        self.assertEqual(seen, [[1, 2], [3]])
+
+    def test_map_batch_uses_executor(self):
+        class Executor:
+            def __init__(self, max_workers):
+                self.max_workers = max_workers
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc_info):
+                return False
+
+            def map(self, func, resource_sets):
+                return map(func, resource_sets)
+
+        class Manager:
+            def __init__(self):
+                self.workers = []
+
+            def executor_factory(self, max_workers):
+                self.workers.append(max_workers)
+                return Executor(max_workers)
+
+        manager = Manager()
+
+        def expand_batch(manager, resource_set):
+            return [{'Value': r} for r in resource_set]
+
+        self.assertEqual(
+            MapBatch(expand_batch, size=2, max_workers=3)(
+                manager, [1, 2, 3]),
+            [{'Value': 1}, {'Value': 2}, {'Value': 3}])
+        self.assertEqual(manager.workers, [3])
 
 
 class QueryResourceManagerTest(BaseTest):

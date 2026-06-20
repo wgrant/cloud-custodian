@@ -4,31 +4,30 @@ from c7n.actions import BaseAction
 from c7n.filters import Filter, ValueFilter, CrossAccountAccessFilter
 from c7n.manager import resources
 from c7n.resolver import ValuesFrom
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import (
+    MutateResource, QueryResourceManager, TypeInfo, DescribeSource, ConfigSource)
 from c7n.utils import local_session, chunks, type_schema
 from c7n.tags import universal_augment
 
 
 class RecorderDescribe(DescribeSource):
+    @staticmethod
+    def augment_recorder(manager, resource):
+        client = local_session(manager.session_factory).client('config')
+        status = manager.retry(
+            client.describe_configuration_recorder_status,
+            ConfigurationRecorderNames=[resource['name']])['ConfigurationRecordersStatus']
+        if status:
+            resource.update({'status': status.pop()})
 
-    def augment(self, resources):
-        # in general we don't to default augmentation beyond tags, to
-        # avoid extraneous api calls. in this case config recorder is
-        # a singleton (so no cardinality issues in terms of api calls)
-        # and the common case is looking checking against all of the
-        # attributes to ensure proper configuration.
-        client = local_session(self.manager.session_factory).client('config')
-        for r in resources:
-            status = client.describe_configuration_recorder_status(
-                ConfigurationRecorderNames=[r['name']]
-            )['ConfigurationRecordersStatus']
-            if status:
-                r.update({'status': status.pop()})
+        channels = manager.retry(
+            client.describe_delivery_channels).get('DeliveryChannels')
+        if channels:
+            resource.update({'deliveryChannel': channels.pop()})
 
-            channels = client.describe_delivery_channels().get('DeliveryChannels')
-            if channels:
-                r.update({'deliveryChannel': channels.pop()})
-        return resources
+    # Config recorder is a singleton, so detail calls do not have the usual
+    # cardinality concern and most policies inspect the full configuration.
+    augment_pipeline = MutateResource(augment_recorder)
 
 
 @resources.register('config-recorder')

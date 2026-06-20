@@ -7,13 +7,55 @@ from botocore.exceptions import ClientError
 from c7n.actions import BaseAction
 from c7n.filters import FilterRegistry
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo
-from c7n.utils import chunks, local_session, get_retry, type_schema
+from c7n.query import (
+    ConfigSource, DescribeSource, MapBatch, QueryResourceManager, TypeInfo)
+from c7n.utils import local_session, get_retry, type_schema
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 
 
 filters = FilterRegistry('datapipeline.filters')
 filters.register('marked-for-op', TagActionFilter)
+
+
+class DescribeDataPipeline(DescribeSource):
+    detail_augment = False
+
+    @staticmethod
+    def describe_pipeline_set(manager, pipe_set):
+        client = local_session(manager.session_factory).client('datapipeline')
+        pipe_map = {pipe['id']: pipe for pipe in pipe_set}
+
+        while True:
+            try:
+                results = manager.retry(
+                    client.describe_pipelines,
+                    pipelineIds=list(pipe_map.keys()))
+                break
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'PipelineNotFound':
+                    raise
+                msg = e.response['Error']['Message']
+                _, lb_name = msg.strip().rsplit(' ', 1)
+                pipe_map.pop(lb_name)
+                if not pipe_map:
+                    return pipe_set
+                continue
+
+        for pipe_desc in results['pipelineDescriptionList']:
+            pipe = pipe_map[pipe_desc['pipelineId']]
+            pipe['pipelineId'] = pipe_desc['pipelineId']
+            pipe['Tags'] = [
+                {'Key': t['key'], 'Value': t['value']}
+                for t in pipe_desc['tags']]
+            for field in pipe_desc['fields']:
+                key = field['key']
+                if not key.startswith('@'):
+                    continue
+                pipe[key[1:]] = field['stringValue']
+        return pipe_set
+
+    augment_pipeline = MapBatch(
+        describe_pipeline_set, size=20, max_workers=2)
 
 
 @resources.register('datapipeline')
@@ -32,52 +74,13 @@ class DataPipeline(QueryResourceManager):
         batch_detail_spec = (
             'describe_pipelines', 'pipelineIds', 'id', 'pipelineDescriptionList', None)
         enum_spec = ('list_pipelines', 'pipelineIdList', None)
+        permissions_augment = ('datapipeline:DescribePipelines',)
 
-    def augment(self, resources):
-        filter(None, _datapipeline_info(
-            resources, self.session_factory, self.executor_factory,
-            self.retry))
-        return resources
+    source_mapping = {
+        'describe': DescribeDataPipeline,
+        'config': ConfigSource
+    }
 
-
-def _datapipeline_info(pipes, session_factory, executor_factory, retry):
-
-    client = local_session(session_factory).client('datapipeline')
-
-    def process_tags(pipe_set):
-        pipe_map = {pipe['id']: pipe for pipe in pipe_set}
-
-        while True:
-            try:
-                results = retry(
-                    client.describe_pipelines,
-                    pipelineIds=list(pipe_map.keys()))
-                break
-            except ClientError as e:
-                if e.response['Error']['Code'] != 'PipelineNotFound':
-                    raise
-                msg = e.response['Error']['Message']
-                _, lb_name = msg.strip().rsplit(' ', 1)
-                pipe_map.pop(lb_name)
-                if not pipe_map:
-                    results = {'TagDescriptions': []}
-                    break
-                continue
-
-        for pipe_desc in results['pipelineDescriptionList']:
-            pipe = pipe_map[pipe_desc['pipelineId']]
-            pipe['pipelineId'] = pipe_desc['pipelineId']
-            pipe['Tags'] = [
-                {'Key': t['key'], 'Value': t['value']}
-                for t in pipe_desc['tags']]
-            for field in pipe_desc['fields']:
-                key = field['key']
-                if not key.startswith('@'):
-                    continue
-                pipe[key[1:]] = field['stringValue']
-
-    with executor_factory(max_workers=2) as w:
-        return list(w.map(process_tags, chunks(pipes, 20)))
 
 
 @DataPipeline.action_registry.register('delete')

@@ -8,7 +8,7 @@ from c7n.filters import ValueFilter
 from c7n.manager import resources
 from c7n.query import (
     ChildResourceManager, ConfigSource, DescribeSource, DescribeWithResourceTags,
-    QueryResourceManager, TypeInfo, ArnFormatMixin, ArnPathMixin)
+    QueryResourceManager, TagsFromApi, TypeInfo, ArnFormatMixin, ArnPathMixin)
 from c7n.tags import universal_augment
 from c7n.utils import local_session, type_schema, jmespath_search
 from c7n import query
@@ -284,14 +284,12 @@ class DeletePipeline(BaseAction):
 
 
 class DescribeApplication(DescribeSource):
+    @staticmethod
+    def get_application_arn(manager, resource):
+        return manager.get_arns([resource])[0]
 
-    def augment(self, resources):
-        resources = super().augment(resources)
-        client = local_session(self.manager.session_factory).client('codedeploy')
-        for r, arn in zip(resources, self.manager.get_arns(resources)):
-            r['Tags'] = client.list_tags_for_resource(
-                ResourceArn=arn).get('Tags', [])
-        return resources
+    tag_augment = TagsFromApi(
+        resource_path=get_application_arn)
 
 
 @resources.register('codedeploy-app')
@@ -352,23 +350,32 @@ class CodeDeployDeployment(QueryResourceManager):
 
 
 class DescribeDeploymentGroup(query.ChildDescribeSource):
+    detail_augment = False
+
+    @staticmethod
+    def get_deployment_group(manager, resource):
+        parent_id, group_name = resource
+        client = local_session(manager.session_factory).client('codedeploy')
+        return manager.retry(
+            client.get_deployment_group,
+            applicationName=parent_id,
+            deploymentGroupName=group_name).get('deploymentGroupInfo')
+
+    @staticmethod
+    def get_deployment_group_arn(manager, resource):
+        return manager.generate_arn(
+            resource['applicationName'] + '/' + resource['deploymentGroupName'])
+
+    augment_pipeline = query.MapResource(get_deployment_group)
+    tag_augment = TagsFromApi(resource_path=get_deployment_group_arn)
+
+    def get_permissions(self):
+        return super().get_permissions() + [
+            'codedeploy:GetDeploymentGroup',
+            'codedeploy:ListTagsForResource']
 
     def get_query(self):
         return super().get_query(capture_parent_id=True)
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('codedeploy')
-        results = []
-        for parent_id, group_name in resources:
-            dg = self.manager.retry(
-                client.get_deployment_group, applicationName=parent_id,
-                deploymentGroupName=group_name).get('deploymentGroupInfo')
-            results.append(dg)
-        for r in results:
-            rarn = self.manager.generate_arn(r['applicationName'] + '/' + r['deploymentGroupName'])
-            r['Tags'] = self.manager.retry(
-                client.list_tags_for_resource, ResourceArn=rarn).get('Tags')
-        return results
 
 
 @resources.register('codedeploy-group')

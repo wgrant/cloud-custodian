@@ -637,20 +637,18 @@ class Stream(query.QueryResourceManager):
 
 
 class DescribeDaxCluster(query.DescribeSource):
+    tag_augment = query.TagsFromApi(
+        op='list_tags',
+        resource_path='ClusterArn',
+        request_arg='ResourceName',
+        ignore_errors=('ClusterNotFoundFault', 'InvalidClusterStateFault'),
+        drop_on_error=True)
 
     def fetch_resources_by_ids(self, ids):
         """Retrieve dax resources for serverless policies or related resources
         """
         client = local_session(self.manager.session_factory).client('dax')
         return client.describe_clusters(ClusterNames=ids).get('Clusters')
-
-    def augment(self, clusters):
-        resources = super(DescribeDaxCluster, self).augment(clusters)
-        return list(filter(None, _dax_cluster_tags(
-            resources,
-            self.manager.session_factory,
-            self.manager.retry,
-            self.manager.log)))
 
 
 @resources.register('dax')
@@ -671,21 +669,6 @@ class DynamoDbAccelerator(query.QueryResourceManager):
         'describe': DescribeDaxCluster,
         'config': query.ConfigSource
     }
-
-
-def _dax_cluster_tags(tables, session_factory, retry, log):
-    client = local_session(session_factory).client('dax')
-
-    def process_tags(r):
-        try:
-            r['Tags'] = retry(
-                client.list_tags, ResourceName=r['ClusterArn'])['Tags']
-            return r
-        except (client.exceptions.ClusterNotFoundFault,
-                client.exceptions.InvalidClusterStateFault):
-            return None
-
-    return filter(None, list(map(process_tags, tables)))
 
 
 DynamoDbAccelerator.filter_registry.register('marked-for-op', TagActionFilter)

@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 import itertools
 
-from c7n.query import QueryResourceManager, TypeInfo
+from c7n.query import MapBatch, QueryResourceManager, TypeInfo
 from c7n.manager import resources
-from c7n.utils import local_session, chunks, QueryParser
+from c7n.utils import local_session, QueryParser
 
 
 @resources.register('health-event')
@@ -49,31 +49,33 @@ class HealthEvents(QueryResourceManager):
             query['filter'] = q
         return super().prepare_query(query)
 
-    def augment(self, resources):
-        client = local_session(self.session_factory).client('health')
-        for resource_set in chunks(resources, 10):
-            event_map = {r['arn']: r for r in resource_set}
-            event_details = client.describe_event_details(
-                eventArns=list(event_map.keys()))['successfulSet']
-            for d in event_details:
-                event_map[d['event']['arn']][
-                    'Description'] = d['eventDescription']['latestDescription']
+    @staticmethod
+    def augment_event_set(manager, resource_set):
+        client = local_session(manager.session_factory).client('health')
+        event_map = {r['arn']: r for r in resource_set}
+        event_details = client.describe_event_details(
+            eventArns=list(event_map.keys()))['successfulSet']
+        for d in event_details:
+            event_map[d['event']['arn']][
+                'Description'] = d['eventDescription']['latestDescription']
 
-            event_arns = [r['arn'] for r in resource_set
-                          if r['eventTypeCategory'] != 'accountNotification']
+        event_arns = [r['arn'] for r in resource_set
+                      if r['eventTypeCategory'] != 'accountNotification']
 
-            if not event_arns:
-                continue
-            paginator = client.get_paginator('describe_affected_entities')
-            entities = list(itertools.chain(
-                *[p['entities']for p in paginator.paginate(
-                    filter={'eventArns': event_arns})]))
+        if not event_arns:
+            return resource_set
+        paginator = client.get_paginator('describe_affected_entities')
+        entities = list(itertools.chain(
+            *[p['entities']for p in paginator.paginate(
+                filter={'eventArns': event_arns})]))
 
-            for e in entities:
-                event_map[e.pop('eventArn')].setdefault(
-                    'AffectedEntities', []).append(e)
+        for e in entities:
+            event_map[e.pop('eventArn')].setdefault(
+                'AffectedEntities', []).append(e)
 
-        return resources
+        return resource_set
+
+    augment_pipeline = MapBatch(augment_event_set, size=10)
 
 
 class HealthQueryParser(QueryParser):

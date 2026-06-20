@@ -6,7 +6,7 @@ from c7n.manager import resources
 from c7n.actions import BaseAction, RemovePolicyBase
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import iamaccess
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource
+from c7n.query import MapResource, QueryResourceManager, TypeInfo, DescribeSource
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, Action
 from c7n.utils import local_session, type_schema, jmespath_search
@@ -15,14 +15,18 @@ from c7n.filters.core import ValueFilter
 
 
 class DescribeSecret(DescribeSource):
+    detail_augment = False
 
-    def _augment_secret(self, secret, client):
-        detail_op, param_name, param_key, _ = self.manager.resource_type.detail_spec
+    @staticmethod
+    def augment_secret(manager, secret):
+        client = local_session(manager.session_factory).client(
+            manager.resource_type.service)
+        detail_op, param_name, param_key, _ = manager.resource_type.detail_spec
         op = getattr(client, detail_op)
         kw = {param_name: secret[param_key]}
 
         try:
-            secret.update(self.manager.retry(
+            secret.update(manager.retry(
                 op, **kw
             ))
         except ClientError as e:
@@ -31,21 +35,14 @@ class DescribeSecret(DescribeSource):
                 raise
             # Same logic as S3 augment: describe is expected to be restricted
             # by resource-based policies
-            self.manager.log.warning(
+            manager.log.warning(
                 "Secret:%s unable to invoke method:%s error:%s ",
                 secret[param_key], detail_op, e.response['Error']['Message']
             )
             secret.setdefault('c7n:DeniedMethods', []).append(detail_op)
+        return secret
 
-    def augment(self, secrets):
-        client = local_session(self.manager.session_factory).client(
-            self.manager.resource_type.service
-        )
-        with self.manager.executor_factory(max_workers=self.manager.max_workers) as w:
-            for s in secrets:
-                w.submit(self._augment_secret, s, client)
-
-        return secrets
+    augment_pipeline = MapResource(augment_secret, max_workers=QueryResourceManager.max_workers)
 
 
 @resources.register('secrets-manager')

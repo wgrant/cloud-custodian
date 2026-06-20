@@ -368,16 +368,10 @@ class GlueTable(query.ArnFormatMixin, query.ChildResourceManager):
 
 @query.sources.register('describe-table')
 class DescribeTable(query.ChildDescribeSource):
+    augment_pipeline = query.AnnotateParent('DatabaseName')
 
     def get_query(self):
         return super(DescribeTable, self).get_query(capture_parent_id=True)
-
-    def augment(self, resources):
-        result = []
-        for parent_id, r in resources:
-            r['DatabaseName'] = parent_id
-            result.append(r)
-        return result
 
 
 @GlueTable.action_registry.register('delete')

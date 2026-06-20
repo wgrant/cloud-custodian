@@ -30,7 +30,9 @@ from c7n.query import (
     ChildResourceManager,
     ConfigSource,
     DescribeSource, DescribeWithResourceTags,
+    MapResource,
     QueryResourceManager,
+    SetField,
     TypeInfo,
 )
 from c7n.resolver import ValuesFrom
@@ -224,19 +226,24 @@ class RoleSetBoundary(SetBoundary):
 
 
 class DescribeUser(DescribeSource):
+    detail_augment = False
 
-    def augment(self, resources):
-        # iam has a race condition, where listing will potentially return a
-        # new user prior it to its availability to get user
-        client = local_session(self.manager.session_factory).client('iam')
-        results = []
-        for r in resources:
-            ru = self.manager.retry(
-                client.get_user, UserName=r['UserName'],
-                ignore_err_codes=('NoSuchEntity',))
-            if ru:
-                results.append(ru['User'])
-        return list(filter(None, results))
+    def get_permissions(self):
+        return super().get_permissions() + ['iam:GetUser']
+
+    @staticmethod
+    def get_user(manager, resource):
+        # IAM has a race condition where listing can return a new user
+        # before it is available via get_user.
+        client = local_session(manager.session_factory).client('iam')
+        result = manager.retry(
+            client.get_user,
+            UserName=resource['UserName'],
+            ignore_err_codes=('NoSuchEntity',))
+        if result:
+            return result.get('User') or None
+
+    augment_pipeline = MapResource(get_user)
 
     def get_resources(self, resource_ids, cache=True):
         client = local_session(self.manager.session_factory).client('iam')
@@ -3053,16 +3060,18 @@ class UserGroupDelete(BaseAction):
 
 
 class SamlProviderDescribe(DescribeSource):
+    @staticmethod
+    def get_sso_descriptor(manager, resource):
+        return sso_metadata(resource['SAMLMetadataDocument'])['IDPSSODescriptor']
 
-    def augment(self, resources):
-        super().augment(resources)
-        for r in resources:
-            md = r.get('SAMLMetadataDocument')
-            if not md:
-                continue
-            root = sso_metadata(md)
-            r['IDPSSODescriptor'] = root['IDPSSODescriptor']
-        return resources
+    @staticmethod
+    def has_saml_metadata(manager, resource):
+        return bool(resource.get('SAMLMetadataDocument'))
+
+    augment_pipeline = SetField(
+        'IDPSSODescriptor',
+        get_sso_descriptor,
+        when=has_saml_metadata)
 
     def get_permissions(self):
         return ('iam:GetSAMLProvider', 'iam:ListSAMLProviders')

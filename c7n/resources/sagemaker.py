@@ -4,7 +4,8 @@
 from c7n.actions import BaseAction
 from c7n.manager import resources
 from c7n.query import (
-    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager, TypeInfo)
+    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
+    TagsFromApi, TypeInfo)
 from c7n.utils import local_session, type_schema, QueryParser
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 from c7n.filters.vpc import SubnetFilter, SecurityGroupFilter, NetworkLocation
@@ -13,20 +14,7 @@ from c7n.filters.offhours import OffHour, OnHour
 
 
 class NotebookDescribe(DescribeSource):
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sagemaker')
-
-        def _augment(r):
-            # List tags for the Notebook-Instance & set as attribute
-            tags = self.manager.retry(client.list_tags,
-                ResourceArn=r['NotebookInstanceArn'])['Tags']
-            r['Tags'] = tags
-            return r
-
-        # Describe notebook-instance & then list tags
-        resources = super().augment(resources)
-        return list(map(_augment, resources))
+    tag_augment = TagsFromApi(op='list_tags', resource_path='NotebookInstanceArn')
 
 
 @resources.register('sagemaker-notebook')
@@ -82,17 +70,7 @@ class SagemakerJob(SagemakerQueryManager):
         permission_augment = (
             'sagemaker:DescribeTrainingJob', 'sagemaker:ListTags')
 
-    def augment(self, jobs):
-        client = local_session(self.session_factory).client('sagemaker')
-
-        def _augment(j):
-            tags = self.retry(client.list_tags,
-                ResourceArn=j['TrainingJobArn'])['Tags']
-            j['Tags'] = tags
-            return j
-
-        jobs = super(SagemakerJob, self).augment(jobs)
-        return list(map(_augment, jobs))
+    tag_augment = TagsFromApi(op='list_tags', resource_path='TrainingJobArn')
 
 
 @resources.register('sagemaker-transform-job')
@@ -111,16 +89,7 @@ class SagemakerTransformJob(SagemakerQueryManager):
         filter_type = 'scalar'
         permission_augment = ('sagemaker:DescribeTransformJob', 'sagemaker:ListTags')
 
-    def augment(self, jobs):
-        client = local_session(self.session_factory).client('sagemaker')
-
-        def _augment(j):
-            tags = self.retry(client.list_tags,
-                ResourceArn=j['TransformJobArn'])['Tags']
-            j['Tags'] = tags
-            return j
-
-        return list(map(_augment, super(SagemakerTransformJob, self).augment(jobs)))
+    tag_augment = TagsFromApi(op='list_tags', resource_path='TransformJobArn')
 
 
 class SagemakerHyperParameterTuningJobDescribe(DescribeWithResourceTags):
@@ -275,19 +244,7 @@ SagemakerCompilationJob.query_default = [{'StatusEquals': 'INPROGRESS'}]
 
 
 class EndpointDescribe(DescribeSource):
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sagemaker')
-
-        def _augment(e):
-            tags = self.manager.retry(client.list_tags,
-                ResourceArn=e['EndpointArn'])['Tags']
-            e['Tags'] = tags
-            return e
-
-        # Describe endpoints & then list tags
-        endpoints = super().augment(resources)
-        return list(map(_augment, endpoints))
+    tag_augment = TagsFromApi(op='list_tags', resource_path='EndpointArn')
 
 
 @resources.register('sagemaker-endpoint')
@@ -313,18 +270,7 @@ SagemakerEndpoint.filter_registry.register('marked-for-op', TagActionFilter)
 
 
 class EndpointConfigDescribe(DescribeSource):
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sagemaker')
-
-        def _augment(e):
-            tags = self.manager.retry(client.list_tags,
-                ResourceArn=e['EndpointConfigArn'])['Tags']
-            e['Tags'] = tags
-            return e
-
-        endpoints = super().augment(resources)
-        return list(map(_augment, endpoints))
+    tag_augment = TagsFromApi(op='list_tags', resource_path='EndpointConfigArn')
 
 
 @resources.register('sagemaker-endpoint-config')
@@ -349,18 +295,8 @@ SagemakerEndpointConfig.filter_registry.register('marked-for-op', TagActionFilte
 
 
 class DescribeModel(DescribeSource):
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sagemaker')
-
-        def _augment(r):
-            tags = self.manager.retry(client.list_tags,
-                ResourceArn=r['ModelArn'])['Tags']
-            r.setdefault('Tags', []).extend(tags)
-            return r
-
-        resources = super(DescribeModel, self).augment(resources)
-        return list(map(_augment, resources))
+    tag_augment = TagsFromApi(
+        op='list_tags', resource_path='ModelArn', merge=True)
 
 
 @resources.register('sagemaker-model')

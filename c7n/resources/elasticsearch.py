@@ -13,8 +13,8 @@ from c7n.filters.core import ComparableVersion
 from c7n.exceptions import PolicyValidationError
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter, VpcFilter, Filter
 from c7n.manager import resources
-from c7n.query import ConfigSource, DescribeSource, QueryResourceManager, TypeInfo
-from c7n.utils import chunks, local_session, type_schema, jmespath_search
+from c7n.query import ConfigSource, DescribeSource, MapBatch, QueryResourceManager, TypeInfo
+from c7n.utils import local_session, type_schema, jmespath_search
 from c7n.tags import Tag, RemoveTag, TagActionFilter, TagDelayedAction
 from c7n.filters.kms import KmsRelatedFilter
 import c7n.filters.policystatement as polstmt_filter
@@ -49,30 +49,24 @@ def parse_es_version(version: str) -> Tuple[str, str]:
 
 
 class DescribeDomain(DescribeSource):
+    @staticmethod
+    def describe_domain_set(manager, resource_set):
+        client = local_session(manager.session_factory).client('es')
+        model = manager.get_model()
+        resources = manager.retry(
+            client.describe_elasticsearch_domains,
+            DomainNames=resource_set)['DomainStatusList']
+        for resource in resources:
+            rarn = manager.generate_arn(resource[model.id])
+            resource['Tags'] = manager.retry(
+                client.list_tags, ARN=rarn).get('TagList', [])
+        return resources
+
+    augment_pipeline = MapBatch(describe_domain_set, size=5)
 
     def fetch_resources_by_ids(self, resource_ids):
         # augment will turn these into resource dictionaries
         return resource_ids
-
-    def augment(self, domains):
-        client = local_session(self.manager.session_factory).client('es')
-        model = self.manager.get_model()
-        results = []
-
-        def _augment(resource_set):
-            resources = self.manager.retry(
-                client.describe_elasticsearch_domains,
-                DomainNames=resource_set)['DomainStatusList']
-            for r in resources:
-                rarn = self.manager.generate_arn(r[model.id])
-                r['Tags'] = self.manager.retry(
-                    client.list_tags, ARN=rarn).get('TagList', [])
-            return resources
-
-        for resource_set in chunks(domains, 5):
-            results.extend(_augment(resource_set))
-
-        return results
 
 
 @resources.register('elasticsearch')

@@ -7,7 +7,9 @@ import json
 from c7n.actions import ActionRegistry, BaseAction
 from c7n.filters import FilterRegistry, MetricsFilter, ValueFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, ConfigSource, DescribeWithResourceTags
+from c7n.query import (
+    MapResource, MutateResource, QueryResourceManager, TypeInfo, ConfigSource,
+    DescribeWithResourceTags)
 from c7n.utils import (
     local_session, type_schema, get_retry, jmespath_search, QueryParser)
 from c7n.tags import (
@@ -68,16 +70,14 @@ class EMRCluster(QueryResourceManager):
             query['ClusterStates'] = self.resource_type.default_cluster_states
         return super().prepare_query(query)
 
-    def augment(self, resources):
-        client = local_session(
-            self.get_resource_manager('emr').session_factory).client('emr')
-        result = []
+    @staticmethod
+    def describe_cluster(manager, resource):
+        client = local_session(manager.session_factory).client('emr')
         # remap for cwmetrics
-        for r in resources:
-            cluster = self.retry(
-                client.describe_cluster, ClusterId=r['Id'])['Cluster']
-            result.append(cluster)
-        return result
+        return manager.retry(
+            client.describe_cluster, ClusterId=resource['Id'])['Cluster']
+
+    augment_pipeline = MapResource(describe_cluster)
 
 
 @EMRCluster.filter_registry.register('metrics')
@@ -289,6 +289,10 @@ class EMRSecurityConfiguration(QueryResourceManager):
     """Resource manager for EMR Security Configuration
     """
 
+    @staticmethod
+    def decode_security_configuration(manager, resource):
+        resource['SecurityConfiguration'] = json.loads(resource['SecurityConfiguration'])
+
     class resource_type(TypeInfo):
         service = 'emr'
         arn_type = 'emr'
@@ -301,11 +305,7 @@ class EMRSecurityConfiguration(QueryResourceManager):
     permissions = ('elasticmapreduce:ListSecurityConfigurations',
                   'elasticmapreduce:DescribeSecurityConfiguration',)
 
-    def augment(self, resources):
-        resources = super().augment(resources)
-        for r in resources:
-            r['SecurityConfiguration'] = json.loads(r['SecurityConfiguration'])
-        return resources
+    augment_pipeline = MutateResource(decode_security_configuration)
 
 
 @EMRSecurityConfiguration.action_registry.register('delete')

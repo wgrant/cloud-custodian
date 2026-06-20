@@ -819,17 +819,18 @@ class LambdaLayerVersion(query.QueryResourceManager):
         arn_type = "layer"
         cfn_type = 'AWS::Lambda::LayerVersion'
 
-    def augment(self, resources):
+    @staticmethod
+    def expand_layer_versions(manager, resources):
         versions = {}
         for r in resources:
             versions[r['LayerName']] = v = r['LatestMatchingVersion']
             v['LayerName'] = r['LayerName']
 
-        if {'version': 'latest'} in self.data.get('query', []):
+        if {'version': 'latest'} in manager.data.get('query', []):
             return list(versions.values())
 
         layer_names = list(versions)
-        client = local_session(self.session_factory).client('lambda')
+        client = local_session(manager.session_factory).client('lambda')
 
         versions = []
         for layer_name in layer_names:
@@ -839,6 +840,8 @@ class LambdaLayerVersion(query.QueryResourceManager):
                 v['LayerName'] = layer_name
                 versions.append(v)
         return versions
+
+    augment_pipeline = query.MapBatch(expand_layer_versions)
 
 
 def get_layer_version_paginator(client):

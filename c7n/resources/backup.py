@@ -3,26 +3,20 @@
 from c7n.manager import resources
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.query import (
-    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager, TypeInfo)
+    ConfigSource, DescribeSource, DescribeWithResourceTags, MergeField,
+    QueryResourceManager, TagsFromApi, TypeInfo)
 from c7n.utils import local_session
 
 
 class DescribeBackup(DescribeSource):
-
-    def augment(self, resources):
-        resources = super(DescribeBackup, self).augment(resources)
-        client = local_session(self.manager.session_factory).client('backup')
-        results = []
-        for r in resources:
-            plan = r.pop('BackupPlan', {})
-            r.update(plan)
-            try:
-                tags = client.list_tags(ResourceArn=r['BackupPlanArn']).get('Tags', {})
-            except client.exceptions.ResourceNotFoundException:
-                continue
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in tags.items()]
-            results.append(r)
-        return results
+    augment_pipeline = MergeField('BackupPlan')
+    tag_augment = TagsFromApi(
+        op='list_tags',
+        resource_path='BackupPlanArn',
+        result_path='Tags',
+        tag_format='dict',
+        ignore_errors=('ResourceNotFoundException',),
+        drop_on_error=True)
 
     def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('backup')

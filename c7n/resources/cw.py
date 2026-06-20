@@ -15,7 +15,7 @@ from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
 from c7n.query import (
     QueryResourceManager,
-    TagsFromField, TypeInfo, ConfigSource, DescribeWithResourceTags)
+    TagsFromApi, TagsFromField, TypeInfo, ConfigSource, DescribeWithResourceTags)
 from c7n.resolver import ValuesFrom
 from c7n.tags import universal_augment
 from c7n.utils import type_schema, local_session, chunks, get_retry, jmespath_search
@@ -193,6 +193,14 @@ class LogGroup(QueryResourceManager):
 
 @resources.register('insight-rule')
 class InsightRule(QueryResourceManager):
+    @staticmethod
+    def get_rule_arn(manager, resource):
+        return manager.generate_arn(resource['Name'])
+
+    tag_augment = TagsFromApi(
+        resource_path=get_rule_arn,
+        request_arg='ResourceARN')
+
     class resource_type(TypeInfo):
         service = 'cloudwatch'
         arn_type = 'insight-rule'
@@ -201,17 +209,6 @@ class InsightRule(QueryResourceManager):
         universal_taggable = object()
         permission_augment = ('cloudWatch::ListTagsForResource',)
         cfn_type = 'AWS::CloudWatch::InsightRule'
-
-    def augment(self, rules):
-        client = local_session(self.session_factory).client('cloudwatch')
-
-        def _add_tags(r):
-            arn = self.generate_arn(r['Name'])
-            r['Tags'] = client.list_tags_for_resource(
-                ResourceARN=arn).get('Tags', [])
-            return r
-
-        return list(map(_add_tags, rules))
 
 
 @InsightRule.action_registry.register('disable')

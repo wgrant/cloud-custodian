@@ -117,15 +117,7 @@ class UpdateAccount(BaseAction):
 
 
 class ApiDescribeSource(query.DescribeSource):
-
-    def augment(self, resources):
-        for r in resources:
-            tags = r.setdefault('Tags', [])
-            for k, v in r.pop('tags', {}).items():
-                tags.append({
-                    'Key': k,
-                    'Value': v})
-        return resources
+    tag_augment = query.TagsFromField('tags', remove=True, missing='empty', merge=True)
 
 
 @resources.register('rest-api')
@@ -274,6 +266,28 @@ class DeleteApi(BaseAction):
 @query.sources.register('describe-rest-stage')
 class DescribeRestStage(query.ChildDescribeSource):
 
+    class NormalizeRestStage:
+        def __call__(self, manager, resources):
+            results = []
+            rest_apis = manager.get_resource_manager('rest-api').resources()
+            for parent_id, r in resources:
+                r['restApiId'] = parent_id
+                for rest_api in rest_apis:
+                    if rest_api['id'] == parent_id:
+                        r['restApiType'] = rest_api['endpointConfiguration']['types']
+                r['stageArn'] = "arn:aws:{service}:{region}::" \
+                                "/restapis/{rest_api_id}/stages/" \
+                                "{stage_name}".format(
+                    service="apigateway",
+                    region=manager.config.region,
+                    rest_api_id=parent_id,
+                    stage_name=r['stageName'])
+                results.append(r)
+            return results
+
+    augment_pipeline = NormalizeRestStage()
+    tag_augment = query.TagsFromField('tags', remove=True, missing='empty', merge=True)
+
     def __init__(self, manager):
         self.manager = manager
         self.query = query.ChildResourceQuery(
@@ -281,31 +295,6 @@ class DescribeRestStage(query.ChildDescribeSource):
 
     def get_query(self):
         return super(DescribeRestStage, self).get_query(capture_parent_id=True)
-
-    def augment(self, resources):
-        results = []
-        rest_apis = self.manager.get_resource_manager(
-            'rest-api').resources()
-        # Using capture parent, changes the protocol
-        for parent_id, r in resources:
-            r['restApiId'] = parent_id
-            for rest_api in rest_apis:
-                if rest_api['id'] == parent_id:
-                    r['restApiType'] = rest_api['endpointConfiguration']['types']
-            r['stageArn'] = "arn:aws:{service}:{region}::" \
-                            "/restapis/{rest_api_id}/stages/" \
-                            "{stage_name}".format(
-                service="apigateway",
-                region=self.manager.config.region,
-                rest_api_id=parent_id,
-                stage_name=r['stageName'])
-            tags = r.setdefault('Tags', [])
-            for k, v in r.pop('tags', {}).items():
-                tags.append({
-                    'Key': k,
-                    'Value': v})
-            results.append(r)
-        return results
 
     def get_resources(self, ids, cache=True):
         deployment_ids = []
@@ -454,17 +443,10 @@ class RestResource(query.ChildResourceManager):
 
 @query.sources.register('describe-rest-resource')
 class DescribeRestResource(query.ChildDescribeSource):
+    augment_pipeline = query.AnnotateParent('restApiId')
 
     def get_query(self):
         return super(DescribeRestResource, self).get_query(capture_parent_id=True)
-
-    def augment(self, resources):
-        results = []
-        # Using capture parent id, changes the protocol
-        for parent_id, r in resources:
-            r['restApiId'] = parent_id
-            results.append(r)
-        return results
 
 
 @resources.register('rest-vpclink')

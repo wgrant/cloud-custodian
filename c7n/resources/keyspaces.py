@@ -4,11 +4,13 @@ from c7n.query import (
     ChildDescribeSource,
     ChildResourceManager,
     DescribeWithResourceTags,
+    MutateResource,
     QueryResourceManager,
     TypeInfo,
+    UniversalTags,
 )
 from c7n.resources.aws import shape_schema
-from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universal_augment
+from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 from c7n.utils import get_retry, local_session, type_schema
 
 
@@ -151,22 +153,18 @@ class DeleteKeyspace(BaseAction):
 
 
 class DescribeTables(ChildDescribeSource):
+    @staticmethod
+    def augment_table(manager, resource):
+        client = local_session(manager.session_factory).client(
+            manager.resource_type.service)
+        details = manager.retry(
+            client.get_table,
+            keyspaceName=resource['keyspaceName'],
+            tableName=resource['tableName'])
+        resource.update(details)
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client(
-            self.manager.resource_type.service)
-
-        def _augment(r):
-            details = self.manager.retry(
-                client.get_table,
-                keyspaceName=r['keyspaceName'],
-                tableName=r['tableName']
-            )
-            r.update(details)
-            return r
-
-        resources = universal_augment(self.manager, super().augment(resources))
-        return list(map(_augment, resources))
+    augment_pipeline = MutateResource(augment_table)
+    tag_augment = UniversalTags()
 
 
 @resources.register('keyspace-table')

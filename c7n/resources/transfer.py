@@ -4,7 +4,8 @@ from c7n.actions import BaseAction
 from c7n.filters.vpc import NetworkLocation, SecurityGroupFilter, SubnetFilter
 from c7n.manager import resources
 from concurrent.futures import as_completed
-from c7n.query import QueryResourceManager, ChildResourceManager, TypeInfo, ChildDescribeSource
+from c7n.query import (
+    MapResource, QueryResourceManager, ChildResourceManager, TypeInfo, ChildDescribeSource)
 from c7n.utils import local_session, type_schema
 
 
@@ -195,19 +196,24 @@ class DeleteServer(BaseAction):
 
 
 class DescribeTransferUser(ChildDescribeSource):
+    detail_augment = False
+
+    def get_permissions(self):
+        return super().get_permissions() + ['transfer:DescribeUser']
+
+    @staticmethod
+    def get_transfer_user(manager, resource):
+        parent_id, user = resource
+        client = local_session(manager.session_factory).client('transfer')
+        return manager.retry(
+            client.describe_user,
+            ServerId=parent_id,
+            UserName=user['UserName']).get('User')
+
+    augment_pipeline = MapResource(get_transfer_user)
 
     def get_query(self):
         return super().get_query(capture_parent_id=True)
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('transfer')
-        results = []
-        for parent_id, user in resources:
-            tu = self.manager.retry(
-                client.describe_user, ServerId=parent_id,
-                UserName=user['UserName']).get('User')
-            results.append(tu)
-        return results
 
 
 @resources.register('transfer-user')

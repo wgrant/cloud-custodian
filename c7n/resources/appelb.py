@@ -1240,26 +1240,28 @@ class AppELBDefaultVpcFilter(net_filters.DefaultVpcBase):
 
 
 class DescribeAppELBTargetGroup(DescribeSource):
+    class TargetGroupHealth:
+        def __call__(self, manager, target_groups):
+            client = local_session(manager.session_factory).client('elbv2')
+
+            def _describe_target_group_health(target_group):
+                result = manager.retry(
+                    client.describe_target_health,
+                    TargetGroupArn=target_group['TargetGroupArn'])
+                target_group['TargetHealthDescriptions'] = result[
+                    'TargetHealthDescriptions']
+
+            with manager.executor_factory(max_workers=2) as w:
+                list(w.map(_describe_target_group_health, target_groups))
+            return target_groups
+
+    augment_pipeline = TargetGroupHealth()
     tag_augment = TagsFromBatchApi(
         op='describe_tags',
         resource_path='TargetGroupArn',
         request_arg='ResourceArns',
         result_path='TagDescriptions',
         result_resource_path='ResourceArn')
-
-    def augment(self, target_groups):
-        client = local_session(self.manager.session_factory).client('elbv2')
-
-        def _describe_target_group_health(target_group):
-            result = self.manager.retry(client.describe_target_health,
-                TargetGroupArn=target_group['TargetGroupArn'])
-            target_group['TargetHealthDescriptions'] = result[
-                'TargetHealthDescriptions']
-
-        with self.manager.executor_factory(max_workers=2) as w:
-            list(w.map(_describe_target_group_health, target_groups))
-
-        return super().augment(target_groups)
 
 
 @resources.register('app-elb-target-group')

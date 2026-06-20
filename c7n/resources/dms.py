@@ -1,13 +1,12 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-from concurrent.futures import as_completed
-
 from c7n.actions import BaseAction
 from c7n.manager import resources
 from c7n.query import (
-    ConfigSource, QueryResourceManager, DescribeSource, TypeInfo, DescribeWithResourceTags)
-from c7n.utils import local_session, chunks, type_schema, get_retry
+    ConfigSource, QueryResourceManager, DescribeSource, TagsFromApi, TypeInfo,
+    DescribeWithResourceTags)
+from c7n.utils import local_session, type_schema, get_retry
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter, VpcFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters import FilterRegistry
@@ -15,6 +14,10 @@ from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 
 
 class InstanceDescribe(DescribeSource):
+    tag_augment = TagsFromApi(
+        resource_path='ReplicationInstanceArn',
+        result_path='TagList',
+        ignore_errors=('ResourceNotFoundFault',))
 
     def fetch_resources_by_ids(self, resource_ids):
         return self.query.filter(
@@ -22,30 +25,6 @@ class InstanceDescribe(DescribeSource):
             **{
                 'Filters': [
                     {'Name': 'replication-instance-id', 'Values': resource_ids}]})
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('dms')
-        with self.manager.executor_factory(max_workers=2) as w:
-            futures = []
-            for resource_set in chunks(resources, 20):
-                futures.append(
-                    w.submit(self.process_resource_set, client, resources))
-
-            for f in as_completed(futures):
-                if f.exception():
-                    self.manager.log.warning(
-                        "Error retrieving replinstance tags: %s",
-                        f.exception())
-        return resources
-
-    def process_resource_set(self, client, resources):
-        for arn, r in zip(self.manager.get_arns(resources), resources):
-            self.manager.log.info("arn %s" % arn)
-            try:
-                r['Tags'] = client.list_tags_for_resource(
-                    ResourceArn=arn).get('TagList', [])
-            except client.exceptions.ResourceNotFoundFault:
-                continue
 
 
 @resources.register('dms-instance')

@@ -225,12 +225,13 @@ def normalize_tags(tags, tag_format='aws-list'):
 
 class TagsFromField:
     def __init__(self, field, target='Tags', tag_format='dict',
-                 remove=False, missing='skip'):
+                 remove=False, missing='skip', merge=False):
         self.field = field
         self.target = target
         self.tag_format = tag_format
         self.remove = remove
         self.missing = missing
+        self.merge = merge
 
     def __call__(self, manager, resources):
         for resource in resources:
@@ -240,14 +241,19 @@ class TagsFromField:
                 tags = ()
             else:
                 tags = resource.pop(self.field) if self.remove else resource.get(self.field)
-            resource[self.target] = normalize_tags(tags, self.tag_format)
+            tags = normalize_tags(tags, self.tag_format)
+            if self.merge:
+                resource.setdefault(self.target, []).extend(tags)
+            else:
+                resource[self.target] = tags
         return resources
 
 
 class TagsFromApi:
     def __init__(self, op='list_tags_for_resource', resource_path=None,
                  request_arg='ResourceArn', result_path='Tags',
-                 service=None, tag_format='aws-list', ignore_errors=()):
+                 service=None, tag_format='aws-list', ignore_errors=(),
+                 merge=False, drop_on_error=False):
         self.op = op
         self.resource_path = resource_path
         self.request_arg = request_arg
@@ -255,6 +261,8 @@ class TagsFromApi:
         self.service = service
         self.tag_format = tag_format
         self.ignore_errors = ignore_errors
+        self.merge = merge
+        self.drop_on_error = drop_on_error
 
     def __call__(self, manager, resources):
         return augment_resource_tags(
@@ -262,7 +270,9 @@ class TagsFromApi:
             arn_arg=self.request_arg, result_key=self.result_path,
             service=self.service,
             normalizer=lambda tags: normalize_tags(tags, self.tag_format),
-            ignore_errors=self.ignore_errors)
+            ignore_errors=self.ignore_errors,
+            merge=self.merge,
+            drop_on_error=self.drop_on_error)
 
 
 class TagsFromBatchApi:
@@ -348,6 +358,99 @@ class MergeField:
         return resources
 
 
+class FilterResources:
+    def __init__(self, predicate):
+        self.predicate = predicate
+
+    def __call__(self, manager, resources):
+        return [r for r in resources if self.predicate(manager, r)]
+
+
+class SetField:
+    def __init__(self, field, value, when=None):
+        self.field = field
+        self.value = value
+        self.when = when
+
+    def __call__(self, manager, resources):
+        for resource in resources:
+            if self.when and not self.when(manager, resource):
+                continue
+            resource[self.field] = self.value(manager, resource)
+        return resources
+
+
+class MutateResource:
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, manager, resources):
+        for resource in resources:
+            self.func(manager, resource)
+        return resources
+
+
+class MapResource:
+    def __init__(self, func, max_workers=None):
+        self.func = func
+        self.max_workers = max_workers
+
+    def __call__(self, manager, resources):
+        results = []
+        if self.max_workers:
+            with manager.executor_factory(max_workers=self.max_workers) as w:
+                mapped_resources = w.map(
+                    functools.partial(self.func, manager), resources)
+                for mapped in mapped_resources:
+                    if mapped is not None:
+                        results.append(mapped)
+            return results
+
+        for resource in resources:
+            mapped = self.func(manager, resource)
+            if mapped is not None:
+                results.append(mapped)
+        return results
+
+
+class MapBatch:
+    def __init__(self, func, size=None, max_workers=None):
+        self.func = func
+        self.size = size
+        self.max_workers = max_workers
+
+    def __call__(self, manager, resources):
+        results = []
+        resource_sets = chunks(resources, self.size) if self.size else (resources,)
+        if self.max_workers:
+            with manager.executor_factory(max_workers=self.max_workers) as w:
+                mapped_sets = w.map(
+                    functools.partial(self.func, manager),
+                    resource_sets)
+                for mapped in mapped_sets:
+                    if mapped:
+                        results.extend(mapped)
+            return results
+
+        for resource_set in resource_sets:
+            mapped = self.func(manager, resource_set)
+            if mapped:
+                results.extend(mapped)
+        return results
+
+
+class AnnotateParent:
+    def __init__(self, field):
+        self.field = field
+
+    def __call__(self, manager, resources):
+        results = []
+        for parent_id, resource in resources:
+            resource[self.field] = parent_id
+            results.append(resource)
+        return results
+
+
 def _iter_augments(augments):
     if augments is None:
         return ()
@@ -370,6 +473,8 @@ def _apply_tag_augment(manager, resources, augments=None):
 class DescribeSource:
 
     resource_query_factory = ResourceQuery
+    detail_augment = True
+    pre_augment_pipeline = None
     augment_pipeline = None
     tag_augment = None
 
@@ -431,15 +536,19 @@ class DescribeSource:
         if m.permissions_augment:
             perms.extend(m.permissions_augment)
 
-        if getattr(m, 'detail_spec', None):
+        if self.detail_augment and getattr(m, 'detail_spec', None):
             perms.append("%s:%s" % (prefix, _napi(m.detail_spec[0])))
-        if getattr(m, 'batch_detail_spec', None):
+        if self.detail_augment and getattr(m, 'batch_detail_spec', None):
             perms.append("%s:%s" % (prefix, _napi(m.batch_detail_spec[0])))
         return perms
 
     def augment(self, resources):
         model = self.manager.get_model()
-        if getattr(model, 'detail_spec', None):
+        resources = _apply_augment_pipeline(
+            self.manager, resources, self.pre_augment_pipeline)
+        if not self.detail_augment:
+            detail_spec = None
+        elif getattr(model, 'detail_spec', None):
             detail_spec = getattr(model, 'detail_spec', None)
             _augment = _scalar_augment
         elif getattr(model, 'batch_detail_spec', None):
@@ -487,7 +596,8 @@ def lower_key_tag_list(tags):
 
 def augment_resource_tags(manager, resources, op='list_tags_for_resource',
                           arn_key=None, arn_arg='ResourceArn', result_key='Tags',
-                          service=None, normalizer=None, ignore_errors=()):
+                          service=None, normalizer=None, ignore_errors=(),
+                          merge=False, drop_on_error=False):
     if service is None and getattr(manager, 'get_client', None):
         client = manager.get_client()
     else:
@@ -495,16 +605,27 @@ def augment_resource_tags(manager, resources, op='list_tags_for_resource',
             service or manager.resource_type.service)
     normalizer = normalizer or (lambda tags: tags)
     arn_key = arn_key or manager.resource_type.arn
+    results = []
     for resource in resources:
+        resource_id = (
+            arn_key(manager, resource) if callable(arn_key)
+            else get_path(arn_key, resource))
         response = manager.retry(
             getattr(client, op),
             ignore_err_codes=ignore_errors,
-            **{arn_arg: get_path(arn_key, resource)})
+            **{arn_arg: resource_id})
         if response is None:
-            resource['Tags'] = []
-            continue
-        resource['Tags'] = normalizer(response.get(result_key, ()))
-    return resources
+            if drop_on_error:
+                continue
+            tags = []
+        else:
+            tags = normalizer(response.get(result_key, ()))
+        if merge:
+            resource.setdefault('Tags', []).extend(tags)
+        else:
+            resource['Tags'] = tags
+        results.append(resource)
+    return results if drop_on_error else resources
 
 
 @sources.register('describe-child')

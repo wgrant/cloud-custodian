@@ -9,9 +9,10 @@ from c7n.query import (
     DescribeWithResourceTags,
     ChildDescribeSource,
     ConfigSource,
+    MapResource,
+    UniversalTags,
 )
 from c7n.resources.aws import Arn
-from c7n.tags import universal_augment
 from c7n.filters import ListItemFilter
 from c7n.utils import (
     local_session, type_schema
@@ -70,6 +71,19 @@ class AppmeshMesh(QueryResourceManager):
 
 
 class DescribeVirtualGatewayDefinition(ChildDescribeSource):
+    @staticmethod
+    def get_virtual_gateway(manager, resource):
+        if "metadata" in resource:
+            return resource
+        client = local_session(manager.session_factory).client('appmesh')
+        return manager.retry(
+            client.describe_virtual_gateway,
+            meshName=resource["meshName"],
+            virtualGatewayName=resource["virtualGatewayName"])['virtualGateway']
+
+    augment_pipeline = MapResource(get_virtual_gateway)
+    tag_augment = UniversalTags()
+
     # This method is called in event mode and not pull mode.
     # Its purpose is to take a list of virtual gateway ARN's that the
     # framework has extracted from the events according to the policy yml file
@@ -85,26 +99,6 @@ class DescribeVirtualGatewayDefinition(ChildDescribeSource):
         ]
 
         return self._describe(mesh_and_child_names)
-
-    # Called during event mode and pull mode, and it's function is to take id's
-    # from some provided data and return the complete description of the resource.
-    # The resources argument is a list of objects that contains at least
-    # the fields meshName and virtualGatewayName.
-    #
-    # If we are in event mode then the resources will already be fully populated because
-    # augment() is called with the fully populated output of get_resources() above.
-    # But, if we are in pull mode then we only have some basic data returned from the
-    # "parent" query enum function so we have to get the full details.
-    def augment(self, resources):
-        # Can detect if we are in event mode because the resource we get from
-        # the event has the metadata field present. By contrast when we are in pull
-        # mode then all we have is some skinny data from the parent's list function.
-        event_mode = resources and "metadata" in resources[0]
-        if not event_mode:
-            resources = self._describe(resources)
-
-        # fill in the tags
-        return universal_augment(self.manager, resources)
 
     # takes a list of objects with fields meshName and virtualGatewayName
     def _describe(self, mesh_and_child_names):
@@ -199,6 +193,19 @@ class AppmeshVirtualGateway(ChildResourceManager):
 
 
 class DescribeVirtualNodeDefinition(ChildDescribeSource):
+    @staticmethod
+    def get_virtual_node(manager, resource):
+        if "metadata" in resource:
+            return resource
+        client = local_session(manager.session_factory).client('appmesh')
+        return manager.retry(
+            client.describe_virtual_node,
+            meshName=resource["meshName"],
+            virtualNodeName=resource["virtualNodeName"])['virtualNode']
+
+    augment_pipeline = MapResource(get_virtual_node)
+    tag_augment = UniversalTags()
+
     # This method is called in event mode and not pull mode.
     # Its purpose is to take a list of virtual gateway ARN's that the
     # framework has extracted from the events according to the policy yml file
@@ -214,26 +221,6 @@ class DescribeVirtualNodeDefinition(ChildDescribeSource):
         ]
 
         return self._describe(mesh_and_child_names)
-
-    # Called during event mode and pull mode, and it's function is to take id's
-    # from some provided data and return the complete description of the resource.
-    # The resources argument is a list of objects that contains at least
-    # the fields meshName and virtualNodeName.
-    #
-    # If we are in event mode then the resources will already be fully populated because
-    # augment() is called with the fully populated output of get_resources() above.
-    # But, if we are in pull mode then we only have some basic data returned from the
-    # "parent" query enum function so we have to get the full details.
-    def augment(self, resources):
-        # Can detect if we are in event mode because the resource we get from
-        # the event has the metadata field present. By contrast when we are in pull
-        # mode then all we have is some skinny data from the parent's list function.
-        event_mode = resources and "metadata" in resources[0]
-        if not event_mode:
-            resources = self._describe(resources)
-
-        # fill in the tags
-        return universal_augment(self.manager, resources)
 
     # takes a list of objects with fields meshName and virtualGatewayName
     def _describe(self, mesh_and_child_names):

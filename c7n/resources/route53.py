@@ -37,14 +37,26 @@ class Route53Base:
 
     permissions = ('route53:ListTagsForResources',)
     retry = staticmethod(get_retry(('Throttled',)))
+
+    @staticmethod
+    def get_tag_resource_id(manager, resource):
+        resource_id = resource[manager.resource_type.id]
+        if "hostedzone" in resource_id:
+            resource_id = resource_id.split("/")[-1]
+        return resource_id
+
+    @staticmethod
+    def get_tag_extra_args(manager):
+        return {'ResourceType': manager.resource_type.arn_type}
+
     tag_augment = TagsFromBatchApi(
         op='list_tags_for_resources',
         request_arg='ResourceIds',
         result_path='ResourceTagSets',
         result_resource_path='ResourceId',
-        resource_key=lambda manager, r: _route53_tag_id(manager, r),
+        resource_key=get_tag_resource_id,
         batch_size=10,
-        extra_args=lambda manager: {'ResourceType': manager.resource_type.arn_type})
+        extra_args=get_tag_extra_args)
 
     @property
     def generate_arn(self):
@@ -58,13 +70,6 @@ class Route53Base:
     def get_arn(self, r):
         return self.generate_arn(r[self.get_model().id].split("/")[-1])
 
-def _route53_tag_id(manager, resource):
-    resource_id = resource[manager.resource_type.id]
-    if "hostedzone" in resource_id:
-        resource_id = resource_id.split("/")[-1]
-    return resource_id
-
-
 def generate_rrset(recordset):
     keys = (
         'Name', 'Type', 'TTL', 'SetIdentifier', 'Region', 'AliasTarget', 'ResourceRecords')
@@ -77,6 +82,13 @@ def generate_rrset(recordset):
 
 @resources.register('hostedzone')
 class HostedZone(Route53Base, QueryResourceManager):
+    @staticmethod
+    def get_config_hosted_zone_id(manager, resource):
+        return resource['Id'].split("/")[-1]
+
+    augment_pipeline = query.SetField(
+        'c7n:ConfigHostedZoneId',
+        get_config_hosted_zone_id)
 
     class resource_type(TypeInfo):
         service = 'route53'
@@ -98,14 +110,6 @@ class HostedZone(Route53Base, QueryResourceManager):
             _id = r[self.get_model().id].split("/")[-1]
             arns.append(self.generate_arn(_id))
         return arns
-
-    def augment(self, resources):
-        annotation_key = 'c7n:ConfigHostedZoneId'
-        resources = super(HostedZone, self).augment(resources)
-        for r in resources:
-            config_hzone_id = r['Id'].split("/")[-1]
-            r[annotation_key] = config_hzone_id
-        return resources
 
 
 HostedZone.filter_registry.register('shield-enabled', IsShieldProtected)
@@ -141,6 +145,12 @@ class ResourceRecordSet(ChildResourceManager):
 
 @resources.register('r53domain')
 class Route53Domain(QueryResourceManager):
+    tag_augment = query.TagsFromApi(
+        op='list_tags_for_domain',
+        resource_path='DomainName',
+        request_arg='DomainName',
+        result_path='TagList',
+        service='route53domains')
 
     class resource_type(TypeInfo):
         service = 'route53domains'
@@ -151,14 +161,6 @@ class Route53Domain(QueryResourceManager):
         global_resource = False
 
     permissions = ('route53domains:ListTagsForDomain',)
-
-    def augment(self, domains):
-        client = local_session(self.session_factory).client('route53domains')
-        for d in domains:
-            d['Tags'] = self.retry(
-                client.list_tags_for_domain,
-                DomainName=d['DomainName'])['TagList']
-        return super().augment(domains)
 
 
 @Route53Domain.action_registry.register('tag')
@@ -734,14 +736,9 @@ ARC_REGION = 'us-west-2'
 
 
 class DescribeCheck(query.DescribeSource):
-
-    def augment(self, readiness_checks):
-        for r in readiness_checks:
-            Tags = self.manager.retry(
-                self.manager.get_client().list_tags_for_resources,
-                ResourceArn=r['ReadinessCheckArn'])['Tags']
-            r['Tags'] = [{'Key': k, "Value": v} for k, v in Tags.items()]
-        return readiness_checks
+    tag_augment = query.TagsFromApi(
+        op='list_tags_for_resources', resource_path='ReadinessCheckArn',
+        tag_format='dict')
 
 
 @resources.register('readiness-check')
@@ -866,13 +863,8 @@ class ReadinessCheckCrossAccount(CrossAccountAccessFilter):
 
 
 class DescribeCluster(query.DescribeSource):
-    def augment(self, clusters):
-        for r in clusters:
-            Tags = self.manager.retry(
-                self.manager.get_client().list_tags_for_resource,
-                ResourceArn=r['ClusterArn'])['Tags']
-            r['Tags'] = [{'Key': k, "Value": v} for k, v in Tags.items()]
-        return clusters
+    tag_augment = query.TagsFromApi(
+        resource_path='ClusterArn', tag_format='dict')
 
 
 @resources.register('recovery-cluster')
@@ -964,13 +956,8 @@ class DescribeControlPanel(query.ChildDescribeSource):
         self.query = query.ChildResourceQuery(
             self.manager.session_factory, self.manager)
 
-    def augment(self, controlpanels):
-        for r in controlpanels:
-            Tags = self.manager.retry(
-                self.manager.get_client().list_tags_for_resource,
-                ResourceArn=r['ControlPanelArn'])['Tags']
-            r['Tags'] = [{'Key': k, "Value": v} for k, v in Tags.items()]
-        return controlpanels
+    tag_augment = query.TagsFromApi(
+        resource_path='ControlPanelArn', tag_format='dict')
 
 
 @resources.register('recovery-control-panel')

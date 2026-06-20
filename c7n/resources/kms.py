@@ -12,17 +12,19 @@ from c7n.actions import RemovePolicyBase, BaseAction
 from c7n.filters import Filter, CrossAccountAccessFilter, ListItemFilter, ValueFilter
 from c7n.manager import resources
 from c7n.query import (
-    ConfigSource, DescribeSource, QueryResourceManager, RetryPageIterator, TypeInfo)
+    ConfigSource, DescribeSource, FilterResources, MutateResource,
+    QueryResourceManager, RetryPageIterator, TypeInfo, UniversalTags)
 from c7n.utils import local_session, type_schema, select_keys
-from c7n.tags import universal_augment
 
 from .securityhub import PostFinding
 
 
 class DescribeAlias(DescribeSource):
+    @staticmethod
+    def has_target_key(manager, resource):
+        return 'TargetKeyId' in resource
 
-    def augment(self, resources):
-        return [r for r in resources if 'TargetKeyId' in r]
+    augment_pipeline = FilterResources(has_target_key)
 
 
 @resources.register('kms')
@@ -42,6 +44,41 @@ class KeyAlias(QueryResourceManager):
 class DescribeKey(DescribeSource):
 
     FetchThreshold = 10  # ie should we describe all keys or just fetch them directly
+    detail_augment = False
+
+    @staticmethod
+    def augment_key(manager, resource):
+        client = local_session(manager.session_factory).client('kms')
+        key_id = resource.get('KeyId')
+
+        # We get `KeyArn` from list_keys and `Arn` from describe_key.
+        # If we already have describe_key details we don't need to fetch
+        # it again.
+        if 'Arn' not in resource:
+            try:
+                key_arn = resource.get('KeyArn', key_id)
+                key_detail = client.describe_key(KeyId=key_arn)['KeyMetadata']
+                resource.update(key_detail)
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'AccessDeniedException':
+                    manager.log.warning(
+                        "Access denied when describing key:%s",
+                        key_id)
+                    # If a describe fails, we still want the `Arn` key
+                    # available since it is a core attribute.
+                    resource['Arn'] = resource['KeyArn']
+                else:
+                    raise
+
+        alias_names = manager.alias_map.get(key_id)
+        if alias_names:
+            resource['AliasNames'] = alias_names
+
+    augment_pipeline = MutateResource(augment_key)
+    tag_augment = UniversalTags()
+
+    def get_permissions(self):
+        return super().get_permissions() + ['kms:DescribeKey']
 
     def get_resources(self, ids, cache=True):
         # this forms a threshold beyond which we'll fetch individual keys of interest.
@@ -59,36 +96,6 @@ class DescribeKey(DescribeSource):
                     continue
             return results
         return super().get_resources(ids, cache)
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('kms')
-        for r in resources:
-            key_id = r.get('KeyId')
-
-            # We get `KeyArn` from list_keys and `Arn` from describe_key.
-            # If we already have describe_key details we don't need to fetch
-            # it again.
-            if 'Arn' not in r:
-                try:
-                    key_arn = r.get('KeyArn', key_id)
-                    key_detail = client.describe_key(KeyId=key_arn)['KeyMetadata']
-                    r.update(key_detail)
-                except ClientError as e:
-                    if e.response['Error']['Code'] == 'AccessDeniedException':
-                        self.manager.log.warning(
-                            "Access denied when describing key:%s",
-                            key_id)
-                        # If a describe fails, we still want the `Arn` key
-                        # available since it is a core attribute
-                        r['Arn'] = r['KeyArn']
-                    else:
-                        raise
-
-            alias_names = self.manager.alias_map.get(key_id)
-            if alias_names:
-                r['AliasNames'] = alias_names
-
-        return universal_augment(self.manager, resources)
 
 
 class ConfigKey(ConfigSource):

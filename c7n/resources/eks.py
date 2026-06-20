@@ -11,7 +11,7 @@ from c7n.manager import resources
 from c7n.resources.aws import shape_schema
 from c7n import tags, query
 from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, \
-    ChildResourceManager, ChildDescribeSource
+    ChildResourceManager, ChildDescribeSource, MapResource
 from c7n.utils import local_session, type_schema, get_retry
 from botocore.waiter import WaiterModel, create_waiter_with_client
 from .aws import shape_validate
@@ -22,21 +22,29 @@ from c7n.filters import Filter
 
 @query.sources.register('describe-eks-nodegroup')
 class NodeGroupDescribeSource(ChildDescribeSource):
+    detail_augment = False
+
+    def get_permissions(self):
+        return super().get_permissions() + ['eks:DescribeNodegroup']
+
+    @staticmethod
+    def get_nodegroup(manager, resource):
+        cluster_name, nodegroup_name = resource
+        client = local_session(manager.session_factory).client('eks')
+        nodegroup = manager.retry(
+            client.describe_nodegroup,
+            clusterName=cluster_name,
+            nodegroupName=nodegroup_name)['nodegroup']
+        if 'tags' in nodegroup:
+            nodegroup['Tags'] = [
+                {'Key': k, 'Value': v}
+                for k, v in nodegroup['tags'].items()]
+        return nodegroup
+
+    augment_pipeline = MapResource(get_nodegroup)
 
     def get_query(self):
         return super().get_query(capture_parent_id=True)
-
-    def augment(self, resources):
-        results = []
-        client = local_session(self.manager.session_factory).client('eks')
-        for cluster_name, nodegroup_name in resources:
-            nodegroup = client.describe_nodegroup(
-                clusterName=cluster_name,
-                nodegroupName=nodegroup_name)['nodegroup']
-            if 'tags' in nodegroup:
-                nodegroup['Tags'] = [{'Key': k, 'Value': v} for k, v in nodegroup['tags'].items()]
-            results.append(nodegroup)
-        return results
 
 
 @resources.register('eks-nodegroup')
@@ -80,14 +88,7 @@ class DeleteNodeGroup(Action):
 
 
 class EKSDescribeSource(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        for r in resources:
-            if 'tags' not in r:
-                continue
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in r['tags'].items()]
-        return resources
+    tag_augment = query.TagsFromField('tags')
 
 
 class EKSConfigSource(ContainerConfigSource):

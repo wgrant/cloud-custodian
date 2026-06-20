@@ -3,17 +3,18 @@
 
 from c7n.actions.core import BaseAction
 from c7n.manager import resources as c7n_resources
-from c7n.query import ChildResourceManager, DescribeSource, QueryResourceManager, TypeInfo
+from c7n.query import (
+    ChildResourceManager, DescribeSource, FilterResources, QueryResourceManager, TypeInfo)
 from c7n.utils import local_session, type_schema
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 
 
 class DescribeNetwork(DescribeSource):
+    @staticmethod
+    def is_account_owned(manager, resource):
+        return resource['OwnerAccountId'] == manager.config.account_id
 
-    def augment(self, resources):
-        return super().augment(
-            [r for r in resources if r['OwnerAccountId'] == self.manager.config.account_id]
-        )
+    pre_augment_pipeline = FilterResources(is_account_owned)
 
 
 @c7n_resources.register('networkmanager-core')

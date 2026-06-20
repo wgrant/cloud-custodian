@@ -8,7 +8,9 @@ from c7n.filters.iamaccess import CrossAccountAccessFilter
 import c7n.filters.policystatement as polstmt_filter
 from c7n.exceptions import PolicyValidationError
 from c7n.manager import resources
-from c7n.query import DescribeSource, QueryResourceManager, TypeInfo, DescribeWithResourceTags
+from c7n.query import (
+    DescribeSource, MapResource, MutateResource, QueryResourceManager, TypeInfo,
+    DescribeWithResourceTags, UniversalTags)
 from c7n.utils import local_session, type_schema, format_string_values
 from c7n.tags import universal_augment
 from c7n.tags import RemoveTag, Tag
@@ -20,24 +22,24 @@ log = logging.getLogger("custodian.ses")
 
 
 class DescribeConfigurationSet(DescribeSource):
+    @staticmethod
+    def augment_configuration_set(manager, resource):
+        client = local_session(manager.session_factory).client('ses')
+        details = manager.retry(
+            client.describe_configuration_set,
+            ConfigurationSetName=resource['Name'],
+            ConfigurationSetAttributeNames=[
+                'eventDestinations',
+                'trackingOptions',
+                'deliveryOptions',
+                'reputationOptions'])
+        resource.update({
+            k: details[k]
+            for k in details
+            if k not in {'ConfigurationSet', 'ResponseMetadata'}})
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('ses')
-        for r in resources:
-            details = client.describe_configuration_set(ConfigurationSetName=r['Name'],
-                ConfigurationSetAttributeNames=[
-                    'eventDestinations',
-                    'trackingOptions',
-                    'deliveryOptions',
-                    'reputationOptions'
-                ]
-            )
-            r.update({
-                k: details[k]
-                for k in details
-                if k not in {'ConfigurationSet', 'ResponseMetadata'}
-            })
-        return universal_augment(self.manager, resources)
+    augment_pipeline = MutateResource(augment_configuration_set)
+    tag_augment = UniversalTags()
 
 
 @resources.register('ses-configuration-set')
@@ -57,18 +59,19 @@ class SESConfigurationSet(QueryResourceManager):
 
 
 class DescribeConfigurationSetV2(DescribeSource):
+    @staticmethod
+    def get_configuration_set(manager, resource):
+        client = local_session(manager.session_factory).client('sesv2')
+        details = manager.retry(
+            client.get_configuration_set,
+            ConfigurationSetName=resource)
+        return {
+            k: details[k]
+            for k in details
+            if k not in {'ResponseMetadata'}}
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sesv2')
-        resource_list = []
-        for r in resources:
-            details = client.get_configuration_set(ConfigurationSetName=r)
-            resource_list.append({
-                k: details[k]
-                for k in details
-                if k not in {'ResponseMetadata'}
-            })
-        return universal_augment(self.manager, resource_list)
+    augment_pipeline = MapResource(get_configuration_set)
+    tag_augment = UniversalTags()
 
 
 @resources.register('ses-configuration-set-v2')
@@ -348,21 +351,22 @@ class Delete(Action):
 
 
 class DescribeDedicatedIpPool(DescribeSource):
+    default_shared_pools = ("ses-default-dedicated-pool", "ses-shared-pool")
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sesv2')
-        resource_list = []
+    @staticmethod
+    def get_dedicated_ip_pool(manager, resource):
         # Default & Shared Dedicated IP pool names
         # https://docs.aws.amazon.com/ses/latest/dg/managing-ip-pools.html
-        default_shared_pools = ["ses-default-dedicated-pool", "ses-shared-pool"]
-        for r in resources:
-            if r in default_shared_pools:
-                # For default & shared pools, we cannot call get_dedicated_ip_pool
-                log.info("Skipping default/shared pool: %s", r)
-                continue
-            details = client.get_dedicated_ip_pool(PoolName=r)
-            resource_list.append(details["DedicatedIpPool"])
-        return universal_augment(self.manager, resource_list)
+        if resource in DescribeDedicatedIpPool.default_shared_pools:
+            log.info("Skipping default/shared pool: %s", resource)
+            return None
+        client = local_session(manager.session_factory).client('sesv2')
+        return manager.retry(
+            client.get_dedicated_ip_pool,
+            PoolName=resource)["DedicatedIpPool"]
+
+    augment_pipeline = MapResource(get_dedicated_ip_pool)
+    tag_augment = UniversalTags()
 
 
 @resources.register('ses-dedicated-ip-pool')
