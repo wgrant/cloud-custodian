@@ -61,13 +61,13 @@ class EMRCluster(QueryResourceManager):
                 client.describe_cluster(ClusterId=jid)['Cluster'])
         return results
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         query = query or {}
         for q in self.queries:
             query.update(q)
         if 'ClusterStates' not in query:
             query['ClusterStates'] = self.resource_type.default_cluster_states
-        return super(EMRCluster, self).resources(query=query)
+        return super().prepare_query(query)
 
     def augment(self, resources):
         client = local_session(

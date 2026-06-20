@@ -44,7 +44,7 @@ class DescribeAccount(DescribeSource):
         return {'account_id': self.manager.config.account_id,
                 'account_name': name}
 
-    def resources(self, query=None):
+    def fetch_resources(self, query):
         return [self.get_account()]
 
     def get_resources(self, resource_ids):

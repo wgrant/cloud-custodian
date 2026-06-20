@@ -42,12 +42,12 @@ class HealthEvents(QueryResourceManager):
             qf[key] = values
         return qf
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         q = self.resource_query()
         if q is not None:
             query = query or {}
             query['filter'] = q
-        return super(HealthEvents, self).resources(query=query)
+        return super().prepare_query(query)
 
     def augment(self, resources):
         client = local_session(self.session_factory).client('health')

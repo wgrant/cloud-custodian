@@ -88,12 +88,12 @@ class DescribeWafV2(DescribeSource):
             query_params['Scope'] = 'REGIONAL'
         return query_params
 
-    def resources(self, query):
+    def normalize_resources(self, resources, query):
         scope = (query or {}).get('Scope', 'REGIONAL')
         # The AWS API does not include the scope as part of the WebACL information, but scope
         # is a required parameter for most API calls - we augment the resource with the desired
         # scope here in order to use it downstream for API calls
-        return [{'Scope': scope, **r} for r in super().resources(query)]
+        return [{'Scope': scope, **r} for r in resources]
 
     def get_resources(self, ids):
         params = self.get_query_params(None)

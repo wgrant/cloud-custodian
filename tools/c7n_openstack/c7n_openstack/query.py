@@ -106,12 +106,52 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         if 'query' in self.data:
             return {'filter': self.data.get('query')}
 
-    def resources(self, query=None):
-        q = query or self.get_resource_query()
-        key = self.get_cache_key(q)
-        resources = self.augment(self.source.get_resources(q))
-        self._cache.save(key, resources)
+    def prepare_query(self, query):
+        return query or self.get_resource_query()
+
+    def fetch_resources(self, query):
+        return self.source.get_resources(query)
+
+    def handle_fetch_error(self, error, query):
+        raise error
+
+    def normalize_resources(self, resources, query):
+        return resources
+
+    def augment_resources(self, resources):
+        return self.augment(resources)
+
+    def should_cache_resources(self, query, resources, augment=True):
+        return True
+
+    def filter_resource_set(self, resources):
         return self.filter_resources(resources)
+
+    def finalize_resources(self, resources, query):
+        return resources
+
+    def resources(self, query=None):
+        q = self.prepare_query(query)
+        key = self.get_cache_key(q)
+        resources = None
+        if self._cache.load():
+            resources = self._cache.get(key)
+            if resources is not None:
+                self.log.debug("Using cached %s: %d" % (
+                    "%s.%s" % (self.__class__.__module__, self.__class__.__name__),
+                    len(resources)))
+        if resources is None:
+            try:
+                resources = self.fetch_resources(q)
+            except Exception as e:
+                resources = self.handle_fetch_error(e, q)
+            resources = self.normalize_resources(resources, q)
+            resources = self.augment_resources(resources)
+            if self.should_cache_resources(q, resources, augment=True):
+                self._cache.save(key, resources)
+        self._cache.close()
+        resources = self.filter_resource_set(resources)
+        return self.finalize_resources(resources, q)
 
     def augment(self, resources):
         return self.source.augment(resources)

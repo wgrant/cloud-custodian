@@ -211,11 +211,11 @@ class OpsItem(QueryResourceManager):
                 'Values': [i],
                 'Operator': 'Equal'} for i in ids]})
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         q = self.resource_query()
         if q and query and 'OpsItemFilters' in query:
             q['OpsItemFilters'].extend(query['OpsItemFilters'])
-        return super(OpsItem, self).resources(query=q)
+        return super().prepare_query(q)
 
     def resource_query(self):
         filters = []
@@ -900,13 +900,13 @@ class SSMSessionManager(QueryResourceManager):
 
     augment = universal_augment
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         if query is None:
             query = {}
         if 'State' not in query:
             # Default to Active if not given
             query['State'] = 'Active'
-        return super(SSMSessionManager, self).resources(query=query)
+        return super().prepare_query(query)
 
 
 @SSMSessionManager.action_registry.register('terminate')

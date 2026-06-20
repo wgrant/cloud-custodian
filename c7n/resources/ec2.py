@@ -60,9 +60,8 @@ class DescribeEC2(query.DescribeSource):
                 instances.append(i)
         return instances
 
-    def resources(self, query):
-        reservations = self.query.filter(self.manager, **query)
-        return self._flatten_reservations(reservations)
+    def normalize_resources(self, resources, query):
+        return self._flatten_reservations(resources)
 
     def get_resources(self, ids, cache=True):
         reservations = self.query.get(self.manager, ids)

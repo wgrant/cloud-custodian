@@ -191,8 +191,31 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         if 'query' in self.data:
             return {'filter': self.data.get('query')}
 
+    def prepare_query(self, query):
+        return query or self.get_resource_query()
+
+    def fetch_resources(self, query):
+        with self.ctx.tracer.subsegment('resource-fetch'):
+            return self._fetch_resources(query)
+
+    def handle_fetch_error(self, error, query):
+        raise error
+
+    def normalize_resources(self, resources, query):
+        return resources
+
+    def should_cache_resources(self, query, resources, augment=True):
+        return True
+
+    def filter_resource_set(self, resources):
+        with self.ctx.tracer.subsegment('filter'):
+            return self.filter_resources(resources)
+
+    def finalize_resources(self, resources, query):
+        return resources
+
     def resources(self, query=None):
-        q = query or self.get_resource_query()
+        q = self.prepare_query(query)
         cache_key = self.get_cache_key(q)
         resources = None
 
@@ -205,19 +228,22 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
                     len(resources)))
 
         if resources is None:
-            with self.ctx.tracer.subsegment('resource-fetch'):
-                resources = self._fetch_resources(q)
-            self._cache.save(cache_key, resources)
+            try:
+                resources = self.fetch_resources(q)
+            except Exception as e:
+                resources = self.handle_fetch_error(e, q)
+            resources = self.normalize_resources(resources, q)
+            if self.should_cache_resources(q, resources, augment=True):
+                self._cache.save(cache_key, resources)
 
         self._cache.close()
         resource_count = len(resources)
-        with self.ctx.tracer.subsegment('filter'):
-            resources = self.filter_resources(resources)
+        resources = self.filter_resource_set(resources)
 
         # Check resource limits if we're the current policy execution.
         if self.data == self.ctx.policy.data:
             self.check_resource_limit(len(resources), resource_count)
-        return resources
+        return self.finalize_resources(resources, q)
 
     def check_resource_limit(self, selection_count, population_count):
         """Check if policy's execution affects more resources then its limit.

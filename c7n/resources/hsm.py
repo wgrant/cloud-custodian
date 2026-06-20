@@ -80,14 +80,11 @@ class CloudHSM(QueryResourceManager):
         name = 'Name'
         detail_spec = ("describe_hsm", "HsmArn", None, None)
 
-    def resources(self, query=None, augment=True):
-        try:
-            return super().resources(query, augment)
-        except ClientError as e:
-            # cloudhsm is not available for new accounts, use cloudhsmV2
-            if 'service is unavailable' in str(e):
-                return []
-            raise
+    def handle_fetch_error(self, error, query):
+        # cloudhsm is not available for new accounts, use cloudhsmV2
+        if isinstance(error, ClientError) and 'service is unavailable' in str(error):
+            return []
+        return super().handle_fetch_error(error, query)
 
 
 @resources.register('hsm-hapg')
@@ -120,8 +117,7 @@ class DescribeCloudHSMBackup(DescribeSource):
             r['Tags'] = r.pop('TagList', ())
         return resources
 
-    def resources(self, query):
-        resources = self.query.filter(self.manager, **query)
+    def normalize_resources(self, resources, query):
         return [r for r in resources if r['BackupState'] != 'PENDING_DELETION']
 
 

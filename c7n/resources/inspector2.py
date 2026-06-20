@@ -6,7 +6,7 @@ from c7n.utils import merge_dict_list
 
 
 class DescribeInspector2Finding(query.DescribeSource):
-    def resources(self, query):
+    def prepare_query(self, query):
         """Only show active Inspector V2 findings by default
 
         Unless overridden by policy, use this default filter:
@@ -29,7 +29,7 @@ class DescribeInspector2Finding(query.DescribeSource):
                 query,
             ]
         )
-        return super().resources(query=query)
+        return query
 
 
 @resources.register("inspector2-finding")

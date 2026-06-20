@@ -10,14 +10,13 @@ log = logging.getLogger('custodian.access-analyzer')
 
 class DescribeAccessanalyzerFinding(query.DescribeSource):
 
-    def resources(self, query):
+    def prepare_query(self, query):
         analyzer_arn = self.get_analyzer_arn()
         if not analyzer_arn:
-            return ()
-        if not query:
-            query = {}
+            return None
+        query = query or {}
         query['analyzerArn'] = analyzer_arn
-        return super().resources(query)
+        return query
 
     def get_analyzer_arn(self):
         """ Find Active Access Analyzer ARN

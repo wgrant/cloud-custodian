@@ -66,14 +66,14 @@ class AMI(QueryResourceManager):
         'describe': DescribeImageSource
     }
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         if query is None and 'query' in self.data:
             query = merge_dict_list(self.data['query'])
         elif query is None:
             query = {}
         if query.get('Owners') is None:
             query['Owners'] = ['self']
-        return super(AMI, self).resources(query=query)
+        return super().prepare_query(query)
 
 
 class ErrorHandler:

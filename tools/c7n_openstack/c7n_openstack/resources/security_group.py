@@ -13,9 +13,5 @@ class SecurityGroup(QueryResourceManager):
         name = 'name'
         default_report_fields = ['id', 'name', 'tenant_id']
 
-    def resources(self, query=None):
-        q = query or self.get_resource_query()
-        key = self.get_cache_key(q)
-        resources = [r.toDict() for r in self.augment(self.source.get_resources(q))]
-        self._cache.save(key, resources)
-        return self.filter_resources(resources)
+    def normalize_resources(self, resources, query):
+        return [r.toDict() for r in resources]

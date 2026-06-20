@@ -90,12 +90,12 @@ class ElasticSearchDomain(QueryResourceManager):
         cfn_type = config_type = 'AWS::Elasticsearch::Domain'
         permissions_augment = ("es:ListTags",)
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         if 'query' in self.data:
             query = merge_dict_list(self.data['query'])
         elif query is None:
             query = {}
-        return super(ElasticSearchDomain, self).resources(query=query)
+        return super().prepare_query(query)
 
     source_mapping = {
         'describe': DescribeDomain,

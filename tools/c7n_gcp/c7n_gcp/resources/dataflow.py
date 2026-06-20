@@ -36,12 +36,12 @@ class DataflowJob(QueryResourceManager):
                 }
             )
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         query_filter = 'ACTIVE'
         if self.data.get('query'):
             query_filter = self.data['query'][0].get('filter', 'ACTIVE')
 
-        return super(DataflowJob, self).resources(query={'filter': query_filter})
+        return super().prepare_query({'filter': query_filter})
 
     def augment(self, resources):
         client = self.get_client()

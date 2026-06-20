@@ -147,26 +147,41 @@ class DescribeSource:
                     self.resource_manager.session_factory))
         return self._query_helper
 
-    def resources(self, params=None):
+    def prepare_query(self, params):
+        return params or {}
+
+    def fetch_resources(self, params):
         """
         It returns a list of resources that match the given parameters
 
         :param params: A dictionary of parameters to filter the list of resources returned
         :return: A list of resources.
         """
-        if params is None:
-            params = {}
-
         if self.resource_manager.resource_type.paging_def:
-            res = self.query_helper.paged_filter(self.resource_manager.config.region,
-                                                 self.resource_manager.resource_type,
-                                                 params)
-        else:
-            res = self.query_helper.filter(self.resource_manager.config.region,
-                                           self.resource_manager.resource_type,
-                                           params)
-        self.augment(res)
-        return res
+            return self.query_helper.paged_filter(self.resource_manager.config.region,
+                                                  self.resource_manager.resource_type,
+                                                  params)
+        return self.query_helper.filter(self.resource_manager.config.region,
+                                        self.resource_manager.resource_type,
+                                        params)
+
+    def normalize_resources(self, resources, params):
+        return resources
+
+    def handle_fetch_error(self, error, params):
+        raise error
+
+    def resources(self, params=None):
+        params = self.prepare_query(params)
+        if params is None:
+            return []
+        try:
+            resources = self.fetch_resources(params)
+        except Exception as e:
+            return self.handle_fetch_error(e, params)
+        resources = self.normalize_resources(resources, params)
+        self.augment(resources)
+        return resources
 
     def get_permissions(self):
         return []
@@ -300,15 +315,39 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
             params.update(it)
         return params
 
-    def resources(self):
-        params = self.get_resource_query_params()
-        resources = self.source.resources(params)
-        resources = self.augment(resources)
-        # filter resources
-        resources = self.filter_resources(resources)
+    def prepare_query(self, query):
+        return self.get_resource_query_params() if query is None else query
+
+    def fetch_resources(self, query):
+        return self.source.resources(query)
+
+    def handle_fetch_error(self, error, query):
+        raise error
+
+    def normalize_resources(self, resources, query):
+        return resources
+
+    def augment_resources(self, resources):
+        return self.augment(resources)
+
+    def filter_resource_set(self, resources):
+        return self.filter_resources(resources)
+
+    def finalize_resources(self, resources, query):
+        return resources
+
+    def resources(self, query=None):
+        query = self.prepare_query(query)
+        try:
+            resources = self.fetch_resources(query)
+        except Exception as e:
+            resources = self.handle_fetch_error(e, query)
+        resources = self.normalize_resources(resources, query)
+        resources = self.augment_resources(resources)
+        resources = self.filter_resource_set(resources)
 
         self.check_resource_limit(resources)
-        return resources
+        return self.finalize_resources(resources, query)
 
     def augment(self, resources):
         return resources

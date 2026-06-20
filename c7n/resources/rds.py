@@ -128,12 +128,12 @@ class RDS(QueryResourceManager):
     filter_registry = filters
     action_registry = actions
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         if query is None and 'query' in self.data:
             query = merge_dict_list(self.data['query'])
         elif query is None:
             query = {}
-        return super(RDS, self).resources(query=query)
+        return super().prepare_query(query)
 
     source_mapping = {
         'describe': DescribeRDS,

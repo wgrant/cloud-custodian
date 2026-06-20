@@ -6,6 +6,7 @@ from pathlib import Path
 
 from google.api_core.client_options import ClientOptions
 
+from c7n.manager import SyntheticResourceMixin
 from c7n.utils import local_session, jmespath_search, type_schema
 from c7n_gcp.actions import MethodAction
 from c7n_gcp.provider import resources
@@ -18,7 +19,7 @@ VERTEXAI_PUBLISHER_DATA_PATH = Path(__file__).parent.parent / 'vertexai_publishe
 
 
 @resources.register('vertex-ai-location')
-class VertexAILocation:
+class VertexAILocation(SyntheticResourceMixin):
     """Vertex AI Location pseudo-resource for multi-location enumeration.
 
     This is used internally by VertexAIEndpoint to support querying multiple locations.
@@ -44,7 +45,7 @@ class VertexAILocation:
         with open(VERTEXAI_REGION_DATA_PATH) as fh:
             self.regions = json.load(fh)
 
-    def resources(self, resource_ids=None):
+    def get_synthetic_resources(self, query=None):
         """Return list of Vertex AI locations to query.
 
         Locations can be specified via:
@@ -607,7 +608,7 @@ def get_vertex_ai_publishers():
 
 
 @resources.register('vertex-ai-publisher')
-class VertexAIPublisher(QueryResourceManager):
+class VertexAIPublisher(SyntheticResourceMixin, QueryResourceManager):
     """GCP Resource for Vertex AI Model Garden Publishers
 
     This resource provides a list of publishers in Vertex AI Model Garden.
@@ -635,7 +636,7 @@ class VertexAIPublisher(QueryResourceManager):
         permissions = ()  # No specific permissions needed for synthetic resource
         urn_component = 'publisher'
 
-    def resources(self, query=None):
+    def get_synthetic_resources(self, query=None):
         """Return synthetic publisher resources."""
         return [{'name': f'publishers/{publisher}'} for publisher in get_vertex_ai_publishers()]
 

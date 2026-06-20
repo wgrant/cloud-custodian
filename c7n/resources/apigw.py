@@ -15,7 +15,7 @@ from c7n.filters import (
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.policystatement import HasStatementFilter
 from c7n.filters.related import RelatedResourceFilter
-from c7n.manager import resources, ResourceManager
+from c7n.manager import resources, ResourceManager, SyntheticResourceMixin
 from c7n.resources.aws import shape_schema
 from c7n import query, utils
 from c7n.utils import generate_arn, type_schema, get_retry, jmespath_search, get_partition
@@ -26,7 +26,7 @@ ANNOTATION_KEY_MATCHED_INTEGRATIONS = 'c7n:matched-method-integrations'
 
 
 @resources.register('rest-account')
-class RestAccount(ResourceManager):
+class RestAccount(SyntheticResourceMixin, ResourceManager):
     # note this is not using a regular resource manager or type info
     # its a pseudo resource, like an aws account
 
@@ -66,10 +66,7 @@ class RestAccount(ResourceManager):
         account['account_id'] = 'apigw-settings'
         return [account]
 
-    def resources(self):
-        return self.filter_resources(self._get_account())
-
-    def get_resources(self, resource_ids):
+    def get_synthetic_resources(self, query=None):
         return self._get_account()
 
 

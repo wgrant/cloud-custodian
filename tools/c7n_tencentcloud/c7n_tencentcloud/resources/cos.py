@@ -23,16 +23,13 @@ class DescribeCos(DescribeSource):
                            Token=self.query_helper.session_factory.token)
         return CosS3Client(config)
 
-    def resources(self, params=None):
+    def fetch_resources(self, params):
         resp = self.get_cos_client(self.resource_manager.config.region).list_buckets()
         _, jsonpath, _ = self.resource_type.enum_spec
-        resources = jmespath_search(jsonpath, resp)
-        if not resources:
-            return []
-        resources = [r for r in resources if r["Location"] == self.resource_manager.config.region]
+        return jmespath_search(jsonpath, resp) or []
 
-        self.augment(resources)
-        return resources
+    def normalize_resources(self, resources, params):
+        return [r for r in resources if r["Location"] == self.resource_manager.config.region]
 
     def get_resource_qcs(self, resources):
         """

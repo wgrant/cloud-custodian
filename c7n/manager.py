@@ -151,3 +151,26 @@ class ResourceManager:
     def get_deprecations(self):
         """Return any matching deprecations for the resource itself."""
         return deprecated.check_deprecations(self)
+
+
+class SyntheticResourceMixin:
+    """Resource manager helper for singleton or computed resources.
+
+    These resources are not enumerated through a provider query API, but they
+    still participate in normal resource filtering.
+    """
+
+    def get_synthetic_resources(self, query=None):
+        raise NotImplementedError("")
+
+    def get_synthetic_resources_by_ids(self, resource_ids):
+        return self.get_synthetic_resources()
+
+    def resources(self, query=None, augment=True):
+        resources = self.get_synthetic_resources(query)
+        if hasattr(self, 'filter_resources'):
+            resources = self.filter_resources(resources)
+        return resources
+
+    def get_resources(self, resource_ids, cache=True, augment=True):
+        return self.get_synthetic_resources_by_ids(resource_ids)

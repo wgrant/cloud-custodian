@@ -64,7 +64,7 @@ class Snapshot(QueryResourceManager):
             'State',
         )
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         query = query or {}
         queries = SnapshotQueryParser.parse(self.data.get('query', []))
         for q in queries:
@@ -73,7 +73,7 @@ class Snapshot(QueryResourceManager):
             query['OwnerIds'] = ['self']
         if 'MaxResults' not in query:
             query['MaxResults'] = 1000
-        return super(Snapshot, self).resources(query=query)
+        return super().prepare_query(query)
 
     def get_resources(self, ids, cache=True, augment=True):
         if cache:
@@ -713,14 +713,14 @@ class EBS(QueryResourceManager):
             'KmsKeyId'
         )
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         query = query or {}
         queries = VolumeQueryParser.parse(self.data.get('query', []))
         for q in queries:
             query.update(q)
         if 'MaxResults' not in query:
             query['MaxResults'] = 1000
-        return super(EBS, self).resources(query=query)
+        return super().prepare_query(query)
 
     def get_resources(self, ids, cache=True, augment=True):
         if cache:

@@ -33,8 +33,8 @@ class DescribeKeyspaces(DescribeWithResourceTags):
             if r['keyspaceName'] not in SYSTEM_KEYSPACES
         ]
 
-    def resources(self, query):
-        return [r for r in super().resources(query)
+    def normalize_resources(self, resources, query):
+        return [r for r in resources
                 if r['keyspaceName'] not in SYSTEM_KEYSPACES]
 
 

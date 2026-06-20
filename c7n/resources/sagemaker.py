@@ -51,8 +51,17 @@ NotebookInstance.filter_registry.register('offhour', OffHour)
 NotebookInstance.filter_registry.register('onhour', OnHour)
 
 
+class SagemakerQueryManager(QueryResourceManager):
+
+    def prepare_query(self, query):
+        query = query or {}
+        for q in self.queries:
+            query.update(q)
+        return super().prepare_query(query)
+
+
 @resources.register('sagemaker-job')
-class SagemakerJob(QueryResourceManager):
+class SagemakerJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         service = 'sagemaker'
@@ -71,12 +80,6 @@ class SagemakerJob(QueryResourceManager):
             self.data.get('query', [
                 {'StatusEquals': 'InProgress'}]))
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerJob, self).resources(query=query)
-
     def augment(self, jobs):
         client = local_session(self.session_factory).client('sagemaker')
 
@@ -91,7 +94,7 @@ class SagemakerJob(QueryResourceManager):
 
 
 @resources.register('sagemaker-transform-job')
-class SagemakerTransformJob(QueryResourceManager):
+class SagemakerTransformJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         arn_type = "transform-job"
@@ -112,12 +115,6 @@ class SagemakerTransformJob(QueryResourceManager):
             self.data.get('query', [
                 {'StatusEquals': 'InProgress'}]))
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerTransformJob, self).resources(query=query)
-
     def augment(self, jobs):
         client = local_session(self.session_factory).client('sagemaker')
 
@@ -137,7 +134,7 @@ class SagemakerHyperParameterTuningJobDescribe(DescribeSource):
 
 
 @resources.register('sagemaker-hyperparameter-tuning-job')
-class SagemakerHyperParameterTuningJob(QueryResourceManager):
+class SagemakerHyperParameterTuningJob(SagemakerQueryManager):
     class resource_type(TypeInfo):
         service = 'sagemaker'
         enum_spec = ('list_hyper_parameter_tuning_jobs', 'HyperParameterTuningJobSummaries', None)
@@ -158,12 +155,6 @@ class SagemakerHyperParameterTuningJob(QueryResourceManager):
             self.data.get('query', [
                 {'StatusEquals': 'InProgress'}]))
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerHyperParameterTuningJob, self).resources(query=query)
-
 
 class SagemakerAutoMLDescribeV2(DescribeSource):
 
@@ -177,7 +168,7 @@ class SagemakerAutoMLDescribeV2(DescribeSource):
 
 
 @resources.register('sagemaker-auto-ml-job')
-class SagemakerAutoMLJob(QueryResourceManager):
+class SagemakerAutoMLJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         service = 'sagemaker'
@@ -200,12 +191,6 @@ class SagemakerAutoMLJob(QueryResourceManager):
             self.data.get('query', [
                 {'StatusEquals': 'InProgress'}]))
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerAutoMLJob, self).resources(query=query)
-
 
 class SagemakerCompilationJobDescribe(DescribeSource):
 
@@ -214,7 +199,7 @@ class SagemakerCompilationJobDescribe(DescribeSource):
 
 
 @resources.register('sagemaker-compilation-job')
-class SagemakerCompilationJob(QueryResourceManager):
+class SagemakerCompilationJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         service = 'sagemaker'
@@ -235,12 +220,6 @@ class SagemakerCompilationJob(QueryResourceManager):
             self.data.get('query', [
                 {'StatusEquals': 'INPROGRESS'}]))
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerCompilationJob, self).resources(query=query)
-
 
 class SagemakerProcessingJobDescribe(DescribeSource):
 
@@ -249,7 +228,7 @@ class SagemakerProcessingJobDescribe(DescribeSource):
 
 
 @resources.register('sagemaker-processing-job')
-class SagemakerProcessingJob(QueryResourceManager):
+class SagemakerProcessingJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         service = 'sagemaker'
@@ -269,12 +248,6 @@ class SagemakerProcessingJob(QueryResourceManager):
         self.queries = SagemakerJobQueryParser.parse(
             self.data.get('query', [
                 {'StatusEquals': 'InProgress'}]))
-
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerProcessingJob, self).resources(query=query)
 
 
 class SagemakerModelBiasJobDefinitionDescribe(DescribeSource):

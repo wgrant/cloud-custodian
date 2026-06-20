@@ -3,7 +3,7 @@
 import json
 from botocore.exceptions import ClientError
 from concurrent.futures import as_completed
-from c7n.manager import resources, ResourceManager
+from c7n.manager import resources, ResourceManager, SyntheticResourceMixin
 from c7n.query import QueryResourceManager, TypeInfo
 from c7n.utils import local_session, chunks, type_schema, generate_arn
 from c7n.actions import BaseAction, ActionRegistry, RemovePolicyBase
@@ -580,7 +580,7 @@ class GlueWorkflowSecurityConfigFilter(SecurityConfigFilter):
 
 
 @resources.register('glue-catalog')
-class GlueDataCatalog(ResourceManager):
+class GlueDataCatalog(SyntheticResourceMixin, ResourceManager):
 
     filter_registry = FilterRegistry('glue-catalog.filters')
     action_registry = ActionRegistry('glue-catalog.actions')
@@ -625,10 +625,10 @@ class GlueDataCatalog(ResourceManager):
         settings.pop('ResponseMetadata', None)
         return [settings]
 
-    def resources(self):
-        return self.filter_resources(self._get_catalog_encryption_settings())
+    def get_synthetic_resources(self, query=None):
+        return self._get_catalog_encryption_settings()
 
-    def get_resources(self, resource_ids):
+    def get_synthetic_resources_by_ids(self, resource_ids):
         return [{'CatalogId': self.config.account_id}]
 
 

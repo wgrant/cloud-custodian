@@ -228,8 +228,27 @@ class DescribeSource:
     def get_resources(self, ids, cache=True):
         return self.query.get(self.manager, ids)
 
-    def resources(self, query):
+    def prepare_query(self, query):
+        return query or {}
+
+    def fetch_resources(self, query):
         return self.query.filter(self.manager, **query)
+
+    def normalize_resources(self, resources, query):
+        return resources
+
+    def handle_fetch_error(self, error, query):
+        raise error
+
+    def resources(self, query):
+        query = self.prepare_query(query)
+        if query is None:
+            return []
+        try:
+            resources = self.fetch_resources(query)
+        except Exception as e:
+            return self.handle_fetch_error(e, query)
+        return self.normalize_resources(resources, query)
 
     def get_query(self):
         return self.resource_query_factory(self.manager.session_factory)
@@ -523,8 +542,38 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
             'q': query
         }
 
+    def prepare_query(self, query):
+        return self.source.get_query_params(query)
+
+    def fetch_resources(self, query):
+        if query is None:
+            query = {}
+        with self.ctx.tracer.subsegment('resource-fetch'):
+            return self.source.resources(query)
+
+    def handle_fetch_error(self, error, query):
+        raise error
+
+    def normalize_resources(self, resources, query):
+        return resources
+
+    def augment_resources(self, resources):
+        with self.ctx.tracer.subsegment('resource-augment'):
+            return self.augment(resources)
+
+    def should_cache_resources(self, query, resources, augment):
+        # Don't pollute cache with unaugmented resources.
+        return augment
+
+    def filter_resource_set(self, resources):
+        with self.ctx.tracer.subsegment('filter'):
+            return self.filter_resources(resources)
+
+    def finalize_resources(self, resources, query):
+        return resources
+
     def resources(self, query=None, augment=True) -> List[dict]:
-        query = self.source.get_query_params(query)
+        query = self.prepare_query(query)
         cache_key = self.get_cache_key(query)
         resources = None
 
@@ -536,24 +585,23 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
                     len(resources)))
 
             if resources is None:
-                if query is None:
-                    query = {}
-                with self.ctx.tracer.subsegment('resource-fetch'):
-                    resources = self.source.resources(query)
+                try:
+                    resources = self.fetch_resources(query)
+                except Exception as e:
+                    resources = self.handle_fetch_error(e, query)
+                resources = self.normalize_resources(resources, query)
                 if augment:
-                    with self.ctx.tracer.subsegment('resource-augment'):
-                        resources = self.augment(resources)
-                    # Don't pollute cache with unaugmented resources.
+                    resources = self.augment_resources(resources)
+                if self.should_cache_resources(query, resources, augment):
                     self._cache.save(cache_key, resources)
 
         resource_count = len(resources)
-        with self.ctx.tracer.subsegment('filter'):
-            resources = self.filter_resources(resources)
+        resources = self.filter_resource_set(resources)
 
         # Check if we're out of a policies execution limits.
         if self.data == self.ctx.policy.data:
             self.check_resource_limit(len(resources), resource_count)
-        return resources
+        return self.finalize_resources(resources, query)
 
     def check_resource_limit(self, selection_count, population_count):
         """Check if policy's execution affects more resources then its limit.

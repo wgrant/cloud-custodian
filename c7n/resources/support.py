@@ -25,10 +25,10 @@ class SupportCase(QueryResourceManager):
 
 
 class DescribeAdvisorCheck(DescribeSource):
-    def resources(self, query):
+    def prepare_query(self, query):
         if not query:
             query = {'language': 'en'}
-        return super().resources(query)
+        return query
 
 
 @resources.register("advisor-check")

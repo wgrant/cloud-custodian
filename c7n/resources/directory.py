@@ -310,14 +310,14 @@ class CloudDirectory(QueryResourceManager):
 
     augment = universal_augment
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         queries = CloudDirectoryQueryParser.parse(self.data.get('query', []))
         query = query or {}
         for q in queries:
             query.update(q)
         if 'state' not in query:
             query['state'] = 'ENABLED'
-        return super(CloudDirectory, self).resources(query=query)
+        return super().prepare_query(query)
 
 
 @CloudDirectory.action_registry.register('delete')

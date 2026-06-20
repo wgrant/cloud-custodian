@@ -10,7 +10,7 @@ from c7n.utils import type_schema
 
 
 class DescribeRemoved(DescribeSource):
-    def resources(self, query):
+    def fetch_resources(self, query):
         return []
 
     def get_resources(self, resource_ids):

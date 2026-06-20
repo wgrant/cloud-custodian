@@ -77,13 +77,11 @@ class OrgPolicy(QueryResourceManager, OrgAccess):
         permissions_augment = ("organizations:ListTagsForResource",)
         universal_taggable = object()
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         q = self.parse_query()
         if query is not None:
             q.update(query)
-        else:
-            query = q
-        return super().resources(query=query)
+        return super().prepare_query(q)
 
     def augment(self, resources):
         return universal_augment(self, resources)
@@ -105,15 +103,19 @@ class DescribeUnit(DescribeSource):
         m = self.manager.get_model()
         return list(m.permissions_augment)
 
-    def resources(self, query=None):
-        if query is None:
-            query = {}
+    def prepare_query(self, query):
+        return query or {}
+
+    def fetch_resources(self, query):
         client = local_session(self.manager.session_factory).client("organizations")
         if "ParentId" not in query:
             query["ParentId"] = client.list_roots().get("Roots", ())[0].get("Id")
         ous = {}
         self.fetch_ous(client, query["ParentId"], ous, [query["ParentId"]])
-        return universal_augment(self.manager, list(ous.values()))
+        return list(ous.values())
+
+    def normalize_resources(self, resources, query):
+        return universal_augment(self.manager, resources)
 
     def fetch_ous(self, client, parent_id, units, stack):
         pager = client.get_paginator("list_children")

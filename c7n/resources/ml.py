@@ -22,14 +22,11 @@ class MLModel(QueryResourceManager):
         arn_type = "mlmodel"
         permissions_enum = ('machinelearning:DescribeMLModels',)
 
-    def resources(self, query=None, augment=True):
-        try:
-            return super().resources(query, augment)
-        except ClientError as e:
-            # ml not available to new accounts, use sagemaker.
-            if 'no longer available' in str(e):
-                return []
-            raise
+    def handle_fetch_error(self, error, query):
+        # ml not available to new accounts, use sagemaker.
+        if isinstance(error, ClientError) and 'no longer available' in str(error):
+            return []
+        return super().handle_fetch_error(error, query)
 
 
 @MLModel.action_registry.register('delete')

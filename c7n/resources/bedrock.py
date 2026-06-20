@@ -71,12 +71,12 @@ class BedrockFoundationModel(QueryResourceManager):
         name = 'modelName'
         permission_prefix = 'bedrock'
 
-    def resources(self, query=None):
+    def prepare_query(self, query):
         query = query or {}
         queries = FoundationModelQueryParser.parse(self.data.get('query', []))
         for q in queries:
             query.update(q)
-        return super().resources(query=query)
+        return super().prepare_query(query)
 
 
 @resources.register('bedrock-custom-model')

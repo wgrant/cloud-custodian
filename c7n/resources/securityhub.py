@@ -679,7 +679,7 @@ AWS.resources.subscribe(SecurityHubFindingFilter.register_resources)
 
 
 class DescribeSecurityhubFinding(DescribeSource):
-    def resources(self, query):
+    def prepare_query(self, query):
         """Only show active compliance failures by default
 
         Unless overridden by policy, use these default filters:
@@ -718,7 +718,7 @@ class DescribeSecurityhubFinding(DescribeSource):
             ]
         )
 
-        return super().resources(query=query)
+        return query
 
 
 class DescribeSecurityHub(DescribeSource):
@@ -731,7 +731,7 @@ class DescribeSecurityHub(DescribeSource):
         hub.pop('ResponseMetadata', None)
         return hub
 
-    def resources(self, query=None):
+    def fetch_resources(self, query):
         hub = self.get_hub()
         return [hub] if hub else []
 

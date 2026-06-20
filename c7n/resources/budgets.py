@@ -5,9 +5,8 @@ from c7n import query
 
 
 class DescribeBudget(query.DescribeSource):
-    def resources(self, query):
-        required = {"AccountId": self.manager.config.account_id}
-        return super().resources(required)
+    def prepare_query(self, query):
+        return {"AccountId": self.manager.config.account_id}
 
 
 @resources.register("budget")
