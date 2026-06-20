@@ -6,7 +6,7 @@ import logging
 from c7n.filters import Filter, ValueFilter
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
-from c7n_azure.graph_utils import GraphResourceManager, GraphTypeInfo, GraphSource
+from c7n_azure.graph_utils import GraphResourceManager, GraphTypeInfo
 
 log = logging.getLogger('custodian.azure.entraid.named_locations')
 
@@ -53,10 +53,6 @@ class EntraIDNamedLocation(GraphResourceManager):
                 op: contains
                 value: "10.0.0.0/8"
     """
-
-    def __init__(self, ctx, data):
-        super().__init__(ctx, data)
-        self.source = GraphSource(self)
 
     class resource_type(GraphTypeInfo):
         doc_groups = ['EntraID', 'Identity']

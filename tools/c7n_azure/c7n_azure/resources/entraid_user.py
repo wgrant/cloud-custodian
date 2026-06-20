@@ -11,7 +11,7 @@ from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.constants import MSGRAPH_RESOURCE_ID
 from c7n_azure.provider import resources
 from c7n_azure.graph_utils import (
-    GraphResourceManager, GraphTypeInfo, GraphSource,
+    GraphResourceManager, GraphTypeInfo,
     EntraIDDiagnosticSettingsFilter
 )
 
@@ -47,11 +47,6 @@ class EntraIDUser(GraphResourceManager):
             actions:
               - type: require-mfa
     """
-
-    def __init__(self, ctx, data):
-        super().__init__(ctx, data)
-        # Use our custom GraphSource instead of the default source
-        self.source = GraphSource(self)
 
     class resource_type(GraphTypeInfo):
         doc_groups = ['EntraID', 'Identity']
