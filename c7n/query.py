@@ -265,6 +265,62 @@ class TagsFromApi:
             ignore_errors=self.ignore_errors)
 
 
+class TagsFromBatchApi:
+    def __init__(self, op, request_arg, result_path, result_resource_path,
+                 resource_path=None, result_tags_path='Tags', service=None,
+                 tag_format='aws-list', batch_size=20, max_workers=2,
+                 extra_args=None, resource_key=None, ignore_errors=()):
+        self.op = op
+        self.request_arg = request_arg
+        self.result_path = result_path
+        self.result_resource_path = result_resource_path
+        self.resource_path = resource_path
+        self.result_tags_path = result_tags_path
+        self.service = service
+        self.tag_format = tag_format
+        self.batch_size = batch_size
+        self.max_workers = max_workers
+        self.extra_args = extra_args or {}
+        self.resource_key = resource_key
+        self.ignore_errors = ignore_errors
+
+    def get_resource_key(self, manager, resource):
+        if self.resource_key:
+            return self.resource_key(manager, resource)
+        return get_path(self.resource_path or manager.resource_type.arn, resource)
+
+    def get_client(self, manager):
+        if self.service is None and getattr(manager, 'get_client', None):
+            return manager.get_client()
+        return local_session(manager.session_factory).client(
+            self.service or manager.resource_type.service)
+
+    def process_resource_set(self, manager, client, resource_set):
+        resource_map = {
+            self.get_resource_key(manager, resource): resource
+            for resource in resource_set}
+        extra_args = self.extra_args(manager) if callable(self.extra_args) else self.extra_args
+        response = manager.retry(
+            getattr(client, self.op),
+            ignore_err_codes=self.ignore_errors,
+            **dict(extra_args, **{self.request_arg: list(resource_map.keys())}))
+        if response is None:
+            return
+        for tag_result in response.get(self.result_path, ()):
+            resource_key = get_path(self.result_resource_path, tag_result)
+            if resource_key in resource_map:
+                resource_map[resource_key]['Tags'] = normalize_tags(
+                    get_path(self.result_tags_path, tag_result), self.tag_format)
+
+    def __call__(self, manager, resources):
+        client = self.get_client(manager)
+        with manager.executor_factory(max_workers=self.max_workers) as w:
+            list(w.map(
+                functools.partial(self.process_resource_set, manager, client),
+                chunks(resources, self.batch_size)))
+        return resources
+
+
 class UniversalTags:
     def __call__(self, manager, resources):
         return universal_augment(manager, resources)

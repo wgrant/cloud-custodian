@@ -25,9 +25,10 @@ import c7n.filters.vpc as net_filters
 from c7n import tags
 from c7n.manager import resources
 
-from c7n.query import QueryResourceManager, DescribeSource, ConfigSource, TypeInfo
+from c7n.query import (
+    QueryResourceManager, DescribeSource, ConfigSource, TagsFromBatchApi, TypeInfo)
 from c7n.utils import (
-    local_session, chunks, type_schema, get_retry, set_annotation)
+    local_session, type_schema, get_retry, set_annotation)
 
 from c7n.resources.aws import Arn
 from c7n.resources.shield import IsShieldProtected, SetShieldProtection
@@ -36,6 +37,12 @@ log = logging.getLogger('custodian.app-elb')
 
 
 class DescribeAppElb(DescribeSource):
+    tag_augment = TagsFromBatchApi(
+        op='describe_tags',
+        resource_path='LoadBalancerArn',
+        request_arg='ResourceArns',
+        result_path='TagDescriptions',
+        result_resource_path='ResourceArn')
 
     def fetch_resources_by_ids(self, ids):
         """Support server side filtering on arns or names
@@ -45,15 +52,6 @@ class DescribeAppElb(DescribeSource):
         else:
             params = {'Names': ids}
         return self.query.filter(self.manager, **params)
-
-    def augment(self, albs):
-        _describe_appelb_tags(
-            albs,
-            self.manager.session_factory,
-            self.manager.executor_factory,
-            self.manager.retry)
-
-        return albs
 
 
 class ConfigAppElb(ConfigSource):
@@ -101,22 +99,6 @@ class AppELB(QueryResourceManager):
         'describe': DescribeAppElb,
         'config': ConfigAppElb
     }
-
-
-def _describe_appelb_tags(albs, session_factory, executor_factory, retry):
-    client = local_session(session_factory).client('elbv2')
-
-    def _process_tags(alb_set):
-        alb_map = {alb['LoadBalancerArn']: alb for alb in alb_set}
-
-        results = retry(client.describe_tags, ResourceArns=list(alb_map.keys()))
-        for tag_desc in results['TagDescriptions']:
-            if ('ResourceArn' in tag_desc and
-                    tag_desc['ResourceArn'] in alb_map):
-                alb_map[tag_desc['ResourceArn']]['Tags'] = tag_desc['Tags']
-
-    with executor_factory(max_workers=2) as w:
-        list(w.map(_process_tags, chunks(albs, 20)))
 
 
 AppELB.filter_registry.register('tag-count', tags.TagCountFilter)
@@ -1258,6 +1240,12 @@ class AppELBDefaultVpcFilter(net_filters.DefaultVpcBase):
 
 
 class DescribeAppELBTargetGroup(DescribeSource):
+    tag_augment = TagsFromBatchApi(
+        op='describe_tags',
+        resource_path='TargetGroupArn',
+        request_arg='ResourceArns',
+        result_path='TagDescriptions',
+        result_resource_path='ResourceArn')
 
     def augment(self, target_groups):
         client = local_session(self.manager.session_factory).client('elbv2')
@@ -1271,10 +1259,7 @@ class DescribeAppELBTargetGroup(DescribeSource):
         with self.manager.executor_factory(max_workers=2) as w:
             list(w.map(_describe_target_group_health, target_groups))
 
-        _describe_target_group_tags(
-            target_groups, self.manager.session_factory,
-            self.manager.executor_factory, self.manager.retry)
-        return target_groups
+        return super().augment(target_groups)
 
 
 @resources.register('app-elb-target-group')
@@ -1305,30 +1290,6 @@ class AppELBTargetGroup(QueryResourceManager):
 
     filter_registry.register('tag-count', tags.TagCountFilter)
     filter_registry.register('marked-for-op', tags.TagActionFilter)
-
-
-def _describe_target_group_tags(target_groups, session_factory,
-                                executor_factory, retry):
-    client = local_session(session_factory).client('elbv2')
-
-    def _process_tags(target_group_set):
-        target_group_map = {
-            target_group['TargetGroupArn']:
-                target_group for target_group in target_group_set
-        }
-
-        results = retry(
-            client.describe_tags,
-            ResourceArns=list(target_group_map.keys()))
-        for tag_desc in results['TagDescriptions']:
-            if ('ResourceArn' in tag_desc and
-                    tag_desc['ResourceArn'] in target_group_map):
-                target_group_map[
-                    tag_desc['ResourceArn']
-                ]['Tags'] = tag_desc['Tags']
-
-    with executor_factory(max_workers=2) as w:
-        list(w.map(_process_tags, chunks(target_groups, 20)))
 
 
 @AppELBTargetGroup.action_registry.register('mark-for-op')

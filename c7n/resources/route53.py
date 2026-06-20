@@ -14,10 +14,11 @@ from c7n.query import (
     FixedRegionClientMixin,
     QueryResourceManager,
     RetryPageIterator,
+    TagsFromBatchApi,
     TypeInfo,
 )
 from c7n.manager import resources
-from c7n.utils import chunks, get_retry, generate_arn, local_session, type_schema
+from c7n.utils import get_retry, generate_arn, local_session, type_schema
 from c7n.actions import BaseAction
 from c7n.filters import Filter, ListItemFilter
 from c7n.resources.shield import IsShieldProtected, SetShieldProtection
@@ -36,6 +37,14 @@ class Route53Base:
 
     permissions = ('route53:ListTagsForResources',)
     retry = staticmethod(get_retry(('Throttled',)))
+    tag_augment = TagsFromBatchApi(
+        op='list_tags_for_resources',
+        request_arg='ResourceIds',
+        result_path='ResourceTagSets',
+        result_resource_path='ResourceId',
+        resource_key=lambda manager, r: _route53_tag_id(manager, r),
+        batch_size=10,
+        extra_args=lambda manager: {'ResourceType': manager.resource_type.arn_type})
 
     @property
     def generate_arn(self):
@@ -49,37 +58,11 @@ class Route53Base:
     def get_arn(self, r):
         return self.generate_arn(r[self.get_model().id].split("/")[-1])
 
-    def augment(self, resources):
-        _describe_route53_tags(
-            self.get_model(), resources, self.session_factory,
-            self.executor_factory, self.retry)
-        return resources
-
-
-def _describe_route53_tags(
-        model, resources, session_factory, executor_factory, retry):
-
-    def process_tags(resources):
-        client = local_session(session_factory).client('route53')
-        resource_map = {}
-        for r in resources:
-            k = r[model.id]
-            if "hostedzone" in k:
-                k = k.split("/")[-1]
-            resource_map[k] = r
-
-        for resource_batch in chunks(list(resource_map.keys()), 10):
-            results = retry(
-                client.list_tags_for_resources,
-                ResourceType=model.arn_type,
-                ResourceIds=resource_batch)
-            for resource_tag_set in results['ResourceTagSets']:
-                if ('ResourceId' in resource_tag_set and
-                        resource_tag_set['ResourceId'] in resource_map):
-                    resource_map[resource_tag_set['ResourceId']]['Tags'] = resource_tag_set['Tags']
-
-    with executor_factory(max_workers=2) as w:
-        return list(w.map(process_tags, chunks(resources, 20)))
+def _route53_tag_id(manager, resource):
+    resource_id = resource[manager.resource_type.id]
+    if "hostedzone" in resource_id:
+        resource_id = resource_id.split("/")[-1]
+    return resource_id
 
 
 def generate_rrset(recordset):
