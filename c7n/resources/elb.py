@@ -10,7 +10,8 @@ from botocore.exceptions import ClientError
 
 from c7n.actions import ActionRegistry, BaseAction, ModifyVpcSecurityGroupsAction
 from c7n.exceptions import PolicyValidationError
-from c7n.filters import Filter, FilterRegistry, ValueFilter, ShieldMetrics
+from c7n.filters import (
+    Filter, FilterRegistry, ResourceAttributeFilter, ShieldMetrics, ValueFilter)
 import c7n.filters.vpc as net_filters
 from datetime import datetime
 from c7n import tags
@@ -862,7 +863,7 @@ class IsNotLoggingFilter(Filter, ELBAttributeFilterBase):
 
 
 @filters.register('attributes')
-class CheckAttributes(ValueFilter, ELBAttributeFilterBase):
+class CheckAttributes(ResourceAttributeFilter, ELBAttributeFilterBase):
     """Value Filter that allows filtering on ELB attributes
 
     :example:
@@ -883,13 +884,3 @@ class CheckAttributes(ValueFilter, ELBAttributeFilterBase):
     permissions = ("elasticloadbalancing:DescribeLoadBalancerAttributes",)
     schema = type_schema('attributes', rinherit=ValueFilter.schema)
     schema_alias = False
-
-    def process(self, resources, event=None):
-        self.augment(resources)
-        return super().process(resources, event)
-
-    def augment(self, resources):
-        self.initialize(resources)
-
-    def __call__(self, r):
-        return super().__call__(r['Attributes'])

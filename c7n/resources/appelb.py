@@ -16,6 +16,7 @@ from c7n.filters import (
     FilterRegistry,
     ListItemFilter,
     MetricsFilter,
+    ResourceAttributeFilter,
     ValueFilter,
     WafV2FilterBase,
     WafClassicRegionalFilterBase
@@ -891,7 +892,7 @@ class IsNotLoggingFilter(Filter, AppELBAttributeFilterBase):
 
 
 @AppELB.filter_registry.register('attributes')
-class CheckAttributes(ValueFilter, AppELBAttributeFilterBase):
+class CheckAttributes(ResourceAttributeFilter, AppELBAttributeFilterBase):
     """ Value filter that allows filtering on ELBv2 attributes
 
     :example:
@@ -911,17 +912,6 @@ class CheckAttributes(ValueFilter, AppELBAttributeFilterBase):
     permissions = ("elasticloadbalancing:DescribeLoadBalancerAttributes",)
     schema = type_schema('attributes', rinherit=ValueFilter.schema)
     schema_alias = False
-
-    def process(self, resources, event=None):
-        self.augment(resources)
-        return super().process(resources, event)
-
-    def augment(self, resources):
-        self.initialize(resources)
-
-    def __call__(self, r):
-        return super().__call__(r['Attributes'])
-
 
 class AppELBTargetGroupFilterBase:
     """ Mixin base class for filters that query LB target groups.
@@ -1487,7 +1477,7 @@ class TargetGroupAttributeFilterBase:
 
 
 @AppELBTargetGroup.filter_registry.register('attributes')
-class TargetGroupCheckAttributes(ValueFilter, TargetGroupAttributeFilterBase):
+class TargetGroupCheckAttributes(ResourceAttributeFilter, TargetGroupAttributeFilterBase):
     """ Value filter that allows filtering on Target group attributes
 
     :example:
@@ -1507,16 +1497,7 @@ class TargetGroupCheckAttributes(ValueFilter, TargetGroupAttributeFilterBase):
     permissions = ("elasticloadbalancing:DescribeTargetGroupAttributes",)
     schema = type_schema('attributes', rinherit=ValueFilter.schema)
     schema_alias = False
-
-    def process(self, resources, event=None):
-        self.augment(resources)
-        return super().process(resources, event)
-
-    def augment(self, resources):
-        self.initialize(resources)
-
-    def __call__(self, r):
-        return super().__call__(r['c7n:TargetGroupAttributes'])
+    attribute_key = 'c7n:TargetGroupAttributes'
 
 
 @AppELBTargetGroup.action_registry.register('modify-attributes')

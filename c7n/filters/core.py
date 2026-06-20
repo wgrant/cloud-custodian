@@ -905,6 +905,22 @@ class AgeFilter(Filter):
         return op(self.threshold_date, v)
 
 
+class ResourceAttributeFilter(ValueFilter):
+    """Value filter for resources that need an attribute augmentation pass."""
+
+    attribute_key = 'Attributes'
+
+    def process(self, resources, event=None):
+        self.augment(resources)
+        return super().process(resources, event)
+
+    def augment(self, resources):
+        self.initialize(resources)
+
+    def __call__(self, resource):
+        return super().__call__(resource[self.attribute_key])
+
+
 class EventFilter(ValueFilter):
     """Filter a resource based on an event."""
 
