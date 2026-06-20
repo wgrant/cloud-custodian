@@ -326,7 +326,29 @@ class UniversalTags:
         return universal_augment(manager, resources)
 
 
-def _iter_tag_augments(augments):
+class MergeField:
+    def __init__(self, field, remove=True, overwrite=True, missing='skip'):
+        self.field = field
+        self.remove = remove
+        self.overwrite = overwrite
+        self.missing = missing
+
+    def __call__(self, manager, resources):
+        for resource in resources:
+            if self.field not in resource:
+                if self.missing == 'skip':
+                    continue
+                value = {}
+            else:
+                value = resource.pop(self.field) if self.remove else resource.get(self.field)
+            for k, v in value.items():
+                if not self.overwrite and k in resource:
+                    continue
+                resource[k] = v
+        return resources
+
+
+def _iter_augments(augments):
     if augments is None:
         return ()
     if isinstance(augments, (list, tuple)):
@@ -334,16 +356,21 @@ def _iter_tag_augments(augments):
     return (augments,)
 
 
-def _apply_tag_augment(manager, resources, augments=None):
-    for augment in _iter_tag_augments(augments):
+def _apply_augment_pipeline(manager, resources, augments=None):
+    for augment in _iter_augments(augments):
         resources = augment(manager, resources)
     return resources
+
+
+def _apply_tag_augment(manager, resources, augments=None):
+    return _apply_augment_pipeline(manager, resources, augments)
 
 
 @sources.register('describe')
 class DescribeSource:
 
     resource_query_factory = ResourceQuery
+    augment_pipeline = None
     tag_augment = None
 
     def __init__(self, manager):
@@ -433,8 +460,9 @@ class DescribeSource:
                 results = list(w.map(
                     _augment, chunks(resources, self.manager.chunk_size)))
                 resources = list(itertools.chain(*results))
-        return _apply_tag_augment(
-            self.manager, resources, self.tag_augment)
+        resources = _apply_augment_pipeline(
+            self.manager, resources, self.augment_pipeline)
+        return _apply_tag_augment(self.manager, resources, self.tag_augment)
 
 
 class DescribeWithResourceTags(DescribeSource):
@@ -661,6 +689,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     policy_query_default = None
     permission_override = None
     ignore_fetch_error_message = None
+    augment_pipeline = None
     tag_augment = None
 
     retry = staticmethod(
@@ -856,6 +885,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         s3 buckets.
         """
         resources = self.source.augment(resources)
+        resources = _apply_augment_pipeline(self, resources, self.augment_pipeline)
         return _apply_tag_augment(self, resources, self.tag_augment)
 
     @property

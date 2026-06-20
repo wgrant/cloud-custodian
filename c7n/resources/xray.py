@@ -23,11 +23,7 @@ class XRayGroup(query.QueryResourceManager):
 
 
 class DescribeRule(query.DescribeWithResourceTags):
-
-    def augment(self, resources):
-        for r in resources:
-            r.update(r.pop('SamplingRule'))
-        return super().augment(resources)
+    augment_pipeline = query.MergeField('SamplingRule')
 
 
 @resources.register("xray-rule")

@@ -5,7 +5,7 @@ import logging
 import os
 
 
-from c7n.query import ResourceQuery, RetryPageIterator, TypeInfo
+from c7n.query import MergeField, ResourceQuery, RetryPageIterator, TypeInfo
 from c7n.resources.vpc import InternetGateway
 
 from botocore.config import Config
@@ -129,6 +129,28 @@ class ConfigSourceTest(BaseTest):
 
         p.data['query'] = [{'clause': "configuration.imageId = 'xyz'"}]
         self.assertIn("imageId = 'xyz'", source.get_query_params(None)['expr'])
+
+
+class AugmentPipelineTest(BaseTest):
+
+    def test_merge_field(self):
+        resources = [{'Name': 'cluster', 'Provisioned': {'Name': 'nested', 'Size': 3}}]
+
+        self.assertEqual(
+            MergeField('Provisioned', remove=False, overwrite=False)(None, resources),
+            [{'Name': 'cluster', 'Provisioned': {'Name': 'nested', 'Size': 3}, 'Size': 3}])
+
+    def test_merge_field_removes_source(self):
+        resources = [{'SamplingRule': {'RuleName': 'default', 'Priority': 1000}}]
+
+        self.assertEqual(
+            MergeField('SamplingRule')(None, resources),
+            [{'RuleName': 'default', 'Priority': 1000}])
+
+    def test_merge_field_skips_missing(self):
+        resources = [{'Name': 'resource'}]
+
+        self.assertEqual(MergeField('Provisioned')(None, resources), resources)
 
 
 class QueryResourceManagerTest(BaseTest):
