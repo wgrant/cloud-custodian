@@ -3,6 +3,7 @@
 
 import re
 
+from c7n.query import MutateResource
 from c7n.utils import type_schema, jmespath_search
 from c7n.filters.offhours import OffHour, OnHour
 from c7n_gcp.actions import MethodAction
@@ -59,11 +60,12 @@ class SqlInstance(QueryResourceManager):
                 }
             }
 
-    def augment(self, resources):
-        for r in resources:
-            if 'userLabels' in r['settings']:
-                r['labels'] = r['settings']['userLabels']
-        return resources
+    @staticmethod
+    def set_labels(manager, resource):
+        if 'userLabels' in resource['settings']:
+            resource['labels'] = resource['settings']['userLabels']
+
+    augment_pipeline = MutateResource(set_labels)
 
 
 SqlInstance.filter_registry.register('offhour', OffHour)

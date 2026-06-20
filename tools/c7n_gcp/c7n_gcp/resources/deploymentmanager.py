@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import re
 
+from c7n.query import MutateResource
 from c7n_gcp.actions import MethodAction
 from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
@@ -29,12 +30,13 @@ class DMDeployment(QueryResourceManager):
                 'get', {'project': resource_info['project_id'],
                         'deployment': resource_info['name']})
 
-    def augment(self, resources):
+    @staticmethod
+    def normalize_labels(manager, resource):
         # normalize labels from array to mapping like other gcp resources.
-        for r in resources:
-            if isinstance(r.get('labels'), list):
-                r['labels'] = {l['key']: l['value'] for l in r['labels']}
-        return resources
+        if isinstance(resource.get('labels'), list):
+            resource['labels'] = {l['key']: l['value'] for l in resource['labels']}
+
+    augment_pipeline = MutateResource(normalize_labels)
 
     def get_resource(self, resource_info):
         resource = self.resource_type.get(self.get_client(), resource_info)

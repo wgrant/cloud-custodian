@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import MapResource
 from c7n.utils import type_schema, jmespath_search
 from c7n_gcp.query import QueryResourceManager, TypeInfo, ChildTypeInfo, ChildResourceManager
 from c7n_gcp.provider import resources
@@ -54,15 +55,12 @@ class DataSet(QueryResourceManager):
         def get_label_params(resource, all_labels):
             return {**resource['datasetReference'], 'body': {'labels': all_labels}}
 
-    def augment(self, resources):
-        client = self.get_client()
-        results = []
-        for r in resources:
-            ref = r['datasetReference']
-            results.append(
-                client.execute_query(
-                    'get', verb_arguments=ref))
-        return results
+    @staticmethod
+    def describe_dataset(manager, resource):
+        return manager.get_client().execute_query(
+            'get', verb_arguments=resource['datasetReference'])
+
+    augment_pipeline = MapResource(describe_dataset)
 
 
 @resources.register('bq-job')
@@ -150,13 +148,12 @@ class BigQueryTable(ChildResourceManager):
         def get_label_params(resource, all_labels):
             return {**resource['tableReference'], 'body': {'labels': all_labels}}
 
-    def augment(self, resources):
-        client = self.get_client()
-        results = []
-        for r in resources:
-            ref = r['tableReference']
-            results.append(client.execute_query('get', verb_arguments=ref))
-        return results
+    @staticmethod
+    def describe_table(manager, resource):
+        return manager.get_client().execute_query(
+            'get', verb_arguments=resource['tableReference'])
+
+    augment_pipeline = MapResource(describe_table)
 
 
 @BigQueryTable.action_registry.register('delete')

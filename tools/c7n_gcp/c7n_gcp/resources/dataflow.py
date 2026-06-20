@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 from googleapiclient.errors import HttpError
 
+from c7n.query import MapResource
 from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n.utils import jmespath_search
@@ -43,19 +44,17 @@ class DataflowJob(QueryResourceManager):
 
         return super().prepare_query({'filter': query_filter})
 
-    def augment(self, resources):
-        client = self.get_client()
-        results = []
-        for r in resources:
-            ref = {
-                'jobId': r['id'],
-                'projectId': r['projectId'],
-                'view': 'JOB_VIEW_ALL'
-            }
-            try:
-                results.append(
-                    client.execute_query(
-                        'get', verb_arguments=ref))
-            except HttpError:
-                results.append(r)
-        return results
+    @staticmethod
+    def describe_job(manager, resource):
+        ref = {
+            'jobId': resource['id'],
+            'projectId': resource['projectId'],
+            'view': 'JOB_VIEW_ALL'
+        }
+        try:
+            return manager.get_client().execute_query(
+                'get', verb_arguments=ref)
+        except HttpError:
+            return resource
+
+    augment_pipeline = MapResource(describe_job)
