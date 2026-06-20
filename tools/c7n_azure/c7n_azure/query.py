@@ -12,7 +12,7 @@ from azure.mgmt.resourcegraph.models import QueryRequest
 from c7n.actions import ActionRegistry
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import FilterRegistry
-from c7n.manager import ResourceManager
+from c7n.manager import ResourceManager, ResourceQueryLifecycle
 from c7n.query import MaxResourceLimit, sources
 from c7n.utils import local_session
 
@@ -225,7 +225,7 @@ class QueryMeta(type):
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
-class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
+class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
     class resource_type(TypeInfo):
         pass
 
@@ -268,39 +268,22 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
     def source_type(self):
         return self.data.get('source', 'describe-azure')
 
-    def resources(self, query=None, augment=True):
+    def prepare_query(self, query):
         if self.data.get("query"):
-            query = self.data["query"]
+            return self.data["query"]
+        return query
 
-        cache_key = self.get_cache_key(query)
+    def fetch_resources(self, query):
+        with self.ctx.tracer.subsegment('resource-fetch'):
+            return self.source.get_resources(query)
 
-        resources = None
-        if self._cache.load():
-            resources = self._cache.get(cache_key)
-            if resources is not None:
-                self.log.debug("Using cached %s: %d" % (
-                    "%s.%s" % (self.__class__.__module__,
-                               self.__class__.__name__),
-                    len(resources)))
+    def augment_resources(self, resources):
+        with self.ctx.tracer.subsegment('resource-augment'):
+            return self.augment(resources)
 
-        if resources is None:
-            with self.ctx.tracer.subsegment('resource-fetch'):
-                resources = self.source.get_resources(query)
-            if augment:
-                with self.ctx.tracer.subsegment('resource-augment'):
-                    resources = self.augment(resources)
-            self._cache.save(cache_key, resources)
-
-        self._cache.close()
-
+    def filter_resource_set(self, resources):
         with self.ctx.tracer.subsegment('filter'):
-            resource_count = len(resources)
-            resources = self.filter_resources(resources)
-
-        # Check if we're out of a policies execution limits.
-        if self.data == self.ctx.policy.data:
-            self.check_resource_limit(len(resources), resource_count)
-        return resources
+            return self.filter_resources(resources)
 
     def check_resource_limit(self, selection_count, population_count):
         """Check if policy's execution affects more resources then its limit.

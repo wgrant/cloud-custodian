@@ -8,7 +8,7 @@ from c7n.actions import ActionRegistry
 from c7n.ctx import ExecutionContext
 from c7n.exceptions import PolicyExecutionError
 from c7n.filters import FilterRegistry
-from c7n.manager import ResourceManager
+from c7n.manager import ResourceManager, ResourceQueryLifecycle
 from c7n.query import sources
 from c7n.utils import local_session, chunks, jmespath_search
 from .actions.tags import register_tag_actions, register_tag_filters
@@ -257,7 +257,7 @@ class QueryMeta(type):
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
-class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
+class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
     """QueryResourceManager"""
 
     source_mapping = {'describe': DescribeSource}
@@ -333,18 +333,8 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
     def filter_resource_set(self, resources):
         return self.filter_resources(resources)
 
-    def resources(self, query=None):
-        query = self.prepare_query(query)
-        try:
-            resources = self.fetch_resources(query)
-        except Exception as e:
-            resources = self.handle_fetch_error(e, query)
-        resources = self.normalize_resources(resources, query)
-        resources = self.augment_resources(resources)
-        resources = self.filter_resource_set(resources)
-
+    def check_resource_query_limits(self, resources, resource_count):
         self.check_resource_limit(resources)
-        return resources
 
     def augment(self, resources):
         return resources

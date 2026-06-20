@@ -11,7 +11,7 @@ from googleapiclient.errors import HttpError
 
 from c7n.actions import ActionRegistry
 from c7n.filters import FilterRegistry
-from c7n.manager import ResourceManager
+from c7n.manager import ResourceManager, ResourceQueryLifecycle
 from c7n.query import sources, MaxResourceLimit
 from c7n.utils import local_session, chunks, jmespath_search, jmespath_compile
 
@@ -149,7 +149,7 @@ class QueryMeta(type):
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
-class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
+class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
     # The resource manager type is injected by the PluginRegistry.register
     # decorator.
     type: str
@@ -204,43 +204,15 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
     def normalize_resources(self, resources, query):
         return resources
 
+    def augment_resources(self, resources):
+        return resources
+
     def should_cache_resources(self, query, resources, augment=True):
         return True
 
     def filter_resource_set(self, resources):
         with self.ctx.tracer.subsegment('filter'):
             return self.filter_resources(resources)
-
-    def resources(self, query=None):
-        q = self.prepare_query(query)
-        cache_key = self.get_cache_key(q)
-        resources = None
-
-        if self._cache.load():
-            resources = self._cache.get(cache_key)
-            if resources is not None:
-                self.log.debug("Using cached %s: %d" % (
-                    "%s.%s" % (self.__class__.__module__,
-                               self.__class__.__name__),
-                    len(resources)))
-
-        if resources is None:
-            try:
-                resources = self.fetch_resources(q)
-            except Exception as e:
-                resources = self.handle_fetch_error(e, q)
-            resources = self.normalize_resources(resources, q)
-            if self.should_cache_resources(q, resources, augment=True):
-                self._cache.save(cache_key, resources)
-
-        self._cache.close()
-        resource_count = len(resources)
-        resources = self.filter_resource_set(resources)
-
-        # Check resource limits if we're the current policy execution.
-        if self.data == self.ctx.policy.data:
-            self.check_resource_limit(len(resources), resource_count)
-        return resources
 
     def check_resource_limit(self, selection_count, population_count):
         """Check if policy's execution affects more resources then its limit.

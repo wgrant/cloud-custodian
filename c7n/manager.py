@@ -153,6 +153,77 @@ class ResourceManager:
         return deprecated.check_deprecations(self)
 
 
+class ResourceQueryLifecycle:
+    """Shared resource enumeration lifecycle for provider query managers."""
+
+    def prepare_query(self, query):
+        return query
+
+    def fetch_resources(self, query):
+        raise NotImplementedError("")
+
+    def handle_fetch_error(self, error, query):
+        raise error
+
+    def normalize_resources(self, resources, query):
+        return resources
+
+    def augment_resources(self, resources):
+        return self.augment(resources)
+
+    def should_cache_resources(self, query, resources, augment):
+        return True
+
+    def filter_resource_set(self, resources):
+        return self.filter_resources(resources)
+
+    def get_resource_cache_key(self, query):
+        if not hasattr(self, 'get_cache_key'):
+            return None
+        return self.get_cache_key(query)
+
+    def get_cached_query_resources(self, cache_key):
+        if cache_key is None:
+            return None
+        resources = self._cache.get(cache_key)
+        if resources is not None:
+            self.log.debug("Using cached %s: %d" % (
+                "%s.%s" % (self.__class__.__module__, self.__class__.__name__),
+                len(resources)))
+        return resources
+
+    def save_cached_query_resources(self, cache_key, resources):
+        if cache_key is not None:
+            self._cache.save(cache_key, resources)
+
+    def check_resource_query_limits(self, resources, resource_count):
+        if self.data == self.ctx.policy.data and hasattr(self, 'check_resource_limit'):
+            self.check_resource_limit(len(resources), resource_count)
+
+    def resources(self, query=None, augment=True):
+        query = self.prepare_query(query)
+        cache_key = self.get_resource_cache_key(query)
+        resources = None
+
+        with self._cache:
+            resources = self.get_cached_query_resources(cache_key)
+            if resources is None:
+                try:
+                    resources = self.fetch_resources(query)
+                except Exception as e:
+                    resources = self.handle_fetch_error(e, query)
+                resources = self.normalize_resources(resources, query)
+                if augment:
+                    resources = self.augment_resources(resources)
+                if self.should_cache_resources(query, resources, augment):
+                    self.save_cached_query_resources(cache_key, resources)
+
+        resource_count = len(resources)
+        resources = self.filter_resource_set(resources)
+        self.check_resource_query_limits(resources, resource_count)
+        return resources
+
+
 class SyntheticResourceMixin:
     """Resource manager helper for singleton or computed resources.
 

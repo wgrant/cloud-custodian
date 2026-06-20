@@ -5,7 +5,7 @@ import logging
 
 from c7n.actions import ActionRegistry
 from c7n.filters import FilterRegistry
-from c7n.manager import ResourceManager
+from c7n.manager import ResourceManager, ResourceQueryLifecycle
 from c7n.query import sources
 from c7n.utils import local_session
 
@@ -70,7 +70,7 @@ class QueryMeta(type):
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
-class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
+class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
 
     source_mapping = sources
 
@@ -126,29 +126,6 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
 
     def filter_resource_set(self, resources):
         return self.filter_resources(resources)
-
-    def resources(self, query=None):
-        q = self.prepare_query(query)
-        key = self.get_cache_key(q)
-        resources = None
-        if self._cache.load():
-            resources = self._cache.get(key)
-            if resources is not None:
-                self.log.debug("Using cached %s: %d" % (
-                    "%s.%s" % (self.__class__.__module__, self.__class__.__name__),
-                    len(resources)))
-        if resources is None:
-            try:
-                resources = self.fetch_resources(q)
-            except Exception as e:
-                resources = self.handle_fetch_error(e, q)
-            resources = self.normalize_resources(resources, q)
-            resources = self.augment_resources(resources)
-            if self.should_cache_resources(q, resources, augment=True):
-                self._cache.save(key, resources)
-        self._cache.close()
-        resources = self.filter_resource_set(resources)
-        return resources
 
     def augment(self, resources):
         return self.source.augment(resources)
