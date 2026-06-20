@@ -41,12 +41,12 @@ class KmsKeyRing(QueryResourceManager):
             return resource["name"].split('/')[3]
 
     def get_resource_query(self):
-        if 'query' in self.data:
-            for child in self.data.get('query'):
-                if 'location' in child:
-                    location_query = child['location']
-                    return {'parent': location_query if isinstance(
-                        location_query, list) else [location_query]}
+        query = self.get_policy_query_param('location', 'parent')
+        if query:
+            location_query = query['parent']
+            query['parent'] = (
+                location_query if isinstance(location_query, list) else [location_query])
+            return query
 
     def _fetch_resources(self, query):
         super_fetch_resources = QueryResourceManager._fetch_resources

@@ -85,10 +85,7 @@ class Folder(QueryResourceManager):
         return results
 
     def get_resource_query(self):
-        if 'query' in self.data:
-            for child in self.data.get('query'):
-                if 'parent' in child:
-                    return {'parent': child['parent']}
+        return self.get_policy_query_param('parent')
 
 
 @resources.register('project')
@@ -127,10 +124,7 @@ class Project(QueryResourceManager):
 
     def get_resource_query(self):
         # https://cloud.google.com/resource-manager/reference/rest/v1/projects/list
-        if 'query' in self.data:
-            for child in self.data.get('query'):
-                if 'filter' in child:
-                    return {'filter': child['filter']}
+        return self.get_policy_query_param('filter')
 
 
 Project.filter_registry.register('missing', Missing)

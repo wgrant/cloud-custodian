@@ -191,6 +191,12 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         if 'query' in self.data:
             return {'filter': self.data.get('query')}
 
+    def get_policy_query_param(self, policy_key, param_key=None):
+        param_key = param_key or policy_key
+        for child in self.data.get('query', ()):
+            if policy_key in child:
+                return {param_key: child[policy_key]}
+
     def prepare_query(self, query):
         return query or self.get_resource_query()
 

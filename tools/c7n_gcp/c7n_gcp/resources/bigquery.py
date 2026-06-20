@@ -63,10 +63,7 @@ class DataSet(QueryResourceManager):
         return results
 
     def get_resource_query(self):
-        if 'query' in self.data:
-            for child in self.data.get('query'):
-                if 'filter' in child:
-                    return {'filter': child['filter']}
+        return self.get_policy_query_param('filter')
 
 
 @resources.register('bq-job')
