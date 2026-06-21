@@ -77,21 +77,29 @@ class OrgPolicy(QueryResourceManager, OrgAccess):
         permissions_augment = ("organizations:ListTagsForResource",)
         universal_taggable = object()
 
-    def prepare_query(self, query):
-        q = self.parse_query()
-        if query is not None:
-            q.update(query)
-        return super().prepare_query(q)
+    policy_query_default = {"Filter": "SERVICE_CONTROL_POLICY"}
     universal_tags = True
 
     def parse_query(self, query=None):
-        params = {}
-        for q in self.data.get("query", ()):
-            if isinstance(q, dict) and "filter" in q:
-                params["Filter"] = q["filter"]
-        if not params:
-            params["Filter"] = "SERVICE_CONTROL_POLICY"
+        params = self.get_default_query_params()
+        policy_query = self.get_policy_query()
+        if policy_query:
+            params.update(policy_query)
+        if query is not None:
+            params.update(query)
         return params
+
+
+class OrgPolicyQueryParser:
+    @classmethod
+    def parse(cls, data):
+        return [
+            {"Filter": q["filter"]}
+            for q in data
+            if isinstance(q, dict) and "filter" in q]
+
+
+OrgPolicy.policy_query_parser = OrgPolicyQueryParser
 
 
 class DescribeUnit(DescribeSource):

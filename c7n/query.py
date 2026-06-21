@@ -626,6 +626,8 @@ class DescribeSource:
     def apply_source_query_defaults(self, query_params):
         query_params = query_params or {}
         source_defaults = self.get_source_query_defaults()
+        if source_defaults is None:
+            return None
         policy_query = self.get_source_policy_query()
         if policy_query:
             source_defaults.update(policy_query)
@@ -653,6 +655,8 @@ class DescribeSource:
             return {}
         if callable(default):
             default = default(self)
+        if default is None:
+            return None
         if isinstance(default, (list, tuple)):
             default = merge_dict_list(default)
         default = dict(default)
@@ -960,6 +964,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     policy_query_parser = None
     policy_query_default = None
     policy_query_param = None
+    policy_query_extend = ()
     permission_override = None
     ignore_fetch_error_message = None
     augment_pipeline = None
@@ -1064,6 +1069,11 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
             query.setdefault(self.policy_query_param, {})
             query[self.policy_query_param].update(policy_params)
             return query
+        for key in self.policy_query_extend:
+            if key in query and key in policy_params:
+                policy_params[key] = list(policy_params[key]) + list(query[key])
+                query = dict(query)
+                query.pop(key)
         query.update(policy_params)
         return query
 
@@ -1079,7 +1089,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
 
     def fetch_resources(self, query):
         if query is None:
-            query = {}
+            return []
         with self.ctx.tracer.subsegment('resource-fetch'):
             return self.source.resources(query, prepared=True)
 

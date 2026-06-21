@@ -174,6 +174,21 @@ class AugmentPipelineTest(BaseTest):
             source.get_query_params({}),
             {'AccountId': '123456789012'})
 
+    def test_source_query_default_callable_can_skip_query(self):
+        class Manager:
+            session_factory = None
+
+        class Source(DescribeSource):
+            @staticmethod
+            def skip_query(source):
+                return None
+
+            source_query_default = skip_query
+
+        source = Source(Manager())
+
+        self.assertIsNone(source.prepare_query({}))
+
     def test_source_resources_prepared_skips_query_defaults(self):
         queries = []
 

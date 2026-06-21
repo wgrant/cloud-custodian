@@ -211,12 +211,6 @@ class OpsItem(QueryResourceManager):
                 'Values': [i],
                 'Operator': 'Equal'} for i in ids]})
 
-    def prepare_query(self, query):
-        q = self.resource_query()
-        if q and query and 'OpsItemFilters' in query:
-            q['OpsItemFilters'].extend(query['OpsItemFilters'])
-        return super().prepare_query(q)
-
     def resource_query(self):
         filters = []
         for q in self.data.get('query', ()):
@@ -228,6 +222,10 @@ class OpsItem(QueryResourceManager):
                     "invalid ops-item query %s" % self.data['query'])
             filters.append(q)
         return {'OpsItemFilters': filters}
+
+
+OpsItem.policy_query_default = OpsItem.resource_query
+OpsItem.policy_query_extend = ('OpsItemFilters',)
 
 
 @OpsItem.action_registry.register('update')
