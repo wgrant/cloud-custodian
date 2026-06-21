@@ -13,7 +13,9 @@ from c7n_gcp.filters.iampolicy import IamPolicyValueFilter
 from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo, ChildResourceManager, ChildTypeInfo
 
-from c7n.filters.core import ListItemFilter, ValueFilter
+from c7n.filters.core import (
+    AnnotateBatch, AnnotationPipelineFilter, ListItemAnnotationFilter,
+    ListItemFilter, ValueFilter)
 from c7n.filters.offhours import OffHour, OnHour
 
 
@@ -85,7 +87,7 @@ Instance.filter_registry.register('onhour', OnHour)
 
 
 @Instance.filter_registry.register('effective-firewall')
-class EffectiveFirewall(ValueFilter):
+class EffectiveFirewall(AnnotationPipelineFilter):
     """Filters instances by their effective firewall rules.
     See `getEffectiveFirewalls
     <https://cloud.google.com/compute/docs/reference/rest/v1/instances/getEffectiveFirewalls>`_
@@ -110,29 +112,36 @@ class EffectiveFirewall(ValueFilter):
 
     schema = type_schema('effective-firewall', rinherit=ValueFilter.schema)
     permissions = ('compute.instances.getEffectiveFirewalls',)
+    annotation_key = 'c7n:effective-firewalls'
 
     def get_resource_params(self, resource):
         path_param_re = re.compile('.*?/projects/(.*?)/zones/(.*?)/instances/.*')
         project, zone = path_param_re.match(resource['selfLink']).groups()
         return {'project': project, 'zone': zone, 'instance': resource["name"]}
 
-    def process_resource(self, client, resource):
-        params = self.get_resource_params(resource)
-        effective_firewalls = []
-        for interface in resource["networkInterfaces"]:
-            effective_firewalls.append(client.execute_command(
-                'getEffectiveFirewalls', {"networkInterface": interface["name"], **params}))
-        return super(EffectiveFirewall, self).process(effective_firewalls, None)
+    @staticmethod
+    def annotate_effective_firewalls(resource_filter, resources):
+        model = resource_filter.manager.get_model()
+        session = local_session(resource_filter.manager.session_factory)
+        client = resource_filter.get_client(session, model)
+        for resource in resources:
+            params = resource_filter.get_resource_params(resource)
+            effective_firewalls = []
+            for interface in resource["networkInterfaces"]:
+                effective_firewalls.append(client.execute_command(
+                    'getEffectiveFirewalls', {"networkInterface": interface["name"], **params}))
+            resource[resource_filter.annotation_key] = effective_firewalls
 
     def get_client(self, session, model):
         return session.client(
             model.service, model.version, model.component)
 
-    def process(self, resources, event=None):
-        model = self.manager.get_model()
-        session = local_session(self.manager.session_factory)
-        client = self.get_client(session, model)
-        return [r for r in resources if self.process_resource(client, r)]
+    def __call__(self, resource):
+        return any(
+            ValueFilter.__call__(self, firewall)
+            for firewall in resource[self.annotation_key])
+
+    annotation_pipeline = AnnotateBatch(annotate_effective_firewalls)
 
 
 class InstanceAction(MethodAction):
@@ -414,7 +423,7 @@ class Disk(QueryResourceManager):
 
 
 @Disk.filter_registry.register('snapshots')
-class DiskSnapshotsFilter(ListItemFilter):
+class DiskSnapshotsFilter(ListItemAnnotationFilter):
     """
     Filter GCP disks by their snapshots.
 
@@ -446,18 +455,16 @@ class DiskSnapshotsFilter(ListItemFilter):
     item_annotation_key = 'c7n:MatchedSnapshots'
     annotate_items = True
 
-    def process(self, resources, event=None):
-        all_snapshots = self.manager.get_resource_manager('gcp.snapshot').resources()
+    @staticmethod
+    def annotate_snapshots(resource_filter, resources):
+        all_snapshots = resource_filter.manager.get_resource_manager('gcp.snapshot').resources()
 
         grouped = group_by(all_snapshots, 'sourceDisk')
         for resource in resources:
-            resource[self.annotation_key] = grouped.get(
+            resource[resource_filter.annotation_key] = grouped.get(
                 resource['selfLink'], [])
 
-        return super().process(resources, event)
-
-    def get_item_values(self, resource):
-        return resource.get(self.annotation_key, [])
+    annotation_pipeline = AnnotateBatch(annotate_snapshots)
 
 
 @Disk.action_registry.register('snapshot')

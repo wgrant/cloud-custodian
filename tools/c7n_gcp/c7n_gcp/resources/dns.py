@@ -5,7 +5,7 @@ from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n_gcp.actions import MethodAction
 from c7n.utils import type_schema, local_session
-from c7n.filters.core import ListItemFilter
+from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation
 
 
 @resources.register('dns-managed-zone')
@@ -77,7 +77,7 @@ class DnsPolicy(QueryResourceManager):
 
 
 @DnsManagedZone.filter_registry.register('records-sets')
-class DNSZoneRecordsSetsFilter(ListItemFilter):
+class DNSZoneRecordsSetsFilter(ListItemAnnotationFilter):
 
     schema = type_schema(
         'records-sets',
@@ -86,13 +86,16 @@ class DNSZoneRecordsSetsFilter(ListItemFilter):
     annotate_items = True
     permissions = ("dns.managedZones.list",)
 
-    def get_item_values(self, resource):
-        session = local_session(self.manager.session_factory)
+    @staticmethod
+    def get_record_sets(resource_filter, resource):
+        session = local_session(resource_filter.manager.session_factory)
         client = session.client(service_name='dns', version='v1', component='resourceRecordSets')
         project = session.get_default_project()
         result = client.execute_query(
             'list', {'project': project, 'managedZone': resource['name']}).get('rrsets')
         return result
+
+    annotation_pipeline = SetAnnotation(get_record_sets)
 
 
 @DnsManagedZone.action_registry.register('delete')

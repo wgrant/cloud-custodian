@@ -1,4 +1,4 @@
-from c7n.filters import ListItemFilter
+from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -34,7 +34,7 @@ class AutomationAccount(ArmResourceManager):
 
 
 @AutomationAccount.filter_registry.register("variable")
-class VariableValueFilter(ListItemFilter):
+class VariableValueFilter(ListItemAnnotationFilter):
     """Azure Variable Value Filter
 
     :example:
@@ -60,10 +60,13 @@ class VariableValueFilter(ListItemFilter):
     annotate_items = True
     item_annotation_key = "c7n:Variables"
 
-    def get_item_values(self, resource):
-        client = self.manager.get_client()
+    @staticmethod
+    def get_variables(resource_filter, resource):
+        client = resource_filter.manager.get_client()
         variables = client.variable.list_by_automation_account(
             automation_account_name=resource["name"],
             resource_group_name=resource["resourceGroup"]
         )
         return [v.serialize(True) for v in variables]
+
+    annotation_pipeline = SetAnnotation(get_variables)

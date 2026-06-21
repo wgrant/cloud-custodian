@@ -12,7 +12,7 @@ from netaddr import IPRange, IPSet, IPNetwork, IPAddress
 from c7n.exceptions import PolicyValidationError
 from c7n.utils import type_schema
 from c7n.filters import Filter
-from c7n.filters.core import ValueFilter, ListItemFilter
+from c7n.filters.core import ListItemAnnotationFilter, ListItemFilter, SetAnnotation, ValueFilter
 
 AZURE_SERVICES = IPRange('0.0.0.0', '0.0.0.0')  # nosec
 log = logging.getLogger('custodian.azure.sql-server')
@@ -159,7 +159,7 @@ class TransparentDataEncryptionFilter(Filter):
 
 
 @SqlServer.filter_registry.register('failover-group')
-class FailoverGroupFilter(ListItemFilter):
+class FailoverGroupFilter(ListItemAnnotationFilter):
     schema = type_schema(
         "failover-group",
         attrs={"$ref": "#/definitions/filters_common/list_item_attrs"},
@@ -169,12 +169,15 @@ class FailoverGroupFilter(ListItemFilter):
     annotate_items = True
     item_annotation_key = "c7n:FailoverGroups"
 
-    def get_item_values(self, resource):
-        groups = self.manager.get_client().failover_groups.list_by_server(
+    @staticmethod
+    def get_failover_groups(resource_filter, resource):
+        groups = resource_filter.manager.get_client().failover_groups.list_by_server(
             resource_group_name=resource['resourceGroup'],
             server_name=resource['name']
         )
         return [g.serialize(True) for g in groups]
+
+    annotation_pipeline = SetAnnotation(get_failover_groups)
 
 
 @SqlServer.filter_registry.register('azure-ad-administrators')
@@ -493,7 +496,7 @@ class AuditingFilter(ValueFilter):
 
 
 @SqlServer.filter_registry.register('security-alert-policies')
-class SecurityAlertPoliciesFilter(ListItemFilter):
+class SecurityAlertPoliciesFilter(ListItemAnnotationFilter):
     """
     Filters sql servers by security alert policies
 
@@ -516,13 +519,16 @@ class SecurityAlertPoliciesFilter(ListItemFilter):
     annotate_items = True
     item_annotation_key = "c7n:SecurityAlertPolicies"
 
-    def get_item_values(self, resource):
-        client = self.manager.get_client()
+    @staticmethod
+    def get_security_alert_policies(resource_filter, resource):
+        client = resource_filter.manager.get_client()
         policies = client.server_security_alert_policies.list_by_server(
             resource['resourceGroup'],
             resource['name']
         )  # always only one item
         return [p.serialize(True) for p in policies]
+
+    annotation_pipeline = SetAnnotation(get_security_alert_policies)
 
 
 @SqlServer.action_registry.register('set-firewall-rules')

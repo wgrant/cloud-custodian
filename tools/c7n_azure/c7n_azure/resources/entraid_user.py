@@ -6,6 +6,7 @@ import requests
 from datetime import datetime
 
 from c7n.filters import Filter, ValueFilter
+from c7n.filters.core import AnnotateResource, AnnotationPipelineFilter
 from c7n.query import MutateResource
 from c7n.utils import local_session, type_schema
 from c7n_azure.actions.base import AzureBaseAction
@@ -258,7 +259,7 @@ class EntraIDUser(GraphResourceManager):
 
 
 @EntraIDUser.filter_registry.register('auth-methods')
-class AuthMethodsFilter(ValueFilter):
+class AuthMethodsFilter(AnnotationPipelineFilter):
     """Filter users by authentication methods.
 
     Filters users based on their registered authentication methods.
@@ -277,28 +278,25 @@ class AuthMethodsFilter(ValueFilter):
     """
 
     schema = type_schema('auth-methods', rinherit=ValueFilter.schema)
-    auth_methods_annotation_key = 'c7n:AuthMethods'
-    annotate = False
+    annotation_key = 'c7n:AuthMethods'
+    auth_methods_annotation_key = annotation_key
 
-    def __call__(self, i):
-        if self.auth_methods_annotation_key not in i:
-            # Get user's authentication methods from Graph API
-            user_id = i.get('id') or i.get('objectId')
-            auth_methods = self.manager.get_user_auth_methods(user_id)
+    @staticmethod
+    def annotate_auth_methods(resource_filter, resource):
+        user_id = resource.get('id') or resource.get('objectId')
+        auth_methods = resource_filter.manager.get_user_auth_methods(user_id)
 
-            if auth_methods is None:
-                # Unknown auth methods (permission error or API failure)
-                # Skip this user to avoid false results
-                log.warning(
-                    f"Could not determine authentication methods for user "
-                    f"{i.get('displayName', user_id)}"
-                )
-                auth_methods = []
+        if auth_methods is None:
+            # Unknown auth methods (permission error or API failure).
+            log.warning(
+                f"Could not determine authentication methods for user "
+                f"{resource.get('displayName', user_id)}"
+            )
+            auth_methods = []
 
-            # Add auth methods to user resource for filtering
-            i[self.auth_methods_annotation_key] = auth_methods
+        resource[resource_filter.annotation_key] = auth_methods
 
-        return super().__call__(i[self.auth_methods_annotation_key])
+    annotation_pipeline = AnnotateResource(annotate_auth_methods)
 
 
 @EntraIDUser.filter_registry.register('risk-level')

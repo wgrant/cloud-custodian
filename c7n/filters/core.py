@@ -946,6 +946,25 @@ class AnnotateResource:
         return resources
 
 
+class SetAnnotation:
+    def __init__(self, func, key=None):
+        self.func = func
+        self.key = key
+
+    def get_annotation_key(self, resource_filter):
+        if self.key:
+            return self.key
+        if hasattr(resource_filter, 'get_annotation_key'):
+            return resource_filter.get_annotation_key()
+        return resource_filter.annotation_key
+
+    def __call__(self, resource_filter, resources):
+        annotation_key = self.get_annotation_key(resource_filter)
+        for resource in resources:
+            resource[annotation_key] = self.func(resource_filter, resource)
+        return resources
+
+
 class AnnotateBatch:
     def __init__(self, func, size=None, max_workers=None):
         self.func = func
@@ -1393,3 +1412,46 @@ class ListItemFilter(Filter):
         if self.process((resource,)):
             return True
         return False
+
+
+class ListItemAnnotationFilter(ListItemFilter):
+    annotation_key = None
+    annotation_pipeline = None
+    source_annotation_key = None
+
+    def __init__(self, data, manager=None):
+        data = dict(data)
+        annotation_key = self.get_annotation_key()
+        if 'key' not in data and annotation_key:
+            data['key'] = f'"{annotation_key}"'
+        super().__init__(data, manager)
+
+    def get_annotation_key(self):
+        if self.annotation_key:
+            return self.annotation_key
+        if self.source_annotation_key:
+            return self.source_annotation_key
+        if self.annotate_items:
+            return f'{self.item_annotation_key}:Items'
+        return self.item_annotation_key
+
+    def discard_annotation(self):
+        return self.annotation_key is None and self.annotate_items
+
+    def get_annotation_resources(self, resources):
+        annotation_key = self.get_annotation_key()
+        return [r for r in resources if annotation_key not in r]
+
+    def annotate_resources(self, resources):
+        if resources:
+            return _apply_annotation_pipeline(self, resources, self.annotation_pipeline)
+        return resources
+
+    def process(self, resources, event=None):
+        annotation_key = self.get_annotation_key()
+        self.annotate_resources(self.get_annotation_resources(resources))
+        results = super().process(resources, event)
+        if self.discard_annotation():
+            for resource in resources:
+                resource.pop(annotation_key, None)
+        return results

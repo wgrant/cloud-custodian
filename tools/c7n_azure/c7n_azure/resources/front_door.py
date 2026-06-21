@@ -4,7 +4,8 @@
 from c7n_azure.resources.arm import ArmResourceManager
 from c7n_azure.provider import resources
 from c7n_azure.utils import ResourceIdParser
-from c7n.filters import Filter, ListItemFilter
+from c7n.filters import Filter
+from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation
 from c7n.utils import type_schema
 
 
@@ -76,7 +77,7 @@ class WebAppFirewallFilter(Filter):
 
 
 @FrontDoor.filter_registry.register('firewall-policy')
-class WAFPolicies(ListItemFilter):
+class WAFPolicies(ListItemAnnotationFilter):
     """Filters front door resources based on their waf policies
 
     :example:
@@ -106,7 +107,8 @@ class WAFPolicies(ListItemFilter):
         super().__init__(*args, **kwargs)
         self._cache = {}  # policy id to policy item
 
-    def get_item_values(self, resource):
+    @staticmethod
+    def get_waf_policies(resource_filter, resource):
         ids = set()
         for fe in resource['properties'].get('frontendEndpoints') or []:
             data = fe['properties'].get('webApplicationFirewallPolicyLink')
@@ -118,13 +120,15 @@ class WAFPolicies(ListItemFilter):
             ids.add(identifier)
         if not ids:
             return []
-        client = self.manager.get_client()
+        client = resource_filter.manager.get_client()
         items = []
         for i in ids:
-            if i not in self._cache:
+            if i not in resource_filter._cache:
                 group = ResourceIdParser.get_resource_group(i)
                 name = ResourceIdParser.get_resource_name(i)
-                self._cache[i] = client.policies.get(group, name)
-            item = self._cache[i]
+                resource_filter._cache[i] = client.policies.get(group, name)
+            item = resource_filter._cache[i]
             items.append(item.serialize(True))
         return items
+
+    annotation_pipeline = SetAnnotation(get_waf_policies)

@@ -11,6 +11,7 @@ from c7n_gcp.actions import MethodAction
 from c7n_gcp.utils import get_firewall_port_ranges
 
 from c7n.filters import ValueFilter
+from c7n.filters.core import AnnotateBatch, AnnotationPipelineFilter
 
 
 @resources.register('gke-cluster')
@@ -89,7 +90,7 @@ class KubernetesCluster(QueryResourceManager):
 
 
 @KubernetesCluster.filter_registry.register('effective-firewall')
-class EffectiveFirewall(ValueFilter):
+class EffectiveFirewall(AnnotationPipelineFilter):
     """Filters gke clusters  by their effective firewall rules.
     See `getEffectiveFirewalls
     https://cloud.google.com/workflows/docs/reference/googleapis/compute/v1/networks/getEffectiveFirewalls`_
@@ -116,23 +117,26 @@ class EffectiveFirewall(ValueFilter):
     permissions = ('compute.instances.getEffectiveFirewalls',)
     annotation_key = "c7n:firewall"
 
-    def get_firewalls(self, client, p, r):
-        if self.annotation_key not in r:
-            firewalls = client.execute_command('getEffectiveFirewalls',
-                verb_arguments={'project': p, 'network': r['network']}).get('firewalls', [])
-
-            r[self.annotation_key] = get_firewall_port_ranges(firewalls)
-        return super(EffectiveFirewall, self).process(r[self.annotation_key], None)
-
-    def process(self, resources, event=None):
-        session = local_session(self.manager.session_factory)
+    @staticmethod
+    def annotate_firewalls(resource_filter, resources):
+        session = local_session(resource_filter.manager.session_factory)
         project = session.get_default_project()
         client = session.client(
             "compute", "v1", "networks"
         )
-        resource_list = [r for r in resources
-                            if self.get_firewalls(client, project, r)]
-        return resource_list
+        for resource in resources:
+            firewalls = client.execute_command('getEffectiveFirewalls',
+                verb_arguments={'project': project, 'network': resource['network']}
+            ).get('firewalls', [])
+
+            resource[resource_filter.annotation_key] = get_firewall_port_ranges(firewalls)
+
+    def __call__(self, resource):
+        return any(
+            ValueFilter.__call__(self, firewall)
+            for firewall in resource[self.annotation_key])
+
+    annotation_pipeline = AnnotateBatch(annotate_firewalls)
 
 
 @resources.register('gke-nodepool')
@@ -199,7 +203,7 @@ class KubernetesClusterNodePool(ChildResourceManager):
 
 @KubernetesCluster.filter_registry.register('server-config')
 @KubernetesClusterNodePool.filter_registry.register('server-config')
-class ServerConfig(ValueFilter):
+class ServerConfig(AnnotationPipelineFilter):
     """Filters kubernetes clusters or nodepools by their server config.
     See `getServerConfig
     https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1/projects.locations/getServerConfig`
@@ -239,25 +243,23 @@ class ServerConfig(ValueFilter):
     def _get_location(self, r):
         return r["location"] if "location" in r else r['selfLink'].split('/')[-5]
 
-    def get_config(self, client, project, resource):
-        if self.annotation_key in resource:
-            return
-        location = self._get_location(resource)
-        resource[self.annotation_key] = client.execute_command(
-            'getServerConfig', verb_arguments={
-                'name': 'projects/{}/locations/{}'.format(project, location)}
-        )
-
-    def __call__(self, r):
-        return super().__call__({"serverConfig": r[self.annotation_key], "resource": r})
-
-    def process(self, resources, event=None):
-        session = local_session(self.manager.session_factory)
+    @staticmethod
+    def annotate_config(resource_filter, resources):
+        session = local_session(resource_filter.manager.session_factory)
         project = session.get_default_project()
         client = session.client("container", "v1", "projects.locations")
-        for r in resources:
-            self.get_config(client, project, r)
-        return super().process(resources)
+        for resource in resources:
+            location = resource_filter._get_location(resource)
+            resource[resource_filter.annotation_key] = client.execute_command(
+                'getServerConfig', verb_arguments={
+                    'name': 'projects/{}/locations/{}'.format(project, location)}
+            )
+
+    def __call__(self, r):
+        return ValueFilter.__call__(
+            self, {"serverConfig": r[self.annotation_key], "resource": r})
+
+    annotation_pipeline = AnnotateBatch(annotate_config)
 
 
 @KubernetesCluster.action_registry.register('delete')
