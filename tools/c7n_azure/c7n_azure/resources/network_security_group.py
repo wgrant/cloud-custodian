@@ -10,7 +10,7 @@ from azure.core.exceptions import AzureError
 
 from c7n.actions import BaseAction
 from c7n.filters import Filter, FilterValidationError
-from c7n.filters.core import AnnotationPipelineFilter, PolicyValidationError, SetAnnotation, ValueFilter
+from c7n.filters.core import AnnotationPipelineFilter, PolicyValidationError, ValueFilter
 from c7n.utils import type_schema
 
 from msrestazure.tools import parse_resource_id
@@ -320,7 +320,7 @@ class FlowLogs(AnnotationPipelineFilter):
             for parsed_id in parsed_ids
         ]}
 
-    annotation_pipeline = SetAnnotation(get_flow_logs)
+    annotation_getter = get_flow_logs
 
 
 class NetworkSecurityGroupPortsAction(BaseAction):

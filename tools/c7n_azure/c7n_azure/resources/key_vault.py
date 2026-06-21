@@ -4,7 +4,7 @@
 import logging
 
 from c7n.filters import Filter
-from c7n.filters.core import AnnotationFilter, SetAnnotation
+from c7n.filters.core import AnnotationFilter
 from c7n.utils import type_schema
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.constants import GRAPH_AUTH_ENDPOINT
@@ -209,7 +209,7 @@ class WhiteListFilter(AnnotationFilter):
             return resource_filter._enhance_policies(access_policies)
         return access_policies
 
-    annotation_pipeline = SetAnnotation(get_access_policies)
+    annotation_getter = get_access_policies
 
     def __call__(self, i):
         # Ensure each policy is

@@ -14,7 +14,7 @@ from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo, ChildResourceManager, ChildTypeInfo
 
 from c7n.filters.core import (
-    AnnotateBatch, AnyAnnotationFilter, AnnotationPipelineFilter, ListItemAnnotationFilter,
+    AnyAnnotationFilter, AnnotationPipelineFilter, ListItemAnnotationFilter,
     ListItemFilter, ValueFilter)
 from c7n.filters.offhours import OffHour, OnHour
 
@@ -136,7 +136,7 @@ class EffectiveFirewall(AnyAnnotationFilter):
         return session.client(
             model.service, model.version, model.component)
 
-    annotation_pipeline = AnnotateBatch(annotate_effective_firewalls)
+    annotation_batcher = annotate_effective_firewalls
 
 
 class InstanceAction(MethodAction):
@@ -459,7 +459,7 @@ class DiskSnapshotsFilter(ListItemAnnotationFilter):
             resource[resource_filter.annotation_key] = grouped.get(
                 resource['selfLink'], [])
 
-    annotation_pipeline = AnnotateBatch(annotate_snapshots)
+    annotation_batcher = annotate_snapshots
 
 
 @Disk.action_registry.register('snapshot')

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from c7n.filters.core import (
-    AnnotationPipelineFilter, ListItemAnnotationFilter, SetAnnotation, ValueFilter)
+    AnnotationPipelineFilter, ListItemAnnotationFilter, ValueFilter)
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -77,7 +77,7 @@ class PostgresqlServerConfigurationFilter(ListItemAnnotationFilter):
         )
         return [item.serialize(True) for item in it]
 
-    annotation_pipeline = SetAnnotation(get_configurations)
+    annotation_getter = get_configurations
 
 
 @PostgresqlServer.filter_registry.register('security-alert-policies')
@@ -100,7 +100,7 @@ class PostgresqlServerSecurityAlertPoliciesFilter(ListItemAnnotationFilter):
         )
         return [item.serialize(True) for item in it]
 
-    annotation_pipeline = SetAnnotation(get_security_alert_policies)
+    annotation_getter = get_security_alert_policies
 
 
 @PostgresqlServer.filter_registry.register("firewall-bypass")
@@ -221,4 +221,4 @@ class ConfigurationParametersFilter(AnnotationPipelineFilter):
         )
         return query.serialize(True).get('properties')
 
-    annotation_pipeline = SetAnnotation(get_configuration)
+    annotation_getter = get_configuration

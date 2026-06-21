@@ -11,7 +11,7 @@ from c7n_gcp.actions import MethodAction
 from c7n_gcp.utils import get_firewall_port_ranges
 
 from c7n.filters import ValueFilter
-from c7n.filters.core import AnnotateBatch, AnyAnnotationFilter, AnnotationPipelineFilter
+from c7n.filters.core import AnyAnnotationFilter, AnnotationPipelineFilter
 
 
 @resources.register('gke-cluster')
@@ -131,7 +131,7 @@ class EffectiveFirewall(AnyAnnotationFilter):
 
             resource[resource_filter.annotation_key] = get_firewall_port_ranges(firewalls)
 
-    annotation_pipeline = AnnotateBatch(annotate_firewalls)
+    annotation_batcher = annotate_firewalls
 
 
 @resources.register('gke-nodepool')
@@ -253,7 +253,7 @@ class ServerConfig(AnnotationPipelineFilter):
     def get_filter_resource(self, resource):
         return {"serverConfig": resource[self.annotation_key], "resource": resource}
 
-    annotation_pipeline = AnnotateBatch(annotate_config)
+    annotation_batcher = annotate_config
 
 
 @KubernetesCluster.action_registry.register('delete')

@@ -3,7 +3,7 @@
 
 from c7n.actions import BaseAction
 from c7n.filters import ValueFilter
-from c7n.filters.core import AnnotateResource, AnnotationPipelineFilter
+from c7n.filters.core import AnnotationPipelineFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.manager import resources
@@ -198,7 +198,7 @@ class OpensearchIngestionPipelineConfigFilter(AnnotationPipelineFilter):
             resource.get('PipelineConfigurationBody', '{}'))
         resource_filter.substitute_pipeline_name_key(resource[resource_filter.annotation_key])
 
-    annotation_pipeline = AnnotateResource(annotate_pipeline_config)
+    annotation_mutator = annotate_pipeline_config
 
 
 @OpensearchIngestion.filter_registry.register('cross-account')

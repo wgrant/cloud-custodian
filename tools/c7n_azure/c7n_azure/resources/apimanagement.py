@@ -4,7 +4,7 @@ from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 from azure.mgmt.resource.resources.models import GenericResource
-from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation
+from c7n.filters.core import ListItemAnnotationFilter
 
 from c7n.utils import type_schema
 
@@ -61,7 +61,7 @@ class Certificate(ListItemAnnotationFilter):
         )
         return [c.serialize(True) for c in certs]
 
-    annotation_pipeline = SetAnnotation(get_certificates)
+    annotation_getter = get_certificates
 
 
 @ApiManagement.action_registry.register('resize')

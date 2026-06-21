@@ -4,7 +4,7 @@
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 from c7n.utils import type_schema
-from c7n.filters.core import AnnotationPipelineFilter, SetAnnotation, ValueFilter
+from c7n.filters.core import AnnotationPipelineFilter, ValueFilter
 
 
 @resources.register('mysql-flexibleserver')
@@ -90,4 +90,4 @@ class ServerParametersFilter(AnnotationPipelineFilter):
         )
         return query.serialize(True).get('properties')
 
-    annotation_pipeline = SetAnnotation(get_parameter)
+    annotation_getter = get_parameter

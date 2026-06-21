@@ -6,7 +6,7 @@ from botocore.exceptions import ClientError
 
 from c7n.actions import BaseAction
 from c7n.filters import MetricsFilter, ShieldMetrics, Filter
-from c7n.filters.core import AnnotateBatch, AnnotationPipelineFilter
+from c7n.filters.core import AnnotationPipelineFilter
 from c7n.manager import resources
 from c7n.query import (ConfigSource, QueryResourceManager, TypeInfo, DescribeWithResourceTags)
 from c7n.utils import local_session, merge_dict, type_schema, get_retry
@@ -302,7 +302,7 @@ class DistributionConfig(BaseDistributionConfig):
                     r['ARN'], e)
                 raise e
 
-    annotation_pipeline = AnnotateBatch(annotate_configs)
+    annotation_batcher = annotate_configs
 
 
 @StreamingDistribution.filter_registry.register('distribution-config')
@@ -340,7 +340,7 @@ class StreamingDistributionConfig(BaseDistributionConfig):
                     r['ARN'], e)
                 raise e
 
-    annotation_pipeline = AnnotateBatch(annotate_configs)
+    annotation_batcher = annotate_configs
 
 
 @Distribution.filter_registry.register('mismatch-s3-origin')

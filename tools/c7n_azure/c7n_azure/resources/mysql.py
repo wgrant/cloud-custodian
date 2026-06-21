@@ -4,7 +4,7 @@
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 from c7n.utils import type_schema
-from c7n.filters.core import AnnotationPipelineFilter, SetAnnotation, ValueFilter
+from c7n.filters.core import AnnotationPipelineFilter, ValueFilter
 from c7n_azure.filters import scalar_ops
 
 
@@ -110,7 +110,7 @@ class ServerConfigurationsFilter(AnnotationPipelineFilter):
         )
         return query.serialize(True).get('properties')
 
-    annotation_pipeline = SetAnnotation(get_configuration)
+    annotation_getter = get_configuration
 
 
 @MySQL.filter_registry.register('security-alert-policy')

@@ -5,7 +5,7 @@ from c7n.query import MutateResource
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod
-from c7n.filters.core import AnnotateBatch, AnnotationPipelineFilter, Filter, ValueFilter
+from c7n.filters.core import AnnotationPipelineFilter, Filter, ValueFilter
 
 
 @resources.register('security-group')
@@ -251,4 +251,5 @@ class StatisticsFilter(AnnotationPipelineFilter):
             )
 
     # DescribeSecurityGroupAssociationStatistics supports at most 100 ids.
-    annotation_pipeline = AnnotateBatch(annotate_usage_stats, size=50)
+    annotation_batcher = annotate_usage_stats
+    annotation_batch_size = 50

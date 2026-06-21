@@ -5,7 +5,7 @@ from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n_gcp.actions import MethodAction
 from c7n.utils import type_schema, local_session
-from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation
+from c7n.filters.core import ListItemAnnotationFilter
 
 
 @resources.register('dns-managed-zone')
@@ -95,7 +95,7 @@ class DNSZoneRecordsSetsFilter(ListItemAnnotationFilter):
             'list', {'project': project, 'managedZone': resource['name']}).get('rrsets')
         return result
 
-    annotation_pipeline = SetAnnotation(get_record_sets)
+    annotation_getter = get_record_sets
 
 
 @DnsManagedZone.action_registry.register('delete')

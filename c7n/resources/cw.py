@@ -10,7 +10,7 @@ from c7n.actions import BaseAction
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import Filter, MetricsFilter
 from c7n.filters.core import (
-    AnnotateBatch, AnnotationPipelineFilter, parse_date, ValueFilter)
+    AnnotationPipelineFilter, parse_date, ValueFilter)
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
@@ -351,7 +351,7 @@ class LogMetricAlarmFilter(AnnotationPipelineFilter):
                     for t in r.get('metricTransformations', ())
                 )))
 
-    annotation_pipeline = AnnotateBatch(annotate_alarms)
+    annotation_batcher = annotate_alarms
 
     def get_permissions(self):
         return [

@@ -13,7 +13,7 @@ from azure.storage.file import FileService
 from azure.storage.queue import QueueServiceClient
 from c7n.exceptions import PolicyValidationError
 from c7n.filters.core import (
-    BatchedFilter, ListItemAnnotationFilter, SetAnnotation, type_schema)
+    BatchedFilter, ListItemAnnotationFilter, type_schema)
 from c7n.utils import get_annotation_prefix, local_session
 from c7n_azure import constants
 from c7n_azure.actions.base import AzureBaseAction
@@ -105,10 +105,9 @@ class StorageFileServicesFilter(ListItemAnnotationFilter):
         # at least one default is present
         return file_services.serialize(True).get('value', [])
 
-    annotation_pipeline = SetAnnotation(
-        get_file_services,
-        size=constants.DEFAULT_CHUNK_SIZE,
-        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
+    annotation_getter = get_file_services
+    annotation_batch_size = constants.DEFAULT_CHUNK_SIZE
+    annotation_max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
 
 @Storage.action_registry.register('set-firewall-rules')
@@ -280,7 +279,7 @@ class StorageAccountManagementPolicyRulesFilter(ListItemAnnotationFilter):
             resource_filter.log.error(e)
             return []  # no rules
 
-    annotation_pipeline = SetAnnotation(get_management_policy_rules)
+    annotation_getter = get_management_policy_rules
 
 
 @Storage.filter_registry.register('firewall-rules')

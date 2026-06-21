@@ -7,7 +7,7 @@ from c7n.actions import BaseAction, ModifyVpcSecurityGroupsAction
 from c7n.deprecated import DeprecatedField
 from c7n.exceptions import PolicyValidationError, ClientError
 from c7n.filters import Filter, ValueFilter, MetricsFilter, ListItemFilter
-from c7n.filters.core import AnnotateResource, AnnotationPipelineFilter
+from c7n.filters.core import AnnotationPipelineFilter
 import c7n.filters.vpc as net_filters
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.related import RelatedResourceFilter, RelatedResourceByIdFilter
@@ -809,7 +809,7 @@ class SubnetIpAddressUsageFilter(AnnotationPipelineFilter):
             ),
         )
 
-    annotation_pipeline = AnnotateResource(annotate_ip_usage)
+    annotation_mutator = annotate_ip_usage
 
 
 @Subnet.action_registry.register('delete')

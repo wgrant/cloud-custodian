@@ -6,7 +6,7 @@ import requests
 from datetime import datetime
 
 from c7n.filters import Filter, ValueFilter
-from c7n.filters.core import AnnotateResource, AnnotationPipelineFilter
+from c7n.filters.core import AnnotationPipelineFilter
 from c7n.query import MutateResource
 from c7n.utils import local_session, type_schema
 from c7n_azure.actions.base import AzureBaseAction
@@ -296,7 +296,7 @@ class AuthMethodsFilter(AnnotationPipelineFilter):
 
         resource[resource_filter.annotation_key] = auth_methods
 
-    annotation_pipeline = AnnotateResource(annotate_auth_methods)
+    annotation_mutator = annotate_auth_methods
 
 
 @EntraIDUser.filter_registry.register('risk-level')

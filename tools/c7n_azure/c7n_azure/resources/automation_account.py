@@ -1,4 +1,4 @@
-from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation
+from c7n.filters.core import ListItemAnnotationFilter
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -69,4 +69,4 @@ class VariableValueFilter(ListItemAnnotationFilter):
         )
         return [v.serialize(True) for v in variables]
 
-    annotation_pipeline = SetAnnotation(get_variables)
+    annotation_getter = get_variables

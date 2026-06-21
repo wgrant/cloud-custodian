@@ -6,7 +6,7 @@ from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 
 from c7n.filters.core import (
-    AnnotateBatch, AnnotationPipelineFilter, ListItemAnnotationFilter, SetAnnotation,
+    AnnotationPipelineFilter, ListItemAnnotationFilter,
     ValueFilter, type_schema)
 from c7n.filters.related import RelatedResourceFilter
 from c7n.utils import local_session
@@ -181,7 +181,7 @@ class InstanceViewFilter(AnnotationPipelineFilter):
         )
         return instance.serialize()
 
-    annotation_pipeline = SetAnnotation(get_instance_view)
+    annotation_getter = get_instance_view
 
 
 @VirtualMachine.filter_registry.register('vm-extensions')
@@ -262,7 +262,7 @@ class VMExtensionsFilter(AnnotationPipelineFilter):
         )
         return [e.serialize(True) for e in extensions.value]
 
-    annotation_pipeline = SetAnnotation(get_extensions)
+    annotation_getter = get_extensions
 
 
 @VirtualMachine.filter_registry.register('network-interface')
@@ -311,7 +311,7 @@ class BackupStatusFilter(AnnotationPipelineFilter):
                 parameters=dict(resourceId=resource['id'], resourceType='VM')
             ).serialize(True)
 
-    annotation_pipeline = AnnotateBatch(annotate_backup_statuses)
+    annotation_batcher = annotate_backup_statuses
 
 
 @VirtualMachine.filter_registry.register('jit-policy-port')
@@ -339,7 +339,7 @@ class VirtualMachineJitPortsFilter(ListItemAnnotationFilter):
         for r in resources:
             r[resource_filter.annotation_key] = vm_id_to_ports.get(r['id'].lower(), [])
 
-    annotation_pipeline = AnnotateBatch(annotate_jit_policy_ports)
+    annotation_batcher = annotate_jit_policy_ports
 
 
 @VirtualMachine.action_registry.register('poweroff')

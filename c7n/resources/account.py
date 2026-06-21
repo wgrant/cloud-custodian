@@ -14,7 +14,7 @@ from dateutil.tz import tzutc
 from c7n.actions import ActionRegistry, BaseAction
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import Filter, FilterRegistry, ValueFilter
-from c7n.filters.core import AnnotateBatch, AnnotationPipelineFilter
+from c7n.filters.core import AnnotationPipelineFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.multiattr import MultiAttrFilter
 from c7n.filters.missing import Missing
@@ -1714,7 +1714,7 @@ class S3PublicBlock(AnnotationPipelineFilter):
             except client.exceptions.NoSuchPublicAccessBlockConfiguration:
                 r[resource_filter.annotation_key] = {}
 
-    annotation_pipeline = AnnotateBatch(annotate_public_block)
+    annotation_batcher = annotate_public_block
 
 
 @actions.register('set-s3-public-block')
@@ -1953,7 +1953,7 @@ class EMRBlockPublicAccessConfiguration(AnnotationPipelineFilter):
                 client.get_block_public_access_configuration)
             r[resource_filter.annotation_key].pop('ResponseMetadata')
 
-    annotation_pipeline = AnnotateBatch(annotate_block_public_access)
+    annotation_batcher = annotate_block_public_access
 
 
 @actions.register('set-emr-block-public-access')
@@ -2567,7 +2567,7 @@ class EC2MetadataDefaults(AnnotationPipelineFilter):
             r[resource_filter.annotation_key] = resource_filter.manager.retry(
                 client.get_instance_metadata_defaults)["AccountLevel"]
 
-    annotation_pipeline = AnnotateBatch(annotate_metadata_defaults)
+    annotation_batcher = annotate_metadata_defaults
 
 
 @actions.register('set-ec2-metadata-defaults')

@@ -1,7 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation
+from c7n.filters.core import ListItemAnnotationFilter
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -89,4 +89,4 @@ class RedisFirewallFilter(ListItemAnnotationFilter):
         )
         return [rule.serialize(True) for rule in rules]
 
-    annotation_pipeline = SetAnnotation(get_firewall_rules)
+    annotation_getter = get_firewall_rules

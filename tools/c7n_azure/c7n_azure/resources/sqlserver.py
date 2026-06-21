@@ -12,7 +12,7 @@ from netaddr import IPRange, IPSet, IPNetwork, IPAddress
 
 from c7n.utils import type_schema
 from c7n.filters.core import (
-    BatchedFilter, EnabledAnnotationFilter, ListItemAnnotationFilter, SetAnnotation, ValueFilter)
+    BatchedFilter, EnabledAnnotationFilter, ListItemAnnotationFilter, ValueFilter)
 
 AZURE_SERVICES = IPRange('0.0.0.0', '0.0.0.0')  # nosec
 log = logging.getLogger('custodian.azure.sql-server')
@@ -168,7 +168,7 @@ class FailoverGroupFilter(ListItemAnnotationFilter):
         )
         return [g.serialize(True) for g in groups]
 
-    annotation_pipeline = SetAnnotation(get_failover_groups)
+    annotation_getter = get_failover_groups
 
 
 @SqlServer.filter_registry.register('azure-ad-administrators')
@@ -296,10 +296,9 @@ class VulnerabilityAssessmentFilter(EnabledAnnotationFilter):
             return va[0].serialize(True).get('properties', {})
         return {}
 
-    annotation_pipeline = SetAnnotation(
-        get_vulnerability_assessment,
-        size=constants.DEFAULT_CHUNK_SIZE,
-        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
+    annotation_getter = get_vulnerability_assessment
+    annotation_batch_size = constants.DEFAULT_CHUNK_SIZE
+    annotation_max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
 
 @SqlServer.filter_registry.register('firewall-rules')
@@ -398,10 +397,9 @@ class AuditingFilter(EnabledAnnotationFilter):
             resource['name'])
         return auditing_settings.serialize(True).get('properties', {})
 
-    annotation_pipeline = SetAnnotation(
-        get_auditing_settings,
-        size=constants.DEFAULT_CHUNK_SIZE,
-        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
+    annotation_getter = get_auditing_settings
+    annotation_batch_size = constants.DEFAULT_CHUNK_SIZE
+    annotation_max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
 
 @SqlServer.filter_registry.register('security-alert-policies')
@@ -437,7 +435,7 @@ class SecurityAlertPoliciesFilter(ListItemAnnotationFilter):
         )  # always only one item
         return [p.serialize(True) for p in policies]
 
-    annotation_pipeline = SetAnnotation(get_security_alert_policies)
+    annotation_getter = get_security_alert_policies
 
 
 @SqlServer.action_registry.register('set-firewall-rules')
@@ -609,8 +607,6 @@ class SqlServerAuditingSettingsFilter(ListItemAnnotationFilter):
         )
         return [s.serialize(True).get('properties', {}) for s in settings]
 
-    annotation_pipeline = SetAnnotation(
-        get_auditing_settings,
-        path=annotation_path,
-        size=constants.DEFAULT_CHUNK_SIZE,
-        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
+    annotation_getter = get_auditing_settings
+    annotation_batch_size = constants.DEFAULT_CHUNK_SIZE
+    annotation_max_workers = constants.DEFAULT_MAX_THREAD_WORKERS

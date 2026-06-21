@@ -1089,6 +1089,11 @@ BatchFilter = BatchedFilter
 class AnnotationPipelineMixin:
     annotation_key = None
     annotation_pipeline = None
+    annotation_getter = None
+    annotation_mutator = None
+    annotation_batcher = None
+    annotation_batch_size = None
+    annotation_max_workers = None
     annotation_path = None
     source_annotation_path = None
 
@@ -1106,9 +1111,27 @@ class AnnotationPipelineMixin:
         annotation_path = self.get_annotation_path()
         return [r for r in resources if not _has_path(r, annotation_path)]
 
+    def get_annotation_pipeline(self):
+        if self.annotation_pipeline:
+            return self.annotation_pipeline
+        if self.annotation_getter:
+            return SetAnnotation(
+                self.annotation_getter,
+                size=self.annotation_batch_size,
+                max_workers=self.annotation_max_workers)
+        if self.annotation_mutator:
+            return AnnotateResource(self.annotation_mutator)
+        if self.annotation_batcher:
+            return AnnotateBatch(
+                self.annotation_batcher,
+                size=self.annotation_batch_size,
+                max_workers=self.annotation_max_workers)
+        return None
+
     def annotate_resources(self, resources):
         if resources:
-            return _apply_annotation_pipeline(self, resources, self.annotation_pipeline)
+            return _apply_annotation_pipeline(
+                self, resources, self.get_annotation_pipeline())
         return resources
 
 

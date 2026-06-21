@@ -7,7 +7,7 @@ from c7n_gcp.query import QueryResourceManager, TypeInfo
 
 from c7n.query import MapBatch
 from c7n_gcp.provider import resources
-from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation
+from c7n.filters.core import ListItemAnnotationFilter
 from c7n.utils import type_schema, local_session
 from c7n_gcp.utils import get_firewall_port_ranges
 
@@ -57,7 +57,7 @@ class VPCFirewallFilter(ListItemAnnotationFilter):
             'project': project, 'network': resource['name']}).get('firewalls')
         return firewalls
 
-    annotation_pipeline = SetAnnotation(get_firewalls)
+    annotation_getter = get_firewalls
 
 
 @resources.register('subnet')

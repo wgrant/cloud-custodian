@@ -5,7 +5,7 @@ from c7n_azure.resources.arm import ArmResourceManager
 from c7n_azure.provider import resources
 from c7n_azure.utils import ResourceIdParser
 from c7n.filters import Filter
-from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation
+from c7n.filters.core import ListItemAnnotationFilter
 from c7n.utils import type_schema
 
 
@@ -131,4 +131,4 @@ class WAFPolicies(ListItemAnnotationFilter):
             items.append(item.serialize(True))
         return items
 
-    annotation_pipeline = SetAnnotation(get_waf_policies)
+    annotation_getter = get_waf_policies

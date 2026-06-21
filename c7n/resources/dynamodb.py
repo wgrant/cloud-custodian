@@ -17,7 +17,7 @@ from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 from datetime import datetime, timedelta
 from c7n.filters import Filter
 from c7n.filters import ValueFilter
-from c7n.filters.core import AnnotateBatch, AnnotationPipelineFilter
+from c7n.filters.core import AnnotationPipelineFilter
 from c7n.query import RetryPageIterator
 from c7n.filters.backup import ConsecutiveAwsBackupsFilter
 from c7n.filters.policystatement import HasStatementFilter
@@ -136,7 +136,7 @@ class ImportSummaryFilter(AnnotationPipelineFilter):
 
             table[resource_filter.annotation_key] = summaries
 
-    annotation_pipeline = AnnotateBatch(annotate_imports)
+    annotation_batcher = annotate_imports
 
 
 @Table.filter_registry.register('continuous-backup')
@@ -182,7 +182,7 @@ class TableContinuousBackupFilter(AnnotationPipelineFilter):
     def __call__(self, r):
         return ValueFilter.__call__(self, r.get(self.annotation_key, {}))
 
-    annotation_pipeline = AnnotateBatch(annotate_continuous_backups)
+    annotation_batcher = annotate_continuous_backups
 
 
 @Table.filter_registry.register('cross-account')
@@ -302,7 +302,7 @@ class ExportDescriptionFilter(AnnotationPipelineFilter):
 
             table[resource_filter.annotation_key] = exports
 
-    annotation_pipeline = AnnotateBatch(annotate_exports)
+    annotation_batcher = annotate_exports
 
 
 @Table.action_registry.register('set-continuous-backup')

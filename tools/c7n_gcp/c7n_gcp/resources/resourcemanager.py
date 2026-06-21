@@ -11,7 +11,7 @@ from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n.resolver import ValuesFrom
 from c7n.utils import type_schema, local_session
 from c7n.filters.core import (
-    AnnotationPipelineFilter, ListItemAnnotationFilter, SetAnnotation, ValueFilter)
+    AnnotationPipelineFilter, ListItemAnnotationFilter, ValueFilter)
 from c7n.filters.missing import Missing
 
 from googleapiclient.errors import HttpError
@@ -175,7 +175,7 @@ class ProjectComputeMetaFilter(AnnotationPipelineFilter):
         client = session.client('compute', 'v1', 'projects')
         return client.execute_command('get', {"project": resource['projectId']})
 
-    annotation_pipeline = SetAnnotation(get_compute_meta)
+    annotation_getter = get_compute_meta
 
 
 @Project.action_registry.register('delete')
@@ -401,7 +401,7 @@ class OrgContactsFilter(ListItemAnnotationFilter):
             contacts.extend(page.get('contacts', []))
         return contacts
 
-    annotation_pipeline = SetAnnotation(get_contacts)
+    annotation_getter = get_contacts
 
 
 @Organization.filter_registry.register('org-policy')
@@ -438,7 +438,7 @@ class OrgPoliciesFilter(ListItemAnnotationFilter):
             policies.extend(page.get('policies', []))
         return policies
 
-    annotation_pipeline = SetAnnotation(get_policies)
+    annotation_getter = get_policies
 
 
 @Project.filter_registry.register('access-approval')

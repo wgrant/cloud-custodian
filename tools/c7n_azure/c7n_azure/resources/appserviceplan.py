@@ -3,7 +3,7 @@
 
 from azure.mgmt.web import models
 from c7n.lookup import Lookup
-from c7n.filters.core import AnnotateBatch, ListItemAnnotationFilter
+from c7n.filters.core import ListItemAnnotationFilter
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -112,7 +112,7 @@ class AppServicePlanWebAppsFilter(ListItemAnnotationFilter):
             for r in resources:
                 r[resource_filter.annotation_key] = web_apps_by_asp.get(r["id"], [])
 
-    annotation_pipeline = AnnotateBatch(annotate_webapps)
+    annotation_batcher = annotate_webapps
 
 
 @AppServicePlan.action_registry.register('resize-plan')
