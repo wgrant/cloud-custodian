@@ -341,6 +341,24 @@ class AugmentPipelineTest(BaseTest):
             apply_source_augment_pipeline(Source(), resources, phase='pre'),
             [{'Name': 'keep', 'Keep': True}])
 
+    def test_declarative_source_batch_uses_source_context(self):
+        seen = []
+
+        class Source:
+            manager = object()
+
+            @augment.source_batch(size=2)
+            def expand_batch(source, resource_set):
+                seen.append((source, list(resource_set)))
+                return [{'Value': r} for r in resource_set if r % 2]
+
+        source = Source()
+
+        self.assertEqual(
+            apply_source_augment_pipeline(source, [1, 2, 3]),
+            [{'Value': 1}, {'Value': 3}])
+        self.assertEqual(seen, [(source, [1, 2]), (source, [3])])
+
     def test_declarative_pipeline_runs_before_tags(self):
         class Manager:
             merge_field = 'Metadata'

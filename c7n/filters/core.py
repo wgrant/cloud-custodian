@@ -967,7 +967,8 @@ def _pop_path(resource, path):
     return current.pop(path[-1], None)
 
 
-AnnotateResource = MutateItems
+class AnnotateResource(MutateItems):
+    """Run a per-resource annotation mutator."""
 
 
 class SetAnnotation(MutateBatches):
@@ -997,7 +998,8 @@ class SetAnnotation(MutateBatches):
             _set_path(resource, annotation_path, self.getter(resource_filter, resource))
 
 
-AnnotateBatch = MutateBatches
+class AnnotateBatch(MutateBatches):
+    """Run an annotation mutator over resource batches."""
 
 
 def _annotation_decorator(role, func=None, size=None, max_workers=None):

@@ -363,38 +363,27 @@ class MergeField:
         return resources
 
 
-FilterResources = FilterItems
-MutateResource = MutateItems
-MapResource = MapItems
-MapBatch = MapBatches
+class FilterResources(FilterItems):
+    """Filter resources with a ``(manager, resource)`` predicate."""
 
 
-class SourceMapBatch:
+class MutateResource(MutateItems):
+    """Run a per-resource mutator that changes resources in place."""
+
+
+class MapResource(MapItems):
+    """Map one input resource to zero or one output resources."""
+
+
+class MapBatch(MapBatches):
+    """Map a batch of resources to zero or more output resources."""
+
+
+class SourceMapBatch(MapBatches):
     """Map batches with the source object instead of the resource manager."""
 
-    def __init__(self, func, size=None, max_workers=None):
-        self.func = func
-        self.size = size
-        self.max_workers = max_workers
-
     def process_source(self, source, resources):
-        results = []
-        resource_sets = chunks(resources, self.size) if self.size else (resources,)
-        if self.max_workers:
-            with source.manager.executor_factory(max_workers=self.max_workers) as w:
-                mapped_sets = w.map(
-                    functools.partial(self.func, source),
-                    resource_sets)
-                for mapped in mapped_sets:
-                    if mapped:
-                        results.extend(mapped)
-            return results
-
-        for resource_set in resource_sets:
-            mapped = self.func(source, resource_set)
-            if mapped:
-                results.extend(mapped)
-        return results
+        return self(source, resources)
 
 
 class AnnotateParent:

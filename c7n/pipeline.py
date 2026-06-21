@@ -52,6 +52,13 @@ def iter_decorated_pipeline(owner, role_attr, options_attr):
 
 def build_decorated_pipeline(
         owner, role_attr, options_attr, factories, include=None, first=False):
+    """Build operation objects from decorated methods on an owner.
+
+    ``factories`` maps decorator roles to ``(handler, options) -> op`` callables.
+    ``include`` can filter roles before factory lookup. Unknown roles are ignored,
+    so domain layers can share discovery while owning their role vocabulary.
+    Set ``first`` for domains that select a single decorated operation.
+    """
     results = []
     for name, role, options, handler in iter_decorated_pipeline(
             owner, role_attr, options_attr):
