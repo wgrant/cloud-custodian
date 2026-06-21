@@ -9,7 +9,7 @@ import oci.config
 from c7n.actions import ActionRegistry
 from c7n.filters import FilterRegistry
 from c7n.manager import ResourceManager, ResourceQueryLifecycle
-from c7n.query import _apply_augment_pipeline, sources, MaxResourceLimit, TypeInfo
+from c7n.query import apply_augment_pipeline, sources, MaxResourceLimit, TypeInfo
 from c7n.utils import local_session
 from c7n_oci.constants import COMPARTMENT_IDS, STORAGE_NAMESPACE
 
@@ -257,7 +257,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         return max_resource_limits.check_resource_limits()
 
     def augment(self, resources):
-        return _apply_augment_pipeline(self, resources, self.augment_pipeline, infer=True)
+        return apply_augment_pipeline(self, resources, self.augment_pipeline)
 
     def _get_extra_params(self):
         return {}

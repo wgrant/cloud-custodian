@@ -6,7 +6,7 @@ import logging
 from botocore.exceptions import ClientError
 from botocore.paginate import Paginator
 
-from c7n.query import _apply_augment_pipeline, RetryPageIterator
+from c7n.query import apply_augment_pipeline, RetryPageIterator
 from c7n.utils import local_session, jmespath_compile
 
 log = logging.getLogger("c7n_awscc.query")
@@ -85,5 +85,5 @@ class CloudControl:
     def augment(self, resources):
         # nothing useful to do, most types via this control
         # include tags.
-        return _apply_augment_pipeline(
-            self.manager, resources, self.augment_pipeline, infer=True)
+        return apply_augment_pipeline(
+            self.manager, resources, self.augment_pipeline)

@@ -56,7 +56,7 @@ class DescribeDataPipeline(DescribeSource):
 
     augment_batcher = describe_pipeline_set
     augment_batch_size = 20
-    augment_max_workers = 2
+    augment_batch_workers = 2
 
 
 @resources.register('datapipeline')

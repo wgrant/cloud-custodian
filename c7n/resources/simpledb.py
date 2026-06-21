@@ -31,7 +31,7 @@ class SimpleDB(QueryResourceManager):
     augment_batcher = describe_domain_set
 
     augment_batch_size = 20
-    augment_max_workers = 3
+    augment_batch_workers = 3
 
 
 @SimpleDB.action_registry.register('delete')

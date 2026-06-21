@@ -359,6 +359,8 @@ class MergeField:
 
 
 class FilterResources:
+    """Filter resources with a ``(manager, resource)`` predicate."""
+
     def __init__(self, predicate):
         self.predicate = predicate
 
@@ -366,21 +368,9 @@ class FilterResources:
         return [r for r in resources if self.predicate(manager, r)]
 
 
-class SetField:
-    def __init__(self, field, value, when=None):
-        self.field = field
-        self.value = value
-        self.when = when
-
-    def __call__(self, manager, resources):
-        for resource in resources:
-            if self.when and not self.when(manager, resource):
-                continue
-            resource[self.field] = self.value(manager, resource)
-        return resources
-
-
 class MutateResource:
+    """Run a per-resource mutator that changes resources in place."""
+
     def __init__(self, func):
         self.func = func
 
@@ -391,6 +381,8 @@ class MutateResource:
 
 
 class MapResource:
+    """Map one input resource to zero or one output resources."""
+
     def __init__(self, func, max_workers=None):
         self.func = func
         self.max_workers = max_workers
@@ -414,6 +406,8 @@ class MapResource:
 
 
 class MapBatch:
+    """Map a batch of resources to zero or more output resources."""
+
     def __init__(self, func, size=None, max_workers=None):
         self.func = func
         self.size = size
@@ -440,6 +434,8 @@ class MapBatch:
 
 
 class SourceMapBatch:
+    """Map batches with the source object instead of the resource manager."""
+
     def __init__(self, func, size=None, max_workers=None):
         self.func = func
         self.size = size
@@ -465,37 +461,9 @@ class SourceMapBatch:
         return results
 
 
-def _augment_decorator(role, func=None, size=None, max_workers=None):
-    def decorate(f):
-        if isinstance(f, staticmethod):
-            f = f.__func__
-        f.augment_pipeline_role = role
-        f.augment_batch_size = size
-        f.augment_max_workers = max_workers
-        return staticmethod(f)
-
-    if func is None:
-        return decorate
-    return decorate(func)
-
-
-def augment_mapper(func=None, *, max_workers=None):
-    return _augment_decorator('mapper', func, max_workers=max_workers)
-
-
-def augment_mutator(func=None):
-    return _augment_decorator('mutator', func)
-
-
-def augment_batcher(func=None, *, size=None, max_workers=None):
-    return _augment_decorator('batcher', func, size, max_workers)
-
-
-def augment_source_batcher(func=None, *, size=None, max_workers=None):
-    return _augment_decorator('source-batcher', func, size, max_workers)
-
-
 class AnnotateParent:
+    """Replace ``(parent_id, resource)`` pairs with annotated resources."""
+
     def __init__(self, field):
         self.field = field
 
@@ -507,34 +475,12 @@ class AnnotateParent:
         return results
 
 
-def _iter_augments(augments):
+def iter_augments(augments):
     if augments is None:
         return ()
     if isinstance(augments, (list, tuple)):
         return augments
     return (augments,)
-
-
-def _get_decorated_augment_pipeline(owner):
-    augments = []
-    for cls in type(owner).__mro__:
-        for name, value in cls.__dict__.items():
-            func = value.__func__ if isinstance(value, staticmethod) else value
-            role = getattr(func, 'augment_pipeline_role', None)
-            if not role:
-                continue
-            handler = getattr(owner, name)
-            size = getattr(func, 'augment_batch_size', None)
-            max_workers = getattr(func, 'augment_max_workers', None)
-            if role == 'mapper':
-                augments.append(MapResource(handler, max_workers=max_workers))
-            if role == 'mutator':
-                augments.append(MutateResource(handler))
-            if role == 'batcher':
-                augments.append(MapBatch(handler, size=size, max_workers=max_workers))
-            if role == 'source-batcher':
-                augments.append(SourceMapBatch(handler, size=size, max_workers=max_workers))
-    return augments
 
 
 def _get_raw_class_attr(owner, name):
@@ -562,12 +508,6 @@ def _get_merge_field_augment(field):
     return MergeField(field)
 
 
-def _get_set_field_augment(field):
-    if isinstance(field, dict):
-        return SetField(**field)
-    return SetField(*field)
-
-
 def get_augment_pipeline(owner, augments=None, phase='augment'):
     if augments is not None:
         return augments
@@ -580,14 +520,15 @@ def get_augment_pipeline(owner, augments=None, phase='augment'):
     merge_field = _get_raw_class_attr(owner, 'merge_field')
     merge_fields = _get_raw_class_attr(owner, 'merge_fields')
     augment_filter = _get_raw_class_attr(owner, 'augment_filter')
-    set_field = _get_raw_class_attr(owner, 'set_field')
-    set_fields = _get_raw_class_attr(owner, 'set_fields')
     augment_mapper = _get_raw_class_attr(owner, 'augment_mapper')
     augment_mutator = _get_raw_class_attr(owner, 'augment_mutator')
     augment_batcher = _get_raw_class_attr(owner, 'augment_batcher')
     augment_source_batcher = _get_raw_class_attr(owner, 'augment_source_batcher')
+    augment_map_workers = _get_raw_class_attr(owner, 'augment_map_workers')
     augment_batch_size = _get_raw_class_attr(owner, 'augment_batch_size')
-    augment_max_workers = _get_raw_class_attr(owner, 'augment_max_workers')
+    augment_batch_workers = _get_raw_class_attr(owner, 'augment_batch_workers')
+    augment_source_batch_size = _get_raw_class_attr(owner, 'augment_source_batch_size')
+    augment_source_batch_workers = _get_raw_class_attr(owner, 'augment_source_batch_workers')
     if parent_annotation:
         pipeline.append(AnnotateParent(parent_annotation))
     if merge_field:
@@ -596,42 +537,35 @@ def get_augment_pipeline(owner, augments=None, phase='augment'):
         pipeline.append(_get_merge_field_augment(field))
     if augment_filter:
         pipeline.append(FilterResources(augment_filter))
-    if set_field:
-        pipeline.append(_get_set_field_augment(set_field))
-    for field in _as_list(set_fields):
-        pipeline.append(_get_set_field_augment(field))
     if augment_mapper:
         pipeline.append(MapResource(
             augment_mapper,
-            max_workers=augment_max_workers))
+            max_workers=augment_map_workers))
     if augment_mutator:
         pipeline.append(MutateResource(augment_mutator))
     if augment_batcher:
         pipeline.append(MapBatch(
             augment_batcher,
             size=augment_batch_size,
-            max_workers=augment_max_workers))
+            max_workers=augment_batch_workers))
     if augment_source_batcher:
         pipeline.append(SourceMapBatch(
             augment_source_batcher,
-            size=augment_batch_size,
-            max_workers=augment_max_workers))
-    pipeline.extend(_get_decorated_augment_pipeline(owner))
+            size=augment_source_batch_size,
+            max_workers=augment_source_batch_workers))
     return tuple(pipeline) if pipeline else None
 
 
-def _apply_augment_pipeline(manager, resources, augments=None, infer=False):
-    if infer:
-        augments = get_augment_pipeline(manager, augments)
-    for augment in _iter_augments(augments):
+def apply_augment_pipeline(manager, resources, augments=None, phase='augment'):
+    augments = get_augment_pipeline(manager, augments, phase)
+    for augment in iter_augments(augments):
         resources = augment(manager, resources)
     return resources
 
 
-def _apply_source_augment_pipeline(source, resources, augments=None, infer=True, phase='augment'):
-    if infer:
-        augments = get_augment_pipeline(source, augments, phase)
-    for augment in _iter_augments(augments):
+def apply_source_augment_pipeline(source, resources, augments=None, phase='augment'):
+    augments = get_augment_pipeline(source, augments, phase)
+    for augment in iter_augments(augments):
         if hasattr(augment, 'process_source'):
             resources = augment.process_source(source, resources)
         else:
@@ -656,16 +590,28 @@ def get_tag_augment(owner, augments=None):
     return None
 
 
-def _apply_tag_augment(manager, resources, augments=None):
+def apply_tag_augment(manager, resources, augments=None):
     augments = get_tag_augment(manager, augments)
     if augments is None:
         return resources
     augment_manager = getattr(manager, 'manager', manager)
-    return _apply_augment_pipeline(augment_manager, resources, augments)
+    return apply_augment_pipeline(augment_manager, resources, augments)
 
 
 @sources.register('describe')
 class DescribeSource:
+    """Default query source for resource listing and augmentation.
+
+    Preferred declarative augmentation attributes run in this order:
+    ``pre_augment_filter`` before detail fetch, then ``parent_annotation``,
+    ``merge_field(s)``, ``augment_filter``, and one of
+    ``augment_mapper`` / ``augment_mutator`` / ``augment_batcher`` /
+    ``augment_source_batcher``. Tag declarations run after source and manager
+    augmentation.
+
+    ``augment_pipeline``, ``pre_augment_pipeline``, and ``tag_augment`` are
+    retained for existing custom pipeline objects.
+    """
 
     resource_query_factory = ResourceQuery
     detail_augment = True
@@ -676,14 +622,15 @@ class DescribeSource:
     merge_field = None
     merge_fields = None
     augment_filter = None
-    set_field = None
-    set_fields = None
     augment_mapper = None
     augment_mutator = None
     augment_batcher = None
     augment_source_batcher = None
+    augment_map_workers = None
     augment_batch_size = None
-    augment_max_workers = None
+    augment_batch_workers = None
+    augment_source_batch_size = None
+    augment_source_batch_workers = None
     tag_augment = None
     tag_api = None
     tag_batch_api = None
@@ -756,7 +703,7 @@ class DescribeSource:
 
     def augment(self, resources):
         model = self.manager.get_model()
-        resources = _apply_source_augment_pipeline(
+        resources = apply_source_augment_pipeline(
             self, resources, self.pre_augment_pipeline, phase='pre')
         if not self.detail_augment:
             detail_spec = None
@@ -781,9 +728,9 @@ class DescribeSource:
                 results = list(w.map(
                     _augment, chunks(resources, self.manager.chunk_size)))
                 resources = list(itertools.chain(*results))
-        resources = _apply_source_augment_pipeline(
+        resources = apply_source_augment_pipeline(
             self, resources, self.augment_pipeline)
-        return _apply_tag_augment(self, resources, self.tag_augment)
+        return apply_tag_augment(self, resources, self.tag_augment)
 
 
 class DescribeWithResourceTags(DescribeSource):
@@ -1009,6 +956,13 @@ class ConfigSource:
 
 
 class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
+    """Base query resource manager with declarative augmentation hooks.
+
+    Manager-level declarations run after source augmentation and before tags in
+    the same order as ``DescribeSource``: parent annotation, merge fields,
+    filtering, then map/mutate/batch operations. ``augment_pipeline`` and
+    ``tag_augment`` remain supported for explicit pipeline objects.
+    """
 
     resource_type = ""
 
@@ -1027,14 +981,15 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     merge_field = None
     merge_fields = None
     augment_filter = None
-    set_field = None
-    set_fields = None
     augment_mapper = None
     augment_mutator = None
     augment_batcher = None
     augment_source_batcher = None
+    augment_map_workers = None
     augment_batch_size = None
-    augment_max_workers = None
+    augment_batch_workers = None
+    augment_source_batch_size = None
+    augment_source_batch_workers = None
     tag_augment = None
     tag_api = None
     tag_batch_api = None
@@ -1234,9 +1189,9 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         s3 buckets.
         """
         resources = self.source.augment(resources)
-        resources = _apply_augment_pipeline(
-            self, resources, self.augment_pipeline, infer=True)
-        return _apply_tag_augment(self, resources, self.tag_augment)
+        resources = apply_augment_pipeline(
+            self, resources, self.augment_pipeline)
+        return apply_tag_augment(self, resources, self.tag_augment)
 
     @property
     def account_id(self):

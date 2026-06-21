@@ -10,7 +10,7 @@ from c7n.exceptions import PolicyExecutionError
 from c7n.filters import FilterRegistry
 from c7n.manager import ResourceManager, ResourceQueryLifecycle
 from c7n.query import (
-    _apply_augment_pipeline, _iter_augments,
+    apply_augment_pipeline, iter_augments,
     get_augment_pipeline as get_core_augment_pipeline, sources)
 from c7n.utils import local_session, chunks, jmespath_search
 from .actions.tags import register_tag_actions, register_tag_filters
@@ -71,7 +71,7 @@ class NormalizeDateField:
 def get_augment_pipeline(owner, augments=None):
     if augments is not None:
         return augments
-    pipeline = list(_iter_augments(get_core_augment_pipeline(owner)))
+    pipeline = list(iter_augments(get_core_augment_pipeline(owner)))
     date_fields = getattr(owner, "normalize_date_fields", None)
     if date_fields is None:
         date_fields = getattr(owner, "normalize_date_field", None)
@@ -220,8 +220,8 @@ class DescribeSource:
     def augment(self, resources):
         if self.tag_augment:
             resources = self.get_resource_tag(resources)
-        return _apply_augment_pipeline(
-            self.resource_manager, resources, self.augment_pipeline)
+        return apply_augment_pipeline(
+            self.resource_manager, resources, self.augment_pipeline or ())
 
     def get_resource_tag(self, resources):
         """
@@ -372,7 +372,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         self.check_resource_limit(resources)
 
     def augment(self, resources):
-        return _apply_augment_pipeline(
+        return apply_augment_pipeline(
             self, resources, get_augment_pipeline(self, self.augment_pipeline))
 
     # TODO

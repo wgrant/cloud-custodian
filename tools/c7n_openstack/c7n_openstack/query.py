@@ -6,7 +6,7 @@ import logging
 from c7n.actions import ActionRegistry
 from c7n.filters import FilterRegistry
 from c7n.manager import ResourceManager, ResourceQueryLifecycle
-from c7n.query import _apply_augment_pipeline, get_augment_pipeline, sources
+from c7n.query import apply_augment_pipeline, apply_source_augment_pipeline, sources
 from c7n.utils import local_session
 
 log = logging.getLogger('custodian.openstack.query')
@@ -56,8 +56,7 @@ class DescribeSource:
         return ()
 
     def augment(self, resources):
-        return _apply_augment_pipeline(
-            self.manager, resources, get_augment_pipeline(self, self.augment_pipeline))
+        return apply_source_augment_pipeline(self, resources, self.augment_pipeline)
 
 
 class QueryMeta(type):
@@ -133,7 +132,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
 
     def augment(self, resources):
         resources = self.source.augment(resources)
-        return _apply_augment_pipeline(self, resources, self.augment_pipeline, infer=True)
+        return apply_augment_pipeline(self, resources, self.augment_pipeline)
 
 
 class TypeMeta(type):

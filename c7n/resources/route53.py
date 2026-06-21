@@ -77,10 +77,10 @@ def generate_rrset(recordset):
 @resources.register('hostedzone')
 class HostedZone(Route53Base, QueryResourceManager):
     @staticmethod
-    def get_config_hosted_zone_id(manager, resource):
-        return resource['Id'].split("/")[-1]
+    def set_config_hosted_zone_id(manager, resource):
+        resource['c7n:ConfigHostedZoneId'] = resource['Id'].split("/")[-1]
 
-    set_field = ('c7n:ConfigHostedZoneId', get_config_hosted_zone_id)
+    augment_mutator = set_config_hosted_zone_id
 
     class resource_type(TypeInfo):
         service = 'route53'

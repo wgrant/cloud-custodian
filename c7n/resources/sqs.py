@@ -46,7 +46,7 @@ class DescribeQueue(DescribeSource):
 
     augment_mapper = describe_queue
 
-    augment_max_workers = 2
+    augment_map_workers = 2
     universal_tags = True
 
 

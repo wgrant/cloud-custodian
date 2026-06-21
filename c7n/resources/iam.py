@@ -3060,17 +3060,12 @@ class UserGroupDelete(BaseAction):
 
 class SamlProviderDescribe(DescribeSource):
     @staticmethod
-    def get_sso_descriptor(manager, resource):
-        return sso_metadata(resource['SAMLMetadataDocument'])['IDPSSODescriptor']
+    def augment_sso_descriptor(manager, resource):
+        if resource.get('SAMLMetadataDocument'):
+            resource['IDPSSODescriptor'] = sso_metadata(
+                resource['SAMLMetadataDocument'])['IDPSSODescriptor']
 
-    @staticmethod
-    def has_saml_metadata(manager, resource):
-        return bool(resource.get('SAMLMetadataDocument'))
-
-    set_field = dict(
-        field='IDPSSODescriptor',
-        value=get_sso_descriptor,
-        when=has_saml_metadata)
+    augment_mutator = augment_sso_descriptor
 
     def get_permissions(self):
         return ('iam:GetSAMLProvider', 'iam:ListSAMLProviders')

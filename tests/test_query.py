@@ -7,8 +7,10 @@ import os
 
 from c7n.query import (
     AnnotateParent, FilterResources, MapBatch, MapResource, MergeField,
-    MutateResource, ResourceQuery, RetryPageIterator, SetField, TagsFromApi,
-    TagsFromField, TypeInfo)
+    MutateResource, ResourceQuery, RetryPageIterator, TagsFromApi,
+    TagsFromField, TypeInfo, apply_augment_pipeline,
+    apply_source_augment_pipeline, apply_tag_augment,
+)
 from c7n.resources.vpc import InternetGateway
 
 from botocore.config import Config
@@ -204,22 +206,6 @@ class AugmentPipelineTest(BaseTest):
             AnnotateParent('DatabaseName')(None, resources),
             [{'Name': 'table1', 'DatabaseName': 'db1'}])
 
-    def test_set_field(self):
-        resources = [{'Id': '/hostedzone/abc'}, {'Name': 'skip'}]
-
-        def get_hosted_zone_id(manager, resource):
-            return resource['Id'].split('/')[-1]
-
-        def has_id(manager, resource):
-            return 'Id' in resource
-
-        self.assertEqual(
-            SetField(
-                'c7n:ConfigHostedZoneId',
-                get_hosted_zone_id,
-                when=has_id)(None, resources),
-            [{'Id': '/hostedzone/abc', 'c7n:ConfigHostedZoneId': 'abc'}, {'Name': 'skip'}])
-
     def test_mutate_resource(self):
         resources = [{'Name': 'resource'}]
 
@@ -319,6 +305,59 @@ class AugmentPipelineTest(BaseTest):
                 manager, [1, 2, 3]),
             [{'Value': 1}, {'Value': 2}, {'Value': 3}])
         self.assertEqual(manager.workers, [3])
+
+    def test_declarative_pipeline_composition_order(self):
+        class Manager:
+            parent_annotation = 'Parent'
+            merge_field = 'Nested'
+
+            @staticmethod
+            def keep_resource(manager, resource):
+                return resource.get('Keep')
+
+            augment_filter = keep_resource
+
+            @staticmethod
+            def mark_seen(manager, resource):
+                resource['Seen'] = resource['Parent']
+
+            augment_mutator = mark_seen
+
+        resources = [
+            ('parent-a', {'Nested': {'Keep': True}}),
+            ('parent-b', {'Nested': {'Keep': False}})]
+
+        self.assertEqual(
+            apply_augment_pipeline(Manager(), resources),
+            [{'Parent': 'parent-a', 'Keep': True, 'Seen': 'parent-a'}])
+
+    def test_declarative_pre_augment_filter(self):
+        class Source:
+            manager = object()
+
+            @staticmethod
+            def keep_resource(manager, resource):
+                return resource.get('Keep')
+
+            pre_augment_filter = keep_resource
+
+        resources = [{'Name': 'keep', 'Keep': True}, {'Name': 'drop'}]
+
+        self.assertEqual(
+            apply_source_augment_pipeline(Source(), resources, phase='pre'),
+            [{'Name': 'keep', 'Keep': True}])
+
+    def test_declarative_pipeline_runs_before_tags(self):
+        class Manager:
+            merge_field = 'Metadata'
+            tag_field = dict(field='tags', remove=True, missing='empty')
+
+        resources = [{'Metadata': {'tags': {'Owner': 'Policy'}}}]
+        resources = apply_augment_pipeline(Manager(), resources)
+
+        self.assertEqual(
+            apply_tag_augment(Manager(), resources),
+            [{'Tags': [{'Key': 'Owner', 'Value': 'Policy'}]}])
 
 
 class QueryResourceManagerTest(BaseTest):

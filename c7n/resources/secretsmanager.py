@@ -44,7 +44,7 @@ class DescribeSecret(DescribeSource):
 
     augment_mapper = augment_secret
 
-    augment_max_workers = QueryResourceManager.max_workers
+    augment_map_workers = QueryResourceManager.max_workers
 
 
 @resources.register('secrets-manager')
