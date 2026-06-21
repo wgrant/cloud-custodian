@@ -10,7 +10,8 @@ from c7n_gcp.query import QueryResourceManager, TypeInfo
 
 from c7n.resolver import ValuesFrom
 from c7n.utils import type_schema, local_session
-from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation, ValueFilter
+from c7n.filters.core import (
+    AnnotationPipelineFilter, ListItemAnnotationFilter, SetAnnotation, ValueFilter)
 from c7n.filters.missing import Missing
 
 from googleapiclient.errors import HttpError
@@ -141,7 +142,7 @@ class ProjectIamPolicyFilter(IamPolicyFilter):
 
 
 @Project.filter_registry.register('compute-meta')
-class ProjectComputeMetaFilter(ValueFilter):
+class ProjectComputeMetaFilter(AnnotationPipelineFilter):
     """
     Allows filtering on project-level compute metadata including common instance metadata
     and quotas.
@@ -164,20 +165,17 @@ class ProjectComputeMetaFilter(ValueFilter):
 
     """
 
-    key = 'c7n:projectComputeMeta'
+    annotation_key = 'c7n:projectComputeMeta'
     permissions = ('compute.projects.get',)
     schema = type_schema('compute-meta', rinherit=ValueFilter.schema)
 
-    def __call__(self, resource):
-        if self.key in resource:
-            return resource[self.key]
+    @staticmethod
+    def get_compute_meta(resource_filter, resource):
+        session = local_session(resource_filter.manager.session_factory)
+        client = session.client('compute', 'v1', 'projects')
+        return client.execute_command('get', {"project": resource['projectId']})
 
-        session = local_session(self.manager.session_factory)
-        self.client = session.client('compute', 'v1', 'projects')
-
-        resource[self.key] = self.client.execute_command('get', {"project": resource['projectId']})
-
-        return super().__call__(resource[self.key])
+    annotation_pipeline = SetAnnotation(get_compute_meta)
 
 
 @Project.action_registry.register('delete')

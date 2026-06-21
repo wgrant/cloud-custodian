@@ -250,9 +250,8 @@ class ServerConfig(AnnotationPipelineFilter):
                     'name': 'projects/{}/locations/{}'.format(project, location)}
             )
 
-    def __call__(self, r):
-        return ValueFilter.__call__(
-            self, {"serverConfig": r[self.annotation_key], "resource": r})
+    def get_filter_resource(self, resource):
+        return {"serverConfig": resource[self.annotation_key], "resource": resource}
 
     annotation_pipeline = AnnotateBatch(annotate_config)
 
