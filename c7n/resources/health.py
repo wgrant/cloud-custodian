@@ -28,28 +28,6 @@ class HealthEvents(QueryResourceManager):
         'health:DescribeEventDetails',
         'health:DescribeAffectedEntities')
 
-    def __init__(self, ctx, data):
-        super(HealthEvents, self).__init__(ctx, data)
-        self.queries = HealthQueryParser.parse(
-            self.data.get('query', [
-                {'eventStatusCodes': 'open'},
-                {'eventTypeCategories': ['issue', 'accountNotification']}]))
-
-    def resource_query(self):
-        qf = {}
-        for q in self.queries:
-            key = list(q.keys())[0]
-            values = list(q.values())[0]
-            qf[key] = values
-        return qf
-
-    def prepare_query(self, query):
-        q = self.resource_query()
-        if q is not None:
-            query = query or {}
-            query['filter'] = q
-        return super().prepare_query(query)
-
     @augment.batch(size=10)
     def augment_event_set(manager, resource_set):
         client = local_session(manager.session_factory).client('health')
@@ -92,3 +70,10 @@ class HealthQueryParser(QueryParser):
     single_value_fields = ('maxResults')
 
     type_name = 'Health Event'
+
+
+HealthEvents.policy_query_parser = HealthQueryParser
+HealthEvents.policy_query_default = [
+    {'eventStatusCodes': ['open']},
+    {'eventTypeCategories': ['issue', 'accountNotification']}]
+HealthEvents.policy_query_param = 'filter'

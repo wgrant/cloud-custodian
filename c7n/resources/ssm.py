@@ -897,16 +897,9 @@ class SSMSessionManager(QueryResourceManager):
 
     retry = staticmethod(get_retry(('Throttled',)))
     permissions = ('ssm:DescribeSessions',)
+    policy_query_default = {'State': 'Active'}
 
     augment = universal_augment
-
-    def prepare_query(self, query):
-        if query is None:
-            query = {}
-        if 'State' not in query:
-            # Default to Active if not given
-            query['State'] = 'Active'
-        return super().prepare_query(query)
 
 
 @SSMSessionManager.action_registry.register('terminate')

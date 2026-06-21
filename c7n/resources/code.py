@@ -351,6 +351,7 @@ class CodeDeployDeployment(QueryResourceManager):
 
 class DescribeDeploymentGroup(query.ChildDescribeSource):
     detail_augment = False
+    capture_parent_id = True
 
     @augment.map
     def get_deployment_group(manager, resource):
@@ -372,9 +373,6 @@ class DescribeDeploymentGroup(query.ChildDescribeSource):
         return super().get_permissions() + [
             'codedeploy:GetDeploymentGroup',
             'codedeploy:ListTagsForResource']
-
-    def get_query(self):
-        return super().get_query(capture_parent_id=True)
 
 
 @resources.register('codedeploy-group')

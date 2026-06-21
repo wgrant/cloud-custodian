@@ -593,7 +593,11 @@ def get_augment_pipeline(owner, augments=None, phase='augment'):
         return tuple(pipeline) if pipeline else None
 
     pipeline = []
-    parent_annotation = _get_raw_class_attr(owner, 'parent_annotation')
+    parent_annotation = (
+        _get_raw_class_attr(owner, 'parent_annotation') or
+        _get_raw_class_attr(owner, 'capture_parent_id'))
+    if not isinstance(parent_annotation, str):
+        parent_annotation = None
     merge_field = _get_raw_class_attr(owner, 'merge_field')
     merge_fields = _get_raw_class_attr(owner, 'merge_fields')
     if parent_annotation:
@@ -830,8 +834,12 @@ def augment_resource_tags(manager, resources, op='list_tags_for_resource',
 class ChildDescribeSource(DescribeSource):
 
     resource_query_factory = ChildResourceQuery
+    # True captures parent ids for augment decorators; a string also annotates
+    # each child resource with the captured parent id under that field name.
+    capture_parent_id = None
 
     def get_query(self, capture_parent_id=False):
+        capture_parent_id = capture_parent_id or bool(self.capture_parent_id)
         return self.resource_query_factory(
             self.manager.session_factory, self.manager, capture_parent_id=capture_parent_id)
 
@@ -1011,8 +1019,11 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
 
     _generate_arn = None
     augment_by_id = True
+    # policy_query_parser parses policy data["query"]; True means merge raw
+    # dict query fragments. policy_query_param nests generated params.
     policy_query_parser = None
     policy_query_default = None
+    policy_query_param = None
     permission_override = None
     ignore_fetch_error_message = None
     augment_pipeline = None
@@ -1108,19 +1119,26 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         policy_query = self.get_policy_query()
         if query is None:
             query = {}
-        if policy_query:
-            query.update(policy_query)
         default_query = self.get_default_query_params()
-        for key, value in default_query.items():
-            query.setdefault(key, value)
+        policy_params = {}
+        policy_params.update(default_query)
+        if policy_query:
+            policy_params.update(policy_query)
+        if self.policy_query_param:
+            query.setdefault(self.policy_query_param, {})
+            query[self.policy_query_param].update(policy_params)
+            return query
+        query.update(policy_params)
         return query
 
     def get_default_query_params(self):
-        default = self.policy_query_default
+        default = _get_raw_class_attr(self, 'policy_query_default')
         if default is None:
             return {}
         if callable(default):
             default = default(self)
+        if isinstance(default, (list, tuple)):
+            return merge_dict_list(default)
         return dict(default)
 
     def fetch_resources(self, query):

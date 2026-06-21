@@ -42,11 +42,6 @@ class EMRCluster(QueryResourceManager):
     filter_registry = filters
     retry = staticmethod(get_retry(('ThrottlingException',)))
 
-    def __init__(self, ctx, data):
-        super(EMRCluster, self).__init__(ctx, data)
-        self.queries = EMRQueryParser.parse(
-            self.data.get('query', []))
-
     @classmethod
     def get_permissions(cls):
         return ("elasticmapreduce:ListClusters",
@@ -61,13 +56,9 @@ class EMRCluster(QueryResourceManager):
                 client.describe_cluster(ClusterId=jid)['Cluster'])
         return results
 
-    def prepare_query(self, query):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        if 'ClusterStates' not in query:
-            query['ClusterStates'] = self.resource_type.default_cluster_states
-        return super().prepare_query(query)
+    @staticmethod
+    def get_default_query(manager):
+        return {'ClusterStates': manager.resource_type.default_cluster_states}
 
     @augment.map
     def describe_cluster(manager, resource):
@@ -210,6 +201,10 @@ class EMRQueryParser(QueryParser):
     single_value_fields = ('CreatedBefore', 'CreatedAfter')
 
     type_name = "EMR"
+
+
+EMRCluster.policy_query_parser = EMRQueryParser
+EMRCluster.policy_query_default = EMRCluster.get_default_query
 
 
 @filters.register('subnet')

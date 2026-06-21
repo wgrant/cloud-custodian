@@ -41,19 +41,8 @@ NotebookInstance.filter_registry.register('onhour', OnHour)
 
 
 class SagemakerQueryManager(QueryResourceManager):
-    query_parser = None
-    query_default = ()
-
-    def __init__(self, ctx, data):
-        super(SagemakerQueryManager, self).__init__(ctx, data)
-        self.queries = self.query_parser.parse(
-            self.data.get('query', self.query_default))
-
-    def prepare_query(self, query):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super().prepare_query(query)
+    policy_query_parser = None
+    policy_query_default = ()
 
 
 @resources.register('sagemaker-job')
@@ -233,14 +222,16 @@ class CompilationJobQueryParser(SagemakerJobQueryParser):
     }
 
 
-SagemakerJob.query_parser = SagemakerTransformJob.query_parser = \
-    SagemakerHyperParameterTuningJob.query_parser = SagemakerAutoMLJob.query_parser = \
-    SagemakerProcessingJob.query_parser = SagemakerJobQueryParser
-SagemakerJob.query_default = SagemakerTransformJob.query_default = \
-    SagemakerHyperParameterTuningJob.query_default = SagemakerAutoMLJob.query_default = \
-    SagemakerProcessingJob.query_default = [{'StatusEquals': 'InProgress'}]
-SagemakerCompilationJob.query_parser = CompilationJobQueryParser
-SagemakerCompilationJob.query_default = [{'StatusEquals': 'INPROGRESS'}]
+SagemakerJob.policy_query_parser = SagemakerTransformJob.policy_query_parser = \
+    SagemakerHyperParameterTuningJob.policy_query_parser = \
+    SagemakerAutoMLJob.policy_query_parser = \
+    SagemakerProcessingJob.policy_query_parser = SagemakerJobQueryParser
+SagemakerJob.policy_query_default = SagemakerTransformJob.policy_query_default = \
+    SagemakerHyperParameterTuningJob.policy_query_default = \
+    SagemakerAutoMLJob.policy_query_default = \
+    SagemakerProcessingJob.policy_query_default = [{'StatusEquals': 'InProgress'}]
+SagemakerCompilationJob.policy_query_parser = CompilationJobQueryParser
+SagemakerCompilationJob.policy_query_default = [{'StatusEquals': 'INPROGRESS'}]
 
 
 class EndpointDescribe(DescribeSource):

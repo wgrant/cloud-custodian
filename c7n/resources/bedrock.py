@@ -78,12 +78,7 @@ class BedrockFoundationModel(QueryResourceManager):
         name = 'modelName'
         permission_prefix = 'bedrock'
 
-    def prepare_query(self, query):
-        query = query or {}
-        queries = FoundationModelQueryParser.parse(self.data.get('query', []))
-        for q in queries:
-            query.update(q)
-        return super().prepare_query(query)
+    policy_query_parser = FoundationModelQueryParser
 
 
 @resources.register('bedrock-custom-model')

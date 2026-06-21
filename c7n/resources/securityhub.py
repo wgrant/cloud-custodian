@@ -18,8 +18,7 @@ from c7n.exceptions import PolicyValidationError, PolicyExecutionError
 from c7n.policy import LambdaMode, execution
 from c7n.utils import (
     local_session, type_schema, get_retry,
-    chunks, dumps, filter_empty, get_partition, jmespath_search,
-    merge_dict_list
+    chunks, dumps, filter_empty, get_partition, jmespath_search
 )
 from c7n.version import version
 
@@ -678,49 +677,6 @@ AWS.resources.subscribe(OtherResourcePostFinding.register_resource)
 AWS.resources.subscribe(SecurityHubFindingFilter.register_resources)
 
 
-class DescribeSecurityhubFinding(DescribeSource):
-    def prepare_query(self, query):
-        """Only show active compliance failures by default
-
-        Unless overridden by policy, use these default filters:
-
-        - Workflow status: anything but RESOLVED
-        - Record state: ACTIVE
-        - Compliance status: FAILED
-        """
-
-        query = merge_dict_list(
-            [
-                {
-                    "Filters": {
-                        "WorkflowStatus": [
-                            {
-                                "Comparison": "NOT_EQUALS",
-                                "Value": "RESOLVED",
-                            },
-                        ],
-                        "RecordState": [
-                            {
-                                "Comparison": "EQUALS",
-                                "Value": "ACTIVE",
-                            },
-                        ],
-                        "ComplianceStatus": [
-                            {
-                                "Comparison": "EQUALS",
-                                "Value": "FAILED",
-                            }
-                        ],
-                    }
-                },
-                *self.manager.data.get("query", []),
-                query,
-            ]
-        )
-
-        return query
-
-
 class DescribeSecurityHub(DescribeSource):
     def get_hub(self):
         client = local_session(self.manager.session_factory).client('securityhub')
@@ -839,6 +795,26 @@ class SecurityhubFinding(query.QueryResourceManager):
         id = "Id"
         name = "ProductName"
 
-    source_mapping = {
-        "describe": DescribeSecurityhubFinding,
+    policy_query_parser = True
+    policy_query_default = {
+        "Filters": {
+            "WorkflowStatus": [
+                {
+                    "Comparison": "NOT_EQUALS",
+                    "Value": "RESOLVED",
+                },
+            ],
+            "RecordState": [
+                {
+                    "Comparison": "EQUALS",
+                    "Value": "ACTIVE",
+                },
+            ],
+            "ComplianceStatus": [
+                {
+                    "Comparison": "EQUALS",
+                    "Value": "FAILED",
+                }
+            ],
+        }
     }

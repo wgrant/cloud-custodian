@@ -298,18 +298,9 @@ class CloudDirectory(QueryResourceManager):
         name = "Name"
         arn_type = "directory"
         universal_taggable = object()
-        permissions_augment = ("clouddirectory:ListTagsForResource",)
+    permissions_augment = ("clouddirectory:ListTagsForResource",)
 
     augment = universal_augment
-
-    def prepare_query(self, query):
-        queries = CloudDirectoryQueryParser.parse(self.data.get('query', []))
-        query = query or {}
-        for q in queries:
-            query.update(q)
-        if 'state' not in query:
-            query['state'] = 'ENABLED'
-        return super().prepare_query(query)
 
 
 @CloudDirectory.action_registry.register('delete')
@@ -378,3 +369,7 @@ class CloudDirectoryQueryParser(QueryParser):
 
     type_name = 'CloudDirectory'
     multi_value = False
+
+
+CloudDirectory.policy_query_parser = CloudDirectoryQueryParser
+CloudDirectory.policy_query_default = {'state': 'ENABLED'}

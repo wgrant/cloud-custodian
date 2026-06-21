@@ -29,6 +29,7 @@ from c7n.filters import Filter
 @query.sources.register('describe-eks-nodegroup')
 class NodeGroupDescribeSource(ChildDescribeSource):
     detail_augment = False
+    capture_parent_id = True
 
     def get_permissions(self):
         return super().get_permissions() + ['eks:DescribeNodegroup']
@@ -46,10 +47,6 @@ class NodeGroupDescribeSource(ChildDescribeSource):
                 {'Key': k, 'Value': v}
                 for k, v in nodegroup['tags'].items()]
         return nodegroup
-
-
-    def get_query(self):
-        return super().get_query(capture_parent_id=True)
 
 
 @resources.register('eks-nodegroup')

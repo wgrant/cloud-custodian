@@ -2,34 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 from c7n.manager import resources
 from c7n import query
-from c7n.utils import merge_dict_list
-
-
-class DescribeInspector2Finding(query.DescribeSource):
-    def prepare_query(self, query):
-        """Only show active Inspector V2 findings by default
-
-        Unless overridden by policy, use this default filter:
-
-        - FindingStatus: ACTIVE
-        """
-        query = merge_dict_list(
-            [
-                {
-                    "filterCriteria": {
-                        "findingStatus": [
-                            {
-                                "comparison": "EQUALS",
-                                "value": "ACTIVE"
-                            }
-                        ]
-                    }
-                },
-                *self.manager.data.get("query", []),
-                query,
-            ]
-        )
-        return query
 
 
 @resources.register("inspector2-finding")
@@ -82,6 +54,14 @@ class Inspector2Finding(query.QueryResourceManager):
         id = "findingArn"
         name = "title"
 
-    source_mapping = {
-        "describe": DescribeInspector2Finding,
+    policy_query_parser = True
+    policy_query_default = {
+        "filterCriteria": {
+            "findingStatus": [
+                {
+                    "comparison": "EQUALS",
+                    "value": "ACTIVE"
+                }
+            ]
+        }
     }

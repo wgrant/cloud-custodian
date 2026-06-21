@@ -80,10 +80,7 @@ class RepositoryImageDescribeSource(ChildDescribeSource):
             resource['imageDigest'])
 
     resource_query_factory = ECRImageQuery
-    parent_annotation = 'repositoryName'
-
-    def get_query(self):
-        return super().get_query(capture_parent_id=True)
+    capture_parent_id = 'repositoryName'
 
     def get_query_params(self, query):
         query = query or {}

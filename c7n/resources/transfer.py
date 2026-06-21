@@ -197,6 +197,7 @@ class DeleteServer(BaseAction):
 
 class DescribeTransferUser(ChildDescribeSource):
     detail_augment = False
+    capture_parent_id = True
 
     def get_permissions(self):
         return super().get_permissions() + ['transfer:DescribeUser']
@@ -209,10 +210,6 @@ class DescribeTransferUser(ChildDescribeSource):
             client.describe_user,
             ServerId=parent_id,
             UserName=user['UserName']).get('User')
-
-
-    def get_query(self):
-        return super().get_query(capture_parent_id=True)
 
 
 @resources.register('transfer-user')

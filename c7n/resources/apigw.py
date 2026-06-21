@@ -266,6 +266,7 @@ class DeleteApi(BaseAction):
 
 @query.sources.register('describe-rest-stage')
 class DescribeRestStage(query.ChildDescribeSource):
+    capture_parent_id = True
 
     @augment.batch
     def normalize_rest_stages(manager, resources):
@@ -287,14 +288,6 @@ class DescribeRestStage(query.ChildDescribeSource):
         return results
 
     tag_field = dict(field='tags', remove=True, missing='empty', merge=True)
-
-    def __init__(self, manager):
-        self.manager = manager
-        self.query = query.ChildResourceQuery(
-            self.manager.session_factory, self.manager, capture_parent_id=True)
-
-    def get_query(self):
-        return super(DescribeRestStage, self).get_query(capture_parent_id=True)
 
     def get_resources(self, ids, cache=True):
         deployment_ids = []
@@ -443,10 +436,7 @@ class RestResource(query.ChildResourceManager):
 
 @query.sources.register('describe-rest-resource')
 class DescribeRestResource(query.ChildDescribeSource):
-    parent_annotation = 'restApiId'
-
-    def get_query(self):
-        return super(DescribeRestResource, self).get_query(capture_parent_id=True)
+    capture_parent_id = 'restApiId'
 
 
 @resources.register('rest-vpclink')

@@ -368,10 +368,7 @@ class GlueTable(query.ArnFormatMixin, query.ChildResourceManager):
 
 @query.sources.register('describe-table')
 class DescribeTable(query.ChildDescribeSource):
-    parent_annotation = 'DatabaseName'
-
-    def get_query(self):
-        return super(DescribeTable, self).get_query(capture_parent_id=True)
+    capture_parent_id = 'DatabaseName'
 
 
 @GlueTable.action_registry.register('delete')
