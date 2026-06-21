@@ -50,6 +50,24 @@ def iter_decorated_pipeline(owner, role_attr, options_attr):
             yield name, role, getattr(func, options_attr, {}), getattr(owner, name)
 
 
+def build_decorated_pipeline(
+        owner, role_attr, options_attr, factories, include=None, first=False):
+    results = []
+    for name, role, options, handler in iter_decorated_pipeline(
+            owner, role_attr, options_attr):
+        if include is not None and not include(role):
+            continue
+        if role not in factories:
+            continue
+        op = factories[role](handler, options)
+        if first:
+            return op
+        results.append(op)
+    if first:
+        return None
+    return results
+
+
 def get_executor_context(context):
     if hasattr(context, 'executor_factory'):
         return context

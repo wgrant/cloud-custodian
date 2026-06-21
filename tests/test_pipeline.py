@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 from c7n.pipeline import (
     FilterItems, MapBatches, MapItems, MutateBatches, MutateItems,
-    decorate_pipeline_func, get_raw_class_attr, iter_decorated_pipeline,
-    iter_pipeline_ops,
+    build_decorated_pipeline, decorate_pipeline_func, get_raw_class_attr,
+    iter_decorated_pipeline, iter_pipeline_ops,
 )
 
 
@@ -92,6 +92,54 @@ def test_iter_decorated_pipeline_order_options_and_override():
         ('last', 'batch', {'max_workers': 3}),
     ]
     assert results[0][3](child, 'resource') == 'resource'
+
+
+def test_build_decorated_pipeline_filters_and_builds_ops():
+    def decorate(role, func=None, **options):
+        return decorate_pipeline_func('role', 'options', role, func, **options)
+
+    class Owner:
+        @decorate('keep', size=2)
+        def first(self, resource):
+            return resource
+
+        @decorate('drop')
+        def second(self, resource):
+            return resource
+
+    owner = Owner()
+    ops = build_decorated_pipeline(
+        owner, 'role', 'options',
+        {'keep': lambda handler, options: (handler, options)},
+        include=lambda role: role != 'drop')
+
+    assert len(ops) == 1
+    assert ops[0][0](owner, 'resource') == 'resource'
+    assert ops[0][1] == {'size': 2}
+
+
+def test_build_decorated_pipeline_first_returns_first_op():
+    def decorate(role, func=None, **options):
+        return decorate_pipeline_func('role', 'options', role, func, **options)
+
+    class Owner:
+        @decorate('one')
+        def first(self, resource):
+            return 'first'
+
+        @decorate('two')
+        def second(self, resource):
+            return 'second'
+
+    op = build_decorated_pipeline(
+        Owner(), 'role', 'options',
+        {
+            'one': lambda handler, options: handler,
+            'two': lambda handler, options: handler,
+        },
+        first=True)
+
+    assert op(None, None) == 'first'
 
 
 def test_filter_items():

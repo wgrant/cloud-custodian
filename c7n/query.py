@@ -17,7 +17,7 @@ from c7n.filters import FilterRegistry, MetricsFilter
 from c7n.manager import ResourceManager, ResourceQueryLifecycle
 from c7n.pipeline import (
     FilterItems, MapBatches, MapItems, MutateItems,
-    decorate_pipeline_func, get_raw_class_attr, iter_decorated_pipeline,
+    build_decorated_pipeline, decorate_pipeline_func, get_raw_class_attr,
     iter_pipeline_ops,
 )
 from c7n.registry import PluginRegistry
@@ -447,33 +447,29 @@ _get_raw_class_attr = get_raw_class_attr
 
 
 def _get_decorated_augments(owner, phase):
-    augments = []
-    for name, role, options, handler in iter_decorated_pipeline(
-            owner, 'augment_pipeline_role', 'augment_pipeline_options'):
+    def include(role):
         if phase == 'pre' and role != 'pre-filter':
-            continue
-        if phase != 'pre' and role == 'pre-filter':
-            continue
-        if role == 'pre-filter':
-            augments.append(FilterResources(handler))
-        elif role == 'filter':
-            augments.append(FilterResources(handler))
-        elif role == 'map':
-            augments.append(MapResource(
-                handler, max_workers=options.get('max_workers')))
-        elif role == 'mutate':
-            augments.append(MutateResource(handler))
-        elif role == 'batch':
-            augments.append(MapBatch(
-                handler,
-                size=options.get('size'),
-                max_workers=options.get('max_workers')))
-        elif role == 'source-batch':
-            augments.append(SourceMapBatch(
-                handler,
-                size=options.get('size'),
-                max_workers=options.get('max_workers')))
-    return augments
+            return False
+        return phase == 'pre' or role != 'pre-filter'
+
+    factories = {
+        'pre-filter': lambda handler, options: FilterResources(handler),
+        'filter': lambda handler, options: FilterResources(handler),
+        'map': lambda handler, options: MapResource(
+            handler, max_workers=options.get('max_workers')),
+        'mutate': lambda handler, options: MutateResource(handler),
+        'batch': lambda handler, options: MapBatch(
+            handler,
+            size=options.get('size'),
+            max_workers=options.get('max_workers')),
+        'source-batch': lambda handler, options: SourceMapBatch(
+            handler,
+            size=options.get('size'),
+            max_workers=options.get('max_workers')),
+    }
+    return build_decorated_pipeline(
+        owner, 'augment_pipeline_role', 'augment_pipeline_options',
+        factories, include=include)
 
 
 def _as_list(value):

@@ -26,8 +26,8 @@ from c7n.manager import ResourceManager
 from c7n.registry import PluginRegistry
 from c7n.resolver import ValuesFrom
 from c7n.pipeline import (
-    MapBatches, MutateBatches, MutateItems, decorate_pipeline_func,
-    iter_decorated_pipeline, iter_pipeline_ops,
+    MapBatches, MutateBatches, MutateItems, build_decorated_pipeline,
+    decorate_pipeline_func, iter_pipeline_ops,
 )
 from c7n.utils import (
     set_annotation,
@@ -1085,21 +1085,20 @@ class AnnotationPipelineMixin:
         return [r for r in resources if not _has_path(r, annotation_path)]
 
     def get_decorated_annotation_pipeline(self):
-        for name, role, options, handler in iter_decorated_pipeline(
-                self, 'annotation_pipeline_role', 'annotation_pipeline_options'):
-            if role == 'getter':
-                return SetAnnotation(
-                    handler,
-                    size=options.get('size'),
-                    max_workers=options.get('max_workers'))
-            if role == 'mutator':
-                return AnnotateResource(handler)
-            if role == 'batcher':
-                return AnnotateBatch(
-                    handler,
-                    size=options.get('size'),
-                    max_workers=options.get('max_workers'))
-        return None
+        factories = {
+            'getter': lambda handler, options: SetAnnotation(
+                handler,
+                size=options.get('size'),
+                max_workers=options.get('max_workers')),
+            'mutator': lambda handler, options: AnnotateResource(handler),
+            'batcher': lambda handler, options: AnnotateBatch(
+                handler,
+                size=options.get('size'),
+                max_workers=options.get('max_workers')),
+        }
+        return build_decorated_pipeline(
+            self, 'annotation_pipeline_role', 'annotation_pipeline_options',
+            factories, first=True)
 
     def get_annotation_pipeline(self):
         if self.annotation_pipeline:
