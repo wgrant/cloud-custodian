@@ -94,17 +94,11 @@ class DescribeS3(query.DescribeSource):
             return results
 
 
-
 class ConfigS3(query.ConfigSource):
 
     # normalize config's janky idiosyncratic bespoke formating to the
     # standard describe api responses.
-
-    def get_query_params(self, query):
-        q = super(ConfigS3, self).get_query_params(query)
-        if 'expr' in q:
-            q['expr'] = q['expr'].replace('select ', 'select awsRegion, ')
-        return q
+    config_select_fields = ('awsRegion',)
 
     def load_resource(self, item):
         resource = super(ConfigS3, self).load_resource(item)

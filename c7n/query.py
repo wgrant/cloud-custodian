@@ -791,6 +791,7 @@ class ChildDescribeWithResourceTags(ChildDescribeSource):
 class ConfigSource:
 
     retry = staticmethod(get_retry(('ThrottlingException',)))
+    config_select_fields = ()
 
     def __init__(self, manager):
         self.manager = manager
@@ -840,7 +841,7 @@ class ConfigSource:
             if _c:
                 _c = _c.pop()
         elif query:
-            return query
+            return self.apply_config_select_fields(query)
         else:
             _c = None
 
@@ -850,7 +851,15 @@ class ConfigSource:
         if _c:
             s += "AND {}".format(_c)
 
-        return {'expr': s}
+        return self.apply_config_select_fields({'expr': s})
+
+    def apply_config_select_fields(self, query):
+        if not self.config_select_fields or 'expr' not in query:
+            return query
+        query = dict(query)
+        fields = ", ".join(self.config_select_fields)
+        query['expr'] = query['expr'].replace('select ', f'select {fields}, ', 1)
+        return query
 
     def load_resource(self, item):
         item_config = self._load_item_config(item)

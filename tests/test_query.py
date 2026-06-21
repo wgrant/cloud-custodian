@@ -6,7 +6,7 @@ import os
 
 
 from c7n.query import (
-    AnnotateParent, DescribeSource, FilterResources, MapBatch, MapResource,
+    AnnotateParent, ConfigSource, DescribeSource, FilterResources, MapBatch, MapResource,
     MergeField, MutateResource, ResourceQuery, RetryPageIterator, TagsFromApi,
     TagsFromField, TypeInfo, apply_augment_pipeline,
     apply_source_augment_pipeline, apply_tag_augment, augment,
@@ -213,6 +213,28 @@ class AugmentPipelineTest(BaseTest):
         self.assertEqual(
             queries,
             [{}, {'AccountId': '123456789012'}])
+
+    def test_config_source_select_fields(self):
+        class Manager:
+            data = {}
+
+            class resource_type:
+                id = 'resourceId'
+                config_type = 'AWS::Test::Resource'
+
+        class Source(ConfigSource):
+            config_select_fields = ('awsRegion',)
+
+        source = Source(Manager())
+
+        self.assertEqual(
+            source.get_query_params(None),
+            {'expr': (
+                "select awsRegion, resourceId, configuration, supplementaryConfiguration "
+                "where resourceType = 'AWS::Test::Resource'")})
+        self.assertEqual(
+            source.get_query_params({'expr': 'select resourceId where resourceType = x'}),
+            {'expr': 'select awsRegion, resourceId where resourceType = x'})
 
     def test_merge_field(self):
         resources = [{'Name': 'cluster', 'Provisioned': {'Name': 'nested', 'Size': 3}}]
