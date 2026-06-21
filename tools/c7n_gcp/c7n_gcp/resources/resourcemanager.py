@@ -10,7 +10,7 @@ from c7n_gcp.query import QueryResourceManager, TypeInfo
 
 from c7n.resolver import ValuesFrom
 from c7n.utils import type_schema, local_session
-from c7n.filters.core import ValueFilter, ListItemFilter
+from c7n.filters.core import ListItemAnnotationFilter, SetAnnotation, ValueFilter
 from c7n.filters.missing import Missing
 
 from googleapiclient.errors import HttpError
@@ -365,7 +365,7 @@ class ProjectPropagateLabels(HierarchyAction):
 
 
 @Organization.filter_registry.register('essential-contacts')
-class OrgContactsFilter(ListItemFilter):
+class OrgContactsFilter(ListItemAnnotationFilter):
     """Filter Resources based on essential contacts configuration
 
     .. code-block:: yaml
@@ -393,8 +393,9 @@ class OrgContactsFilter(ListItemFilter):
     annotate_items = True
     permissions = ("essentialcontacts.contacts.list",)
 
-    def get_item_values(self, resource):
-        session = local_session(self.manager.session_factory)
+    @staticmethod
+    def get_contacts(resource_filter, resource):
+        session = local_session(resource_filter.manager.session_factory)
         client = session.client("essentialcontacts", "v1", "organizations.contacts")
         pages = client.execute_paged_query('list', {'parent': resource['name'], 'pageSize': 100})
         contacts = []
@@ -402,9 +403,11 @@ class OrgContactsFilter(ListItemFilter):
             contacts.extend(page.get('contacts', []))
         return contacts
 
+    annotation_pipeline = SetAnnotation(get_contacts)
+
 
 @Organization.filter_registry.register('org-policy')
-class OrgPoliciesFilter(ListItemFilter):
+class OrgPoliciesFilter(ListItemAnnotationFilter):
     """Filter Resources based on orgpolicy configuration
 
     .. code-block:: yaml
@@ -427,14 +430,17 @@ class OrgPoliciesFilter(ListItemFilter):
     annotate_items = True
     permissions = ("orgpolicy.policy.get",)
 
-    def get_item_values(self, resource):
-        session = local_session(self.manager.session_factory)
+    @staticmethod
+    def get_policies(resource_filter, resource):
+        session = local_session(resource_filter.manager.session_factory)
         client = session.client("cloudresourcemanager", "v1", "organizations")
         pages = client.execute_paged_query('listOrgPolicies', {'resource': resource['name']})
         policies = []
         for page in pages:
             policies.extend(page.get('policies', []))
         return policies
+
+    annotation_pipeline = SetAnnotation(get_policies)
 
 
 @Project.filter_registry.register('access-approval')

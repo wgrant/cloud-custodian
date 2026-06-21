@@ -12,7 +12,8 @@ from azure.storage.common.models import Logging, RetentionPolicy
 from azure.storage.file import FileService
 from azure.storage.queue import QueueServiceClient
 from c7n.exceptions import PolicyValidationError
-from c7n.filters.core import type_schema, ListItemFilter
+from c7n.filters.core import (
+    ListItemAnnotationFilter, ListItemFilter, SetAnnotation, type_schema)
 from c7n.utils import get_annotation_prefix, local_session
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.actions.firewall import SetFirewallAction
@@ -250,7 +251,7 @@ class StorageSetFirewallAction(SetFirewallAction):
 
 
 @Storage.filter_registry.register("management-policy-rules")
-class StorageAccountManagementPolicyRulesFilter(ListItemFilter):
+class StorageAccountManagementPolicyRulesFilter(ListItemAnnotationFilter):
     """
     Filter Storage Accounts based on their management policy rules
 
@@ -282,17 +283,20 @@ class StorageAccountManagementPolicyRulesFilter(ListItemFilter):
     item_annotation_key = "c7n:management-policy-rules"
     annotate_items = True
 
-    def get_item_values(self, resource):
+    @staticmethod
+    def get_management_policy_rules(resource_filter, resource):
         try:
-            item = self.manager.get_client().management_policies.get(
+            item = resource_filter.manager.get_client().management_policies.get(
                 resource_group_name=resource["resourceGroup"],
                 account_name=resource["name"],
                 management_policy_name="default"
             )
             return item.serialize(True)["properties"]["policy"].get("rules", [])
         except Exception as e:  # azure.core.exceptions.ResourceNotFoundError
-            self.log.error(e)
+            resource_filter.log.error(e)
             return []  # no rules
+
+    annotation_pipeline = SetAnnotation(get_management_policy_rules)
 
 
 @Storage.filter_registry.register('firewall-rules')
