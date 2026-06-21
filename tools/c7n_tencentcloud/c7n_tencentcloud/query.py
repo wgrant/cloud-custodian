@@ -195,8 +195,8 @@ class DescribeSource:
         except Exception as e:
             return self.handle_fetch_error(e, params)
         resources = self.normalize_resources(resources, params)
-        self.augment(resources)
-        return resources
+        augmented = self.augment(resources)
+        return resources if augmented is None else augmented
 
     def get_permissions(self):
         return []
