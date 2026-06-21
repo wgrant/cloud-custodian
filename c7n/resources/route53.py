@@ -12,6 +12,7 @@ from c7n.query import (
     DescribeSource,
     ChildResourceManager,
     FixedRegionClientMixin,
+    MapBatch,
     QueryResourceManager,
     RetryPageIterator,
     TagsFromBatchApi,
@@ -567,18 +568,21 @@ class IsQueryLoggingEnabled(Filter):
 
 
 class ResolverRuleDescribeSource(DescribeSource):
-    def augment(self, resources):
+    @staticmethod
+    def augment_local_rules(manager, resources):
         owner_resource_map = dict(
             (owner, list(group))
             for owner, group in itertools.groupby(
                 resources,
-                key=lambda x: x.get('OwnerId') == self.manager.account_id and 'Local' or 'Shared',
+                key=lambda x: x.get('OwnerId') == manager.account_id and 'Local' or 'Shared',
             )
         )
         return (
-            universal_augment(self.manager, owner_resource_map.get('Local', []))
+            universal_augment(manager, owner_resource_map.get('Local', []))
             + owner_resource_map.get('Shared', [])
         )
+
+    augment_pipeline = MapBatch(augment_local_rules)
 
 
 @resources.register('resolver-rule')
@@ -618,17 +622,20 @@ class ResolverQueryLogConfig(QueryResourceManager):
         'route53resolver:ListResolverQueryLogConfigs',
         'route53resolver:ListResolverQueryLogConfigAssociations')
 
-    def augment(self, rqlcs):
-        client = local_session(self.session_factory).client('route53resolver')
+    @staticmethod
+    def augment_configs(manager, rqlcs):
+        client = local_session(manager.session_factory).client('route53resolver')
         for rqlc in rqlcs:
-            if rqlc['OwnerId'] != self.account_id:
+            if rqlc['OwnerId'] != manager.account_id:
                 continue  # don't try to fetch tags for shared resources
-            rqlc['Tags'] = self.retry(
+            rqlc['Tags'] = manager.retry(
                 client.list_tags_for_resource,
                 ResourceArn=rqlc['Arn'])['Tags']
-            rqlc[self.annotation_key] = client.list_resolver_query_log_config_associations().get(
+            rqlc[manager.annotation_key] = client.list_resolver_query_log_config_associations().get(
                 'ResolverQueryLogConfigAssociations')
         return rqlcs
+
+    augment_pipeline = MapBatch(augment_configs)
 
 
 @ResolverQueryLogConfig.action_registry.register('associate-vpc')

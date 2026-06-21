@@ -58,7 +58,7 @@ import c7n.filters.vpc as net_filters
 from c7n.manager import resources
 from c7n.query import (
     ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
-    RetryPageIterator, TagsFromField, TypeInfo)
+    RetryPageIterator, TagsFromApi, TagsFromField, TypeInfo)
 from c7n import deprecated, tags
 from c7n.tags import universal_augment
 
@@ -1610,12 +1610,12 @@ class RDSModifyVpcSecurityGroups(ModifyVpcSecurityGroupsAction):
 
 
 class DescribeSubnetGroup(DescribeSource):
-
-    def augment(self, resources):
-        _db_subnet_group_tags(
-            resources, self.manager.session_factory,
-            self.manager.executor_factory, self.manager.retry)
-        return resources
+    tag_augment = TagsFromApi(
+        resource_path='DBSubnetGroupArn',
+        request_arg='ResourceName',
+        result_path='TagList',
+        ignore_errors=('DBSubnetGroupNotFoundFault',),
+        drop_on_error=True)
 
 
 @resources.register('rds-subnet-group')
@@ -1639,20 +1639,6 @@ class RDSSubnetGroup(QueryResourceManager):
         'config': ConfigSource,
         'describe': DescribeSubnetGroup
     }
-
-
-def _db_subnet_group_tags(subnet_groups, session_factory, executor_factory, retry):
-    client = local_session(session_factory).client('rds')
-
-    def process_tags(g):
-        try:
-            g['Tags'] = client.list_tags_for_resource(
-                ResourceName=g['DBSubnetGroupArn'])['TagList']
-            return g
-        except client.exceptions.DBSubnetGroupNotFoundFault:
-            return None
-
-    return list(filter(None, map(process_tags, subnet_groups)))
 
 
 @RDSSubnetGroup.action_registry.register('delete')

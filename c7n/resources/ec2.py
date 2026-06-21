@@ -63,7 +63,8 @@ class DescribeEC2(query.DescribeSource):
     def normalize_resources(self, resources, query):
         return self._flatten_reservations(resources)
 
-    def augment(self, resources):
+    @staticmethod
+    def augment_awol_tags(manager, resources):
         """EC2 API and AWOL Tags
 
         While ec2 api generally returns tags when doing describe_x on for
@@ -77,7 +78,7 @@ class DescribeEC2(query.DescribeSource):
         name), so there isn't a good default to ensure that we will
         always get tags from describe_x calls.
         """
-        if not resources or self.manager.data.get(
+        if not resources or manager.data.get(
                 'mode', {}).get('type', '') in (
                     'cloudtrail', 'ec2-instance-state'):
             return resources
@@ -97,8 +98,8 @@ class DescribeEC2(query.DescribeSource):
             return resources
 
         # Okay go and do the tag lookup
-        client = utils.local_session(self.manager.session_factory).client('ec2')
-        tag_set = self.manager.retry(
+        client = utils.local_session(manager.session_factory).client('ec2')
+        tag_set = manager.retry(
             client.describe_tags,
             Filters=[{'Name': 'resource-type',
                       'Values': ['instance']}])['Tags']
@@ -108,10 +109,12 @@ class DescribeEC2(query.DescribeSource):
             rid = t.pop('ResourceId')
             resource_tags.setdefault(rid, []).append(t)
 
-        m = self.manager.get_model()
+        m = manager.get_model()
         for r in resources:
             r['Tags'] = resource_tags.get(r[m.id], [])
         return resources
+
+    augment_pipeline = query.MapBatch(augment_awol_tags)
 
 
 @resources.register('ec2')
@@ -2393,9 +2396,10 @@ class LaunchTemplate(query.QueryResourceManager):
         arn_type = "launch-template"
         cfn_type = "AWS::EC2::LaunchTemplate"
 
-    def augment(self, resources):
+    @staticmethod
+    def expand_versions(manager, resources):
         client = utils.local_session(
-            self.session_factory).client('ec2')
+            manager.session_factory).client('ec2')
         template_versions = []
         for r in resources:
             template_versions.extend(
@@ -2403,6 +2407,8 @@ class LaunchTemplate(query.QueryResourceManager):
                     LaunchTemplateId=r['LaunchTemplateId']).get(
                         'LaunchTemplateVersions', ()))
         return template_versions
+
+    augment_pipeline = query.MapBatch(expand_versions)
 
     def get_arns(self, resources):
         arns = []

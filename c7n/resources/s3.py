@@ -79,16 +79,20 @@ MAX_COPY_SIZE = 1024 * 1024 * 1024 * 2
 
 
 class DescribeS3(query.DescribeSource):
+    detail_augment = False
 
-    def augment(self, buckets):
-        assembler = BucketAssembly(self.manager)
+    @staticmethod
+    def assemble_buckets(manager, buckets):
+        assembler = BucketAssembly(manager)
         assembler.initialize()
 
-        with self.manager.executor_factory(
+        with manager.executor_factory(
                 max_workers=min((10, len(buckets) + 1))) as w:
             results = w.map(assembler.assemble, buckets)
             results = list(filter(None, results))
             return results
+
+    augment_pipeline = query.MapBatch(assemble_buckets)
 
 
 class ConfigS3(query.ConfigSource):
