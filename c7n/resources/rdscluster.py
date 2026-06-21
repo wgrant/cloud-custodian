@@ -29,7 +29,7 @@ log = logging.getLogger('custodian.rds-cluster')
 
 class DescribeCluster(DescribeWithInlineTags):
 
-    def get_resources(self, ids):
+    def fetch_resources_by_ids(self, ids):
         resources = chain.from_iterable(
             self.query.filter(
                 self.manager,
@@ -390,7 +390,7 @@ class ModifyDbCluster(BaseAction):
 
 class DescribeClusterSnapshot(DescribeWithInlineTags):
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('rds')
         return self.manager.retry(
             client.describe_db_cluster_snapshots,

@@ -694,10 +694,10 @@ class VpcPostFinding(PostFinding):
 
 class DescribeSubnets(query.DescribeSource):
 
-    def get_resources(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         while resource_ids:
             try:
-                return super().get_resources(resource_ids)
+                return super().fetch_resources_by_ids(resource_ids)
             except ClientError as e:
                 if e.response['Error']['Code'] != 'InvalidSubnetID.NotFound':
                     raise

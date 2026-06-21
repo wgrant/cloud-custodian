@@ -457,7 +457,7 @@ class Metrics(MetricsFilter):
 
 class DescribeSubscription(DescribeSource):
 
-    def get_resources(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         """Get resource details one at a time rather than client filter of all.
 
         The list_subscriptions call has no way to provide a server side filter,

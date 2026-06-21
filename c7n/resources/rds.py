@@ -58,7 +58,7 @@ import c7n.filters.vpc as net_filters
 from c7n.manager import resources
 from c7n.query import (
     ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
-    RetryPageIterator, TagsFromApi, TagsFromField, TypeInfo)
+    RetryPageIterator, TypeInfo)
 from c7n import deprecated, tags
 from c7n.tags import universal_augment
 
@@ -1066,8 +1066,8 @@ class RDSSubscriptionDelete(BaseAction):
 
 class DescribeRDSSnapshot(DescribeSource):
 
-    def get_resources(self, ids, cache=True):
-        super_get = super().get_resources
+    def fetch_resources_by_ids(self, ids):
+        super_get = super().fetch_resources_by_ids
         return list(itertools.chain(*[super_get((i,)) for i in ids]))
     tag_field = dict(field='TagList', tag_format='aws-list', remove=True, missing='empty')
 
@@ -1608,7 +1608,12 @@ class RDSModifyVpcSecurityGroups(ModifyVpcSecurityGroupsAction):
 
 
 class DescribeSubnetGroup(DescribeSource):
-    tag_api = dict(resource_path='DBSubnetGroupArn', request_arg='ResourceName', result_path='TagList', ignore_errors=('DBSubnetGroupNotFoundFault',), drop_on_error=True)
+    tag_api = dict(
+        resource_path='DBSubnetGroupArn',
+        request_arg='ResourceName',
+        result_path='TagList',
+        ignore_errors=('DBSubnetGroupNotFoundFault',),
+        drop_on_error=True)
 
 
 @resources.register('rds-subnet-group')
