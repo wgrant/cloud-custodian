@@ -157,6 +157,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     default_query_filter = True
     policy_query_key = None
     policy_query_param = None
+    policy_query_default = None
     augment_pipeline = None
 
     def __init__(self, ctx, data):
@@ -192,13 +193,25 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         return self.data.get('source', 'describe-gcp')
 
     def get_resource_query(self):
+        params = self.get_default_query_params()
         if self.policy_query_key:
-            return self.get_policy_query_param(
+            policy_query = self.get_policy_query_param(
                 self.policy_query_key, self.policy_query_param)
-        if not self.default_query_filter:
-            return None
-        if 'query' in self.data:
-            return {'filter': self.data.get('query')}
+        elif self.default_query_filter and 'query' in self.data:
+            policy_query = {'filter': self.data.get('query')}
+        else:
+            policy_query = None
+        if policy_query:
+            params.update(policy_query)
+        return params or None
+
+    def get_default_query_params(self):
+        default = self.policy_query_default
+        if default is None:
+            return {}
+        if callable(default):
+            default = default(self)
+        return dict(default)
 
     def get_policy_query_param(self, policy_key, param_key=None):
         param_key = param_key or policy_key

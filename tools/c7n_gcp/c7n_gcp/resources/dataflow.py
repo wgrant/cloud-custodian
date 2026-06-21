@@ -13,6 +13,9 @@ class DataflowJob(QueryResourceManager):
     """GCP resource: https://cloud.google.com/dataflow/docs/reference/rest/v1b3/projects.jobs
     """
 
+    policy_query_key = 'filter'
+    policy_query_default = {'filter': 'ACTIVE'}
+
     class resource_type(TypeInfo):
         service = 'dataflow'
         version = 'v1b3'
@@ -36,13 +39,6 @@ class DataflowJob(QueryResourceManager):
                     'jobId': jmespath_search('protoPayload.request.job_id', event)
                 }
             )
-
-    def prepare_query(self, query):
-        query_filter = 'ACTIVE'
-        if self.data.get('query'):
-            query_filter = self.data['query'][0].get('filter', 'ACTIVE')
-
-        return super().prepare_query({'filter': query_filter})
 
     @augment.map
     def describe_job(manager, resource):
