@@ -4,7 +4,7 @@
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 from c7n.utils import type_schema
-from c7n.filters.core import ValueFilter
+from c7n.filters.core import AnnotationPipelineFilter, SetAnnotation, ValueFilter
 
 
 @resources.register('mysql-flexibleserver')
@@ -25,7 +25,7 @@ class MySQLFlexibleServer(ArmResourceManager):
 
 
 @MySQLFlexibleServer.filter_registry.register('server-parameter')
-class ServerParametersFilter(ValueFilter):
+class ServerParametersFilter(AnnotationPipelineFilter):
     """Filter by configuration parameter for mysql flexible server
 
     :example:
@@ -75,16 +75,19 @@ class ServerParametersFilter(ValueFilter):
         },
     )
 
-    def __call__(self, resource):
-        key = f'c7n:config-params:{self.data["name"]}'
-        if key not in resource['properties']:
-            client = self.manager.get_client()
-            query = client.configurations.get(
-                resource['resourceGroup'],
-                resource['name'],
-                self.data["name"]
-            )
+    def get_annotation_key(self):
+        return f'c7n:config-params:{self.data["name"]}'
 
-            resource['properties'][key] = query.serialize(True).get('properties')
+    def get_annotation_path(self):
+        return ('properties', self.get_annotation_key())
 
-        return super().__call__(resource['properties'].get(key))
+    @staticmethod
+    def get_parameter(resource_filter, resource):
+        query = resource_filter.manager.get_client().configurations.get(
+            resource['resourceGroup'],
+            resource['name'],
+            resource_filter.data["name"]
+        )
+        return query.serialize(True).get('properties')
+
+    annotation_pipeline = SetAnnotation(get_parameter)

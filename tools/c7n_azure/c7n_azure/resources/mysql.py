@@ -4,7 +4,7 @@
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 from c7n.utils import type_schema
-from c7n.filters.core import ValueFilter
+from c7n.filters.core import AnnotationPipelineFilter, SetAnnotation, ValueFilter
 from c7n_azure.filters import scalar_ops
 
 
@@ -44,7 +44,7 @@ class MySQL(ArmResourceManager):
 
 
 @MySQL.filter_registry.register('server-configuration')
-class ServerConfigurationsFilter(ValueFilter):
+class ServerConfigurationsFilter(AnnotationPipelineFilter):
     """Filter by server parameter for this MySql server
 
     Configurations are made available to the filter as a map with each
@@ -95,19 +95,22 @@ class ServerConfigurationsFilter(ValueFilter):
         name=dict(type='string')
     )
 
-    def __call__(self, resource):
-        key = f'c7n:config-params:{self.data["name"]}'
-        if key not in resource['properties']:
-            client = self.manager.get_client()
-            query = client.configurations.get(
-                resource['resourceGroup'],
-                resource['name'],
-                self.data["name"]
-            )
+    def get_annotation_key(self):
+        return f'c7n:config-params:{self.data["name"]}'
 
-            resource['properties'][key] = query.serialize(True).get('properties')
+    def get_annotation_path(self):
+        return ('properties', self.get_annotation_key())
 
-        return super().__call__(resource['properties'][key])
+    @staticmethod
+    def get_configuration(resource_filter, resource):
+        query = resource_filter.manager.get_client().configurations.get(
+            resource['resourceGroup'],
+            resource['name'],
+            resource_filter.data["name"]
+        )
+        return query.serialize(True).get('properties')
+
+    annotation_pipeline = SetAnnotation(get_configuration)
 
 
 @MySQL.filter_registry.register('security-alert-policy')

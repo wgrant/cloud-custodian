@@ -946,6 +946,15 @@ def _get_path(resource, path):
     return current
 
 
+def _has_path(resource, path):
+    current = resource
+    for part in path[:-1]:
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    return isinstance(current, dict) and path[-1] in current
+
+
 def _set_path(resource, path, value):
     current = resource
     for part in path[:-1]:
@@ -992,6 +1001,8 @@ class SetAnnotation:
     def get_annotation_path(self, resource_filter):
         if self.path:
             return self.path
+        if hasattr(resource_filter, 'get_annotation_path'):
+            return resource_filter.get_annotation_path()
         return (self.get_annotation_key(resource_filter),)
 
     def process_resource_set(self, resource_filter, resources):
@@ -1054,9 +1065,19 @@ class AnnotationPipelineFilter(ValueFilter):
     annotation_key = None
     annotation_pipeline = None
     annotate = False
+    source_annotation_path = None
+
+    def get_annotation_key(self):
+        return self.annotation_key
+
+    def get_annotation_path(self):
+        if self.source_annotation_path:
+            return self.source_annotation_path
+        return (self.get_annotation_key(),)
 
     def get_annotation_resources(self, resources):
-        return [r for r in resources if self.annotation_key not in r]
+        annotation_path = self.get_annotation_path()
+        return [r for r in resources if not _has_path(r, annotation_path)]
 
     def annotate_resources(self, resources):
         if resources:
@@ -1068,7 +1089,7 @@ class AnnotationPipelineFilter(ValueFilter):
         return super().process(resources, event)
 
     def __call__(self, resource):
-        return super().__call__(resource[self.annotation_key])
+        return super().__call__(_get_path(resource, self.get_annotation_path()))
 
 
 class EventFilter(ValueFilter):
