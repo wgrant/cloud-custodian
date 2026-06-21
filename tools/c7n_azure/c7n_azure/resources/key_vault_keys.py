@@ -8,7 +8,6 @@ from azure.keyvault.keys import KeyProperties
 
 from c7n.filters import Filter
 from c7n.filters.core import BatchedFilter
-from c7n.query import FilterResources
 from c7n.utils import type_schema
 
 from c7n_azure import constants
@@ -107,7 +106,7 @@ class KeyVaultKeys(ChildResourceManager):
         # Key Vault creates managed keys for certificates; those cannot be acted on directly.
         return not resource.get('managed')
 
-    augment_pipeline = FilterResources(is_unmanaged)
+    augment_filter = is_unmanaged
 
 
 @KeyVaultKeys.filter_registry.register('keyvault')

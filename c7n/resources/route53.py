@@ -80,9 +80,7 @@ class HostedZone(Route53Base, QueryResourceManager):
     def get_config_hosted_zone_id(manager, resource):
         return resource['Id'].split("/")[-1]
 
-    augment_pipeline = query.SetField(
-        'c7n:ConfigHostedZoneId',
-        get_config_hosted_zone_id)
+    set_field = ('c7n:ConfigHostedZoneId', get_config_hosted_zone_id)
 
     class resource_type(TypeInfo):
         service = 'route53'

@@ -12,8 +12,8 @@ from c7n.actions import RemovePolicyBase, BaseAction
 from c7n.filters import Filter, CrossAccountAccessFilter, ListItemFilter, ValueFilter
 from c7n.manager import resources
 from c7n.query import (
-    ConfigSource, DescribeSource, FilterResources, MutateResource,
-    QueryResourceManager, RetryPageIterator, TypeInfo, UniversalTags)
+    ConfigSource, DescribeSource,
+    QueryResourceManager, RetryPageIterator, TypeInfo)
 from c7n.utils import local_session, type_schema, select_keys
 
 from .securityhub import PostFinding
@@ -24,7 +24,7 @@ class DescribeAlias(DescribeSource):
     def has_target_key(manager, resource):
         return 'TargetKeyId' in resource
 
-    augment_pipeline = FilterResources(has_target_key)
+    augment_filter = has_target_key
 
 
 @resources.register('kms')

@@ -5,11 +5,10 @@ import copy
 import json
 import pytz
 from c7n.exceptions import PolicyValidationError
-from c7n.query import MutateResource
 from c7n.utils import chunks, type_schema
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import (
-    NormalizeDateField, ResourceTypeInfo, QueryResourceManager, DescribeSource)
+    ResourceTypeInfo, QueryResourceManager, DescribeSource)
 from c7n_tencentcloud.utils import isoformat_datetime_str, PageMethod, convert_date_str
 from c7n.filters import ValueFilter, Filter
 
@@ -80,7 +79,7 @@ class User(QueryResourceManager):
             self._query_client = self.get_client()
         return self._query_client
 
-    augment_pipeline = NormalizeDateField("CreateTime")
+    normalize_date_field = "CreateTime"
 
 
 @User.filter_registry.register('group')

@@ -32,7 +32,6 @@ from c7n.query import (
     DescribeSource, DescribeWithResourceTags,
     MapResource,
     QueryResourceManager,
-    SetField,
     TypeInfo,
 )
 from c7n.resolver import ValuesFrom
@@ -3068,9 +3067,9 @@ class SamlProviderDescribe(DescribeSource):
     def has_saml_metadata(manager, resource):
         return bool(resource.get('SAMLMetadataDocument'))
 
-    augment_pipeline = SetField(
-        'IDPSSODescriptor',
-        get_sso_descriptor,
+    set_field = dict(
+        field='IDPSSODescriptor',
+        value=get_sso_descriptor,
         when=has_saml_metadata)
 
     def get_permissions(self):

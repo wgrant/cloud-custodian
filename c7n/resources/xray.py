@@ -23,7 +23,7 @@ class XRayGroup(query.QueryResourceManager):
 
 
 class DescribeRule(query.DescribeWithResourceTags):
-    augment_pipeline = query.MergeField('SamplingRule')
+    merge_field = 'SamplingRule'
 
 
 @resources.register("xray-rule")

@@ -1235,22 +1235,22 @@ class AppELBDefaultVpcFilter(net_filters.DefaultVpcBase):
 
 
 class DescribeAppELBTargetGroup(DescribeSource):
-    class TargetGroupHealth:
-        def __call__(self, manager, target_groups):
-            client = local_session(manager.session_factory).client('elbv2')
+    @staticmethod
+    def augment_target_group_health(manager, target_groups):
+        client = local_session(manager.session_factory).client('elbv2')
 
-            def _describe_target_group_health(target_group):
-                result = manager.retry(
-                    client.describe_target_health,
-                    TargetGroupArn=target_group['TargetGroupArn'])
-                target_group['TargetHealthDescriptions'] = result[
-                    'TargetHealthDescriptions']
+        def _describe_target_group_health(target_group):
+            result = manager.retry(
+                client.describe_target_health,
+                TargetGroupArn=target_group['TargetGroupArn'])
+            target_group['TargetHealthDescriptions'] = result[
+                'TargetHealthDescriptions']
 
-            with manager.executor_factory(max_workers=2) as w:
-                list(w.map(_describe_target_group_health, target_groups))
-            return target_groups
+        with manager.executor_factory(max_workers=2) as w:
+            list(w.map(_describe_target_group_health, target_groups))
+        return target_groups
 
-    augment_pipeline = TargetGroupHealth()
+    augment_batcher = augment_target_group_health
     tag_batch_api = dict(op='describe_tags', resource_path='TargetGroupArn', request_arg='ResourceArns', result_path='TagDescriptions', result_resource_path='ResourceArn')
 
 

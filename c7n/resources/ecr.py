@@ -7,9 +7,9 @@ from c7n.exceptions import PolicyValidationError
 from c7n.filters import CrossAccountAccessFilter, Filter, ValueFilter, MetricsFilter
 from c7n.manager import resources
 from c7n.query import (
-    AnnotateParent, ConfigSource, DescribeSource, MutateResource,
+    ConfigSource, DescribeSource,
     QueryResourceManager, TypeInfo, ChildResourceManager, ChildDescribeSource,
-    ChildResourceQuery, sources, TagsFromApi)
+    ChildResourceQuery, sources)
 from c7n import tags
 from c7n.utils import local_session, type_schema
 
@@ -79,9 +79,8 @@ class RepositoryImageDescribeSource(ChildDescribeSource):
             resource['imageDigest'])
 
     resource_query_factory = ECRImageQuery
-    augment_pipeline = (
-        AnnotateParent('repositoryName'),
-        MutateResource(augment_image_arn))
+    parent_annotation = 'repositoryName'
+    augment_mutator = augment_image_arn
 
     def get_query(self):
         return super().get_query(capture_parent_id=True)

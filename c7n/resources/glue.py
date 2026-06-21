@@ -368,7 +368,7 @@ class GlueTable(query.ArnFormatMixin, query.ChildResourceManager):
 
 @query.sources.register('describe-table')
 class DescribeTable(query.ChildDescribeSource):
-    augment_pipeline = query.AnnotateParent('DatabaseName')
+    parent_annotation = 'DatabaseName'
 
     def get_query(self):
         return super(DescribeTable, self).get_query(capture_parent_id=True)

@@ -1,7 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 from c7n_tencentcloud.provider import resources
-from c7n_tencentcloud.query import NormalizeDateField, ResourceTypeInfo, QueryResourceManager
+from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod
 from c7n.filters.core import Filter
 import pytz
@@ -58,7 +58,7 @@ class MySQL(QueryResourceManager):
             "CreateTime": ("%Y-%m-%d %H:%M:%S", pytz.timezone("Asia/Shanghai"))
         }
 
-    augment_pipeline = NormalizeDateField("CreateTime")
+    normalize_date_field = "CreateTime"
 
 
 @MySQL.filter_registry.register('encryption')

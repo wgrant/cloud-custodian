@@ -6,8 +6,7 @@ from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 from c7n.manager import resources
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.query import (
-    QueryResourceManager, TypeInfo, DescribeSource, ConfigSource,
-    MergeField, TagsFromField)
+    QueryResourceManager, TypeInfo, DescribeSource, ConfigSource)
 from c7n.utils import local_session, type_schema
 from c7n.vendored.distutils.version import LooseVersion
 
@@ -16,9 +15,8 @@ from c7n.filters import CrossAccountAccessFilter
 
 
 class DescribeKafka(DescribeSource):
-    augment_pipeline = (
-        MergeField('Provisioned', remove=False, overwrite=False),
-        TagsFromField('Tags'))
+    merge_field = dict(field='Provisioned', remove=False, overwrite=False)
+    tag_field = 'Tags'
 
 
 @resources.register('kafka')

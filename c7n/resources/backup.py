@@ -3,13 +3,13 @@
 from c7n.manager import resources
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.query import (
-    ConfigSource, DescribeSource, DescribeWithResourceTags, MergeField,
-    QueryResourceManager, TagsFromApi, TypeInfo)
+    ConfigSource, DescribeSource, DescribeWithResourceTags,
+    QueryResourceManager, TypeInfo)
 from c7n.utils import local_session
 
 
 class DescribeBackup(DescribeSource):
-    augment_pipeline = MergeField('BackupPlan')
+    merge_field = 'BackupPlan'
     tag_api = dict(op='list_tags', resource_path='BackupPlanArn', result_path='Tags', tag_format='dict', ignore_errors=('ResourceNotFoundException',), drop_on_error=True)
 
     def fetch_resources_by_ids(self, resource_ids):

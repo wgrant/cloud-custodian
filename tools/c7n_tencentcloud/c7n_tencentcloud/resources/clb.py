@@ -3,12 +3,10 @@
 import ipaddress
 import pytz
 
-from c7n.query import MutateResource
 from c7n.utils import chunks, jmespath_search
 from c7n_tencentcloud.filters import MetricsFilter
 from c7n_tencentcloud.provider import resources
-from c7n_tencentcloud.query import (
-    NormalizeDateField, ResourceTypeInfo, QueryResourceManager)
+from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod
 
 
@@ -53,9 +51,8 @@ class CLB(QueryResourceManager):
                 instance_ids.append(target["InstanceId"])
         resource["Instances"] = instance_ids
 
-    augment_pipeline = (
-        MutateResource(augment_targets),
-        NormalizeDateField("CreateTime"))
+    augment_mutator = augment_targets
+    normalize_date_field = "CreateTime"
 
 
 @CLB.filter_registry.register("metrics")

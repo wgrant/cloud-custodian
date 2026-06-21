@@ -2526,7 +2526,7 @@ class DescribeElasticIp(query.DescribeSource):
     def has_resource_id(manager, resource):
         return manager.resource_type.id in resource
 
-    augment_pipeline = query.FilterResources(has_resource_id)
+    augment_filter = has_resource_id
 
 
 @resources.register('elastic-ip', aliases=('network-addr',))
