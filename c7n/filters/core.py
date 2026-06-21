@@ -26,8 +26,9 @@ from c7n.manager import ResourceManager
 from c7n.registry import PluginRegistry
 from c7n.resolver import ValuesFrom
 from c7n.pipeline import (
-    MapBatches, MutateBatches, MutateItems, build_decorated_pipeline,
-    decorate_pipeline_func, iter_pipeline_ops,
+    MapBatch as PipelineMapBatch, MutateBatch as PipelineMutateBatch,
+    MutateItems, build_decorated_pipeline, decorate_pipeline_func,
+    iter_pipeline_ops,
 )
 from c7n.utils import (
     set_annotation,
@@ -971,7 +972,7 @@ class AnnotateResource(MutateItems):
     """Run a per-resource annotation mutator."""
 
 
-class SetAnnotation(MutateBatches):
+class SetAnnotation(PipelineMutateBatch):
     def __init__(self, func, key=None, path=None, size=None, max_workers=None):
         super().__init__(self.process_resource_set, size=size, max_workers=max_workers)
         self.getter = func
@@ -998,7 +999,7 @@ class SetAnnotation(MutateBatches):
             _set_path(resource, annotation_path, self.getter(resource_filter, resource))
 
 
-class AnnotateBatch(MutateBatches):
+class AnnotateBatch(PipelineMutateBatch):
     """Run an annotation mutator over resource batches."""
 
 
@@ -1030,7 +1031,7 @@ class _FilterBatchOp:
         def process_batch(resource_filter, resource_set):
             return self.func(resource_filter, resource_set, event=event)
 
-        return MapBatches(
+        return PipelineMapBatch(
             process_batch,
             size=self.size,
             max_workers=self.max_workers)(resource_filter, resources)

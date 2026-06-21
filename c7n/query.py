@@ -16,7 +16,7 @@ from c7n.exceptions import ClientError, ResourceLimitExceeded, PolicyExecutionEr
 from c7n.filters import FilterRegistry, MetricsFilter
 from c7n.manager import ResourceManager, ResourceQueryLifecycle
 from c7n.pipeline import (
-    FilterItems, MapBatches, MapItems, MutateItems,
+    FilterItems, MapBatch as PipelineMapBatch, MapItems, MutateItems,
     build_decorated_pipeline, decorate_pipeline_func, get_raw_class_attr,
     iter_pipeline_ops,
 )
@@ -375,11 +375,11 @@ class MapResource(MapItems):
     """Map one input resource to zero or one output resources."""
 
 
-class MapBatch(MapBatches):
+class MapBatch(PipelineMapBatch):
     """Map a batch of resources to zero or more output resources."""
 
 
-class SourceMapBatch(MapBatches):
+class SourceMapBatch(PipelineMapBatch):
     """Map batches with the source object instead of the resource manager."""
 
     def process_source(self, source, resources):

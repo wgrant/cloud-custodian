@@ -1,7 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 from c7n.pipeline import (
-    FilterItems, MapBatches, MapItems, MutateBatches, MutateItems,
+    FilterItems, MapBatch, MapItems, MutateBatch, MutateItems,
     build_decorated_pipeline, decorate_pipeline_func, get_raw_class_attr,
     iter_decorated_pipeline, iter_pipeline_ops,
 )
@@ -174,30 +174,30 @@ def test_map_items_uses_executor():
     assert context.workers == [2]
 
 
-def test_map_batches_chunks_flattens_and_skips_empty_results():
+def test_map_batch_chunks_flattens_and_skips_empty_results():
     seen = []
 
     def odds(context, resource_set):
         seen.append(list(resource_set))
         return [{'value': r} for r in resource_set if r % 2]
 
-    assert MapBatches(odds, size=2)(None, [1, 2, 3, 4]) == [
+    assert MapBatch(odds, size=2)(None, [1, 2, 3, 4]) == [
         {'value': 1}, {'value': 3}]
     assert seen == [[1, 2], [3, 4]]
 
 
-def test_map_batches_uses_filter_context_executor():
+def test_map_batch_uses_filter_context_executor():
     resource_filter = FilterContext()
 
     def values(resource_filter, resource_set):
         return list(resource_set)
 
-    assert MapBatches(values, size=2, max_workers=4)(
+    assert MapBatch(values, size=2, max_workers=4)(
         resource_filter, [1, 2, 3]) == [1, 2, 3]
     assert resource_filter.manager.workers == [4]
 
 
-def test_mutate_batches_returns_same_list_and_uses_executor():
+def test_mutate_batch_returns_same_list_and_uses_executor():
     context = Context()
     resources = [{'value': 1}, {'value': 2}, {'value': 3}]
     seen = []
@@ -207,7 +207,7 @@ def test_mutate_batches_returns_same_list_and_uses_executor():
         for resource in resource_set:
             resource['seen'] = True
 
-    assert MutateBatches(mark, size=2, max_workers=3)(context, resources) is resources
+    assert MutateBatch(mark, size=2, max_workers=3)(context, resources) is resources
     assert seen == [[1, 2], [3]]
     assert context.workers == [3]
     assert resources == [

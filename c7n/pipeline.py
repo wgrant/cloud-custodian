@@ -129,7 +129,7 @@ class MapItems:
         return results
 
 
-class MapBatches:
+class MapBatch:
     """Map a batch of input items to zero or more output items."""
 
     def __init__(self, func, size=None, max_workers=None):
@@ -158,7 +158,7 @@ class MapBatches:
         return results
 
 
-class MutateBatches:
+class MutateBatch:
     """Run a mutator over batches and return the original item list."""
 
     def __init__(self, func, size=None, max_workers=None):
