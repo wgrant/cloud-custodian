@@ -7,6 +7,7 @@ import logging
 from azure.keyvault.keys import KeyProperties
 
 from c7n.filters import Filter
+from c7n.filters.core import FilterBatch
 from c7n.query import FilterResources
 from c7n.utils import type_schema
 
@@ -14,7 +15,7 @@ from c7n_azure import constants
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.provider import resources
 from c7n_azure.query import ChildResourceManager, ChildTypeInfo
-from c7n_azure.utils import ThreadHelper, ResourceIdParser
+from c7n_azure.utils import ResourceIdParser
 
 
 log = logging.getLogger('custodian.azure.keyvault.keys')
@@ -135,28 +136,24 @@ class KeyTypeFilter(Filter):
     )
 
     def process(self, resources, event=None):
+        return FilterBatch(
+            self.filter_resource_set,
+            size=constants.DEFAULT_CHUNK_SIZE,
+            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
-        resources, _ = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=log
-        )
-        return resources
-
-    def _process_resource_set(self, resources, event):
+    @staticmethod
+    def filter_resource_set(resource_filter, resources, event=None):
         matched = []
         for resource in resources:
             try:
                 if 'c7n:kty' not in resource:
                     id = KeyProperties(key_id=resource['id'])
-                    client = self.manager.get_client(vault_url=id.vault_url)
+                    client = resource_filter.manager.get_client(vault_url=id.vault_url)
                     key = client.get_key(id.name, id.version)
 
                     resource['c7n:kty'] = key.key.kty.lower()
 
-                if resource['c7n:kty'] in [t.lower() for t in self.data['key-types']]:
+                if resource['c7n:kty'] in [t.lower() for t in resource_filter.data['key-types']]:
                     matched.append(resource)
             except Exception as error:
                 log.warning(error)
