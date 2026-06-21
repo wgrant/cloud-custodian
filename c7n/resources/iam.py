@@ -48,7 +48,7 @@ from c7n.resources.securityhub import OtherResourcePostFinding
 
 class DescribeGroup(DescribeSource):
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         """For IAM Groups on events, resource ids are Group Names."""
         client = local_session(self.manager.session_factory).client('iam')
         resources = []
@@ -85,7 +85,7 @@ class Group(QueryResourceManager):
 
 class DescribeRole(DescribeSource):
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('iam')
         resources = []
         for rid in resource_ids:
@@ -243,7 +243,7 @@ class DescribeUser(DescribeSource):
         if result:
             return result.get('User') or None
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('iam')
         results = []
 
@@ -384,7 +384,7 @@ class UserSetBoundary(SetBoundary):
 
 class DescribePolicy(DescribeWithResourceTags):
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('iam')
         results = []
 
