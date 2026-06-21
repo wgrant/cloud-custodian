@@ -1,11 +1,11 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
-from c7n.utils import type_schema, chunks
+from c7n.utils import type_schema
 from c7n.query import MutateResource
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod
-from c7n.filters.core import Filter, ValueFilter
+from c7n.filters.core import AnnotateBatch, AnnotationPipelineFilter, Filter, ValueFilter
 
 
 @resources.register('security-group')
@@ -209,7 +209,7 @@ class IPPermissionEgress(SGPermission):
 
 
 @SecurityGroup.filter_registry.register('used')
-class StatisticsFilter(ValueFilter):
+class StatisticsFilter(AnnotationPipelineFilter):
     """statistics
 
     :example:
@@ -230,31 +230,25 @@ class StatisticsFilter(ValueFilter):
     schema = type_schema('used', rinherit=ValueFilter.schema)
     annotation_key = "c7n:usage_stats"
 
-    def match(self, i):
-        return super().match(i[self.annotation_key])
+    @staticmethod
+    def annotate_usage_stats(resource_filter, resources):
+        client = resource_filter.manager.get_client()
 
-    def process(self, resources, event=None):
-        self.augment([r for r in resources if self.annotation_key not in r])
-        return super().process(resources)
-
-    def augment(self, resources):
-        client = self.manager.get_client()
-
-        # DescribeSecurityGroupAssociationStatistics Maximum support 100
-        for batch in chunks(resources, 50):
-            id_resource_map = {r['SecurityGroupId']: r for r in batch}
-            resp = client.execute_query(
-                "DescribeSecurityGroupAssociationStatistics",
-                {"SecurityGroupIds": list(id_resource_map)}
+        id_resource_map = {r['SecurityGroupId']: r for r in resources}
+        resp = client.execute_query(
+            "DescribeSecurityGroupAssociationStatistics",
+            {"SecurityGroupIds": list(id_resource_map)}
+        )
+        statistics = resp["Response"]["SecurityGroupAssociationStatisticsSet"]
+        for stat in statistics:
+            group = id_resource_map[stat['SecurityGroupId']]
+            group[resource_filter.annotation_key] = {
+                istat['InstanceType']: istat['InstanceCount'] for istat
+                in stat['InstanceStatistics']
+            }
+            group[resource_filter.annotation_key].update(
+                {'TotalCount': stat['TotalCount'], 'SG': stat['SG']}
             )
-            statistics = resp["Response"]["SecurityGroupAssociationStatisticsSet"]
-            for stat in statistics:
-                group = id_resource_map[stat['SecurityGroupId']]
-                group[self.annotation_key] = {
-                    istat['InstanceType']: istat['InstanceCount'] for istat
-                    in stat['InstanceStatistics']
-                }
-                group[self.annotation_key].update(
-                    {'TotalCount': stat['TotalCount'], 'SG': stat['SG']}
-                )
-        return resources
+
+    # DescribeSecurityGroupAssociationStatistics supports at most 100 ids.
+    annotation_pipeline = AnnotateBatch(annotate_usage_stats, size=50)

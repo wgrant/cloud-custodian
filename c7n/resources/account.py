@@ -14,6 +14,7 @@ from dateutil.tz import tzutc
 from c7n.actions import ActionRegistry, BaseAction
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import Filter, FilterRegistry, ValueFilter
+from c7n.filters.core import AnnotateBatch, AnnotationPipelineFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.multiattr import MultiAttrFilter
 from c7n.filters.missing import Missing
@@ -1692,33 +1693,28 @@ class SetEbsEncryption(BaseAction):
 
 
 @filters.register('s3-public-block')
-class S3PublicBlock(ValueFilter):
+class S3PublicBlock(AnnotationPipelineFilter):
     """Check for s3 public blocks on an account.
 
     https://docs.aws.amazon.com/AmazonS3/latest/dev/access-control-block-public-access.html
     """
 
     annotation_key = 'c7n:s3-public-block'
-    annotate = False  # no annotation from value filter
     schema = type_schema('s3-public-block', rinherit=ValueFilter.schema)
     schema_alias = False
     permissions = ('s3:GetAccountPublicAccessBlock',)
 
-    def process(self, resources, event=None):
-        self.augment([r for r in resources if self.annotation_key not in r])
-        return super(S3PublicBlock, self).process(resources, event)
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('s3control')
+    @staticmethod
+    def annotate_public_block(resource_filter, resources):
+        client = local_session(resource_filter.manager.session_factory).client('s3control')
         for r in resources:
             try:
-                r[self.annotation_key] = client.get_public_access_block(
+                r[resource_filter.annotation_key] = client.get_public_access_block(
                     AccountId=r['account_id']).get('PublicAccessBlockConfiguration', {})
             except client.exceptions.NoSuchPublicAccessBlockConfiguration:
-                r[self.annotation_key] = {}
+                r[resource_filter.annotation_key] = {}
 
-    def __call__(self, r):
-        return super(S3PublicBlock, self).__call__(r[self.annotation_key])
+    annotation_pipeline = AnnotateBatch(annotate_public_block)
 
 
 @actions.register('set-s3-public-block')
@@ -1928,7 +1924,7 @@ class AccountCatalogEncryptionFilter(GlueCatalogEncryptionEnabled):
 
 
 @filters.register('emr-block-public-access')
-class EMRBlockPublicAccessConfiguration(ValueFilter):
+class EMRBlockPublicAccessConfiguration(AnnotationPipelineFilter):
     """Check for EMR block public access configuration on an account
 
     :example:
@@ -1943,26 +1939,21 @@ class EMRBlockPublicAccessConfiguration(ValueFilter):
     """
 
     annotation_key = 'c7n:emr-block-public-access'
-    annotate = False  # no annotation from value filter
     schema = type_schema('emr-block-public-access', rinherit=ValueFilter.schema)
     schema_alias = False
     permissions = ("elasticmapreduce:GetBlockPublicAccessConfiguration",)
 
-    def process(self, resources, event=None):
-        self.augment([r for r in resources if self.annotation_key not in r])
-        return super().process(resources, event)
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client(
-            'emr', region_name=self.manager.config.region)
+    @staticmethod
+    def annotate_block_public_access(resource_filter, resources):
+        client = local_session(resource_filter.manager.session_factory).client(
+            'emr', region_name=resource_filter.manager.config.region)
 
         for r in resources:
-            r[self.annotation_key] = self.manager.retry(
+            r[resource_filter.annotation_key] = resource_filter.manager.retry(
                 client.get_block_public_access_configuration)
-            r[self.annotation_key].pop('ResponseMetadata')
+            r[resource_filter.annotation_key].pop('ResponseMetadata')
 
-    def __call__(self, r):
-        return super(EMRBlockPublicAccessConfiguration, self).__call__(r[self.annotation_key])
+    annotation_pipeline = AnnotateBatch(annotate_block_public_access)
 
 
 @actions.register('set-emr-block-public-access')
@@ -2543,7 +2534,7 @@ class SetBedrockModelInvocationLogging(BaseAction):
 
 
 @filters.register('ec2-metadata-defaults')
-class EC2MetadataDefaults(ValueFilter):
+class EC2MetadataDefaults(AnnotationPipelineFilter):
     """Filter on the default instance metadata service (IMDS) settings for the specified account and
     region.  NOTE: Any configuration that has never been set (or is set to 'No Preference'), will
     not be returned in the response.
@@ -2566,22 +2557,17 @@ class EC2MetadataDefaults(ValueFilter):
     """
 
     annotation_key = 'c7n:EC2MetadataDefaults'
-    annotate = False  # no annotation from value filter
     schema = type_schema('ec2-metadata-defaults', rinherit=ValueFilter.schema)
     permissions = ('ec2:GetInstanceMetadataDefaults',)
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('ec2')
+    @staticmethod
+    def annotate_metadata_defaults(resource_filter, resources):
+        client = local_session(resource_filter.manager.session_factory).client('ec2')
         for r in resources:
-            r[self.annotation_key] = self.manager.retry(
+            r[resource_filter.annotation_key] = resource_filter.manager.retry(
                 client.get_instance_metadata_defaults)["AccountLevel"]
 
-    def process(self, resources, event=None):
-        self.augment([r for r in resources if self.annotation_key not in r])
-        return super(EC2MetadataDefaults, self).process(resources, event)
-
-    def __call__(self, r):
-        return super(EC2MetadataDefaults, self).__call__(r[self.annotation_key])
+    annotation_pipeline = AnnotateBatch(annotate_metadata_defaults)
 
 
 @actions.register('set-ec2-metadata-defaults')

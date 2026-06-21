@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from c7n.actions import BaseAction
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import Filter, MetricsFilter
-from c7n.filters.core import parse_date, ValueFilter
+from c7n.filters.core import (
+    AnnotateBatch, AnnotationPipelineFilter, parse_date, ValueFilter)
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
@@ -296,7 +297,7 @@ class LogMetric(QueryResourceManager):
 
 
 @LogMetric.filter_registry.register('alarm')
-class LogMetricAlarmFilter(ValueFilter):
+class LogMetricAlarmFilter(AnnotationPipelineFilter):
     """
     Filter log metric filters based on associated alarms.
 
@@ -317,25 +318,26 @@ class LogMetricAlarmFilter(ValueFilter):
     annotation_key = 'c7n:MetricAlarms'
     FetchThreshold = 10  # below this number of resources, fetch alarms individually
 
-    def augment(self, resources):
+    @staticmethod
+    def annotate_alarms(resource_filter, resources):
         """Add alarm details to log metric filter resources
 
         This includes all alarms where the metric name and namespace match
         a log metric filter's metric transformation.
         """
 
-        if len(resources) < self.FetchThreshold:
-            client = local_session(self.manager.session_factory).client('cloudwatch')
+        if len(resources) < resource_filter.FetchThreshold:
+            client = local_session(resource_filter.manager.session_factory).client('cloudwatch')
             for r in resources:
-                r[self.annotation_key] = list(itertools.chain(*(
-                    self.manager.retry(
+                r[resource_filter.annotation_key] = list(itertools.chain(*(
+                    resource_filter.manager.retry(
                         client.describe_alarms_for_metric,
                         Namespace=t['metricNamespace'],
                         MetricName=t['metricName'])['MetricAlarms']
                     for t in r.get('metricTransformations', ())
                 )))
         else:
-            alarms = self.manager.get_resource_manager('aws.alarm').resources()
+            alarms = resource_filter.manager.get_resource_manager('aws.alarm').resources()
 
             # We'll be matching resources to alarms based on namespace and
             # metric name - this lookup table makes that smoother
@@ -344,10 +346,12 @@ class LogMetricAlarmFilter(ValueFilter):
                 alarms_by_metric[(alarm['Namespace'], alarm['MetricName'])].append(alarm)
 
             for r in resources:
-                r[self.annotation_key] = list(itertools.chain(*(
+                r[resource_filter.annotation_key] = list(itertools.chain(*(
                     alarms_by_metric.get((t['metricNamespace'], t['metricName']), [])
                     for t in r.get('metricTransformations', ())
                 )))
+
+    annotation_pipeline = AnnotateBatch(annotate_alarms)
 
     def get_permissions(self):
         return [
@@ -356,7 +360,7 @@ class LogMetricAlarmFilter(ValueFilter):
         ]
 
     def process(self, resources, event=None):
-        self.augment(resources)
+        self.annotate_resources(self.get_annotation_resources(resources))
 
         matched = []
         for r in resources:

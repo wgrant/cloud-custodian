@@ -26,6 +26,7 @@ from c7n.manager import ResourceManager
 from c7n.registry import PluginRegistry
 from c7n.resolver import ValuesFrom
 from c7n.utils import (
+    chunks,
     set_annotation,
     type_schema,
     parse_cidr,
@@ -919,6 +920,69 @@ class ResourceAttributeFilter(ValueFilter):
 
     def __call__(self, resource):
         return super().__call__(resource[self.attribute_key])
+
+
+def _iter_annotation_ops(ops):
+    if ops is None:
+        return ()
+    if isinstance(ops, (list, tuple)):
+        return ops
+    return (ops,)
+
+
+def _apply_annotation_pipeline(resource_filter, resources, ops=None):
+    for op in _iter_annotation_ops(ops):
+        resources = op(resource_filter, resources)
+    return resources
+
+
+class AnnotateResource:
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, resource_filter, resources):
+        for resource in resources:
+            self.func(resource_filter, resource)
+        return resources
+
+
+class AnnotateBatch:
+    def __init__(self, func, size=None, max_workers=None):
+        self.func = func
+        self.size = size
+        self.max_workers = max_workers
+
+    def __call__(self, resource_filter, resources):
+        resource_sets = chunks(resources, self.size) if self.size else (resources,)
+        if self.max_workers:
+            with resource_filter.manager.executor_factory(max_workers=self.max_workers) as w:
+                list(w.map(partial(self.func, resource_filter), resource_sets))
+            return resources
+
+        for resource_set in resource_sets:
+            self.func(resource_filter, resource_set)
+        return resources
+
+
+class AnnotationPipelineFilter(ValueFilter):
+    annotation_key = None
+    annotation_pipeline = None
+    annotate = False
+
+    def get_annotation_resources(self, resources):
+        return [r for r in resources if self.annotation_key not in r]
+
+    def annotate_resources(self, resources):
+        if resources:
+            return _apply_annotation_pipeline(self, resources, self.annotation_pipeline)
+        return resources
+
+    def process(self, resources, event=None):
+        self.annotate_resources(self.get_annotation_resources(resources))
+        return super().process(resources, event)
+
+    def __call__(self, resource):
+        return super().__call__(resource[self.annotation_key])
 
 
 class EventFilter(ValueFilter):

@@ -3,6 +3,7 @@
 
 from c7n.actions import BaseAction
 from c7n.filters import ValueFilter
+from c7n.filters.core import AnnotateResource, AnnotationPipelineFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.manager import resources
@@ -152,7 +153,7 @@ class OpensearchIngestionKmsFilter(KmsRelatedFilter):
 
 
 @OpensearchIngestion.filter_registry.register('pipeline-config')
-class OpensearchIngestionPipelineConfigFilter(ValueFilter):
+class OpensearchIngestionPipelineConfigFilter(AnnotationPipelineFilter):
     """Filter OpenSearch Ingestion Pipelines by their PipelineConfiguration.
     Custodian substitutes the pipeline name key in the PipelineConfigurationBody with
     'pipeline' so that its sub-fields can be referenced in the filter.
@@ -191,18 +192,13 @@ class OpensearchIngestionPipelineConfigFilter(ValueFilter):
                 pipeline_config[self.pipeline_name_key_substitute] = pipeline_config.pop(key)
                 continue
 
-    def augment(self, r):
-        if self.annotation_key not in r:
-            r[self.annotation_key] = yaml_load(r.get('PipelineConfigurationBody', '{}'))
-            self.substitute_pipeline_name_key(r[self.annotation_key])
+    @staticmethod
+    def annotate_pipeline_config(resource_filter, resource):
+        resource[resource_filter.annotation_key] = yaml_load(
+            resource.get('PipelineConfigurationBody', '{}'))
+        resource_filter.substitute_pipeline_name_key(resource[resource_filter.annotation_key])
 
-    def process(self, resources, event=None):
-        matched = []
-        for r in resources:
-            self.augment(r)
-            if self.match(r[self.annotation_key]):
-                matched.append(r)
-        return matched
+    annotation_pipeline = AnnotateResource(annotate_pipeline_config)
 
 
 @OpensearchIngestion.filter_registry.register('cross-account')

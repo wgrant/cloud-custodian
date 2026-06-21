@@ -7,6 +7,7 @@ from c7n.actions import BaseAction, ModifyVpcSecurityGroupsAction
 from c7n.deprecated import DeprecatedField
 from c7n.exceptions import PolicyValidationError, ClientError
 from c7n.filters import Filter, ValueFilter, MetricsFilter, ListItemFilter
+from c7n.filters.core import AnnotateResource, AnnotationPipelineFilter
 import c7n.filters.vpc as net_filters
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.related import RelatedResourceFilter, RelatedResourceByIdFilter
@@ -746,7 +747,7 @@ class SubnetVpcFilter(net_filters.VpcFilter):
 
 
 @Subnet.filter_registry.register('ip-address-usage')
-class SubnetIpAddressUsageFilter(ValueFilter):
+class SubnetIpAddressUsageFilter(AnnotationPipelineFilter):
     """Filter subnets based on available IP addresses.
 
     :example:
@@ -795,10 +796,11 @@ class SubnetIpAddressUsageFilter(ValueFilter):
         rinherit=ValueFilter.schema,
     )
 
-    def augment(self, resource):
+    @staticmethod
+    def annotate_ip_usage(resource_filter, resource):
         cidr_block = parse_cidr(resource['CidrBlock'])
-        max_addresses = cidr_block.num_addresses - self.aws_reserved_addresses
-        resource[self.annotation_key] = dict(
+        max_addresses = cidr_block.num_addresses - resource_filter.aws_reserved_addresses
+        resource[resource_filter.annotation_key] = dict(
             MaxAvailable=max_addresses,
             NumberUsed=max_addresses - resource['AvailableIpAddressCount'],
             PercentUsed=round(
@@ -807,14 +809,7 @@ class SubnetIpAddressUsageFilter(ValueFilter):
             ),
         )
 
-    def process(self, resources, event=None):
-        results = []
-        for r in resources:
-            if self.annotation_key not in r:
-                self.augment(r)
-            if self.match(r[self.annotation_key]):
-                results.append(r)
-        return results
+    annotation_pipeline = AnnotateResource(annotate_ip_usage)
 
 
 @Subnet.action_registry.register('delete')

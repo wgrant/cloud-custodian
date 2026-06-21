@@ -17,6 +17,7 @@ from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 from datetime import datetime, timedelta
 from c7n.filters import Filter
 from c7n.filters import ValueFilter
+from c7n.filters.core import AnnotateBatch, AnnotationPipelineFilter
 from c7n.query import RetryPageIterator
 from c7n.filters.backup import ConsecutiveAwsBackupsFilter
 from c7n.filters.policystatement import HasStatementFilter
@@ -71,7 +72,7 @@ class KmsFilter(KmsRelatedFilter):
 
 
 @Table.filter_registry.register('import-summary')
-class ImportSummaryFilter(ValueFilter):
+class ImportSummaryFilter(AnnotationPipelineFilter):
     """Filter for DynamoDB table imports.
 
     Fetches import summaries for each table and allows filtering
@@ -101,9 +102,7 @@ class ImportSummaryFilter(ValueFilter):
     permissions = ('dynamodb:ListImports',)
 
     def process(self, resources, event=None):
-        unannotated = [r for r in resources if self.annotation_key not in r]
-        if unannotated:
-            self.augment(unannotated)
+        self.annotate_resources(self.get_annotation_resources(resources))
 
         results = []
         for r in resources:
@@ -115,8 +114,9 @@ class ImportSummaryFilter(ValueFilter):
 
         return results
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('dynamodb')
+    @staticmethod
+    def annotate_imports(resource_filter, resources):
+        client = local_session(resource_filter.manager.session_factory).client('dynamodb')
 
         for table in resources:
             summaries = []
@@ -134,11 +134,13 @@ class ImportSummaryFilter(ValueFilter):
                 if not next_token:
                     break
 
-            table[self.annotation_key] = summaries
+            table[resource_filter.annotation_key] = summaries
+
+    annotation_pipeline = AnnotateBatch(annotate_imports)
 
 
 @Table.filter_registry.register('continuous-backup')
-class TableContinuousBackupFilter(ValueFilter):
+class TableContinuousBackupFilter(AnnotationPipelineFilter):
     """Check for continuous backups and point in time recovery (PITR) on a dynamodb table.
 
     :example:
@@ -163,26 +165,24 @@ class TableContinuousBackupFilter(ValueFilter):
     """
 
     annotation_key = 'c7n:continuous-backup'
-    annotate = False
     schema = type_schema('continuous-backup', rinherit=ValueFilter.schema)
     schema_alias = False
     permissions = ('dynamodb:DescribeContinuousBackups',)
 
-    def process(self, resources, event=None):
-        self.augment([r for r in resources if self.annotation_key not in r])
-        return super().process(resources, event)
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('dynamodb')
+    @staticmethod
+    def annotate_continuous_backups(resource_filter, resources):
+        client = local_session(resource_filter.manager.session_factory).client('dynamodb')
         for r in resources:
             try:
-                r[self.annotation_key] = client.describe_continuous_backups(
+                r[resource_filter.annotation_key] = client.describe_continuous_backups(
                     TableName=r['TableName']).get('ContinuousBackupsDescription', {})
             except client.exceptions.TableNotFoundException:
                 continue
 
     def __call__(self, r):
-        return super().__call__(r.get(self.annotation_key, {}))
+        return ValueFilter.__call__(self, r.get(self.annotation_key, {}))
+
+    annotation_pipeline = AnnotateBatch(annotate_continuous_backups)
 
 
 @Table.filter_registry.register('cross-account')
@@ -233,7 +233,7 @@ class HasStatementTable(HasStatementFilter):
 
 
 @Table.filter_registry.register('export-description')
-class ExportDescriptionFilter(ValueFilter):
+class ExportDescriptionFilter(AnnotationPipelineFilter):
     """Filter for DynamoDB table exports.
 
     Fetches export descriptions for each table and allows filtering
@@ -263,9 +263,7 @@ class ExportDescriptionFilter(ValueFilter):
     permissions = ('dynamodb:ListExports', 'dynamodb:DescribeExport',)
 
     def process(self, resources, event=None):
-        unannotated = [r for r in resources if self.annotation_key not in r]
-        if unannotated:
-            self.augment(unannotated)
+        self.annotate_resources(self.get_annotation_resources(resources))
 
         results = []
         for r in resources:
@@ -277,8 +275,9 @@ class ExportDescriptionFilter(ValueFilter):
 
         return results
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('dynamodb')
+    @staticmethod
+    def annotate_exports(resource_filter, resources):
+        client = local_session(resource_filter.manager.session_factory).client('dynamodb')
 
         for table in resources:
             exports = []
@@ -301,7 +300,9 @@ class ExportDescriptionFilter(ValueFilter):
                 if not next_token:
                     break
 
-            table[self.annotation_key] = exports
+            table[resource_filter.annotation_key] = exports
+
+    annotation_pipeline = AnnotateBatch(annotate_exports)
 
 
 @Table.action_registry.register('set-continuous-backup')
