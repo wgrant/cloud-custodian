@@ -4,7 +4,7 @@
 import logging
 
 from c7n.filters import Filter
-from c7n.filters.core import AnnotationFilter
+from c7n.filters.core import AnnotationFilter, annotation_getter
 from c7n.utils import type_schema
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.constants import GRAPH_AUTH_ENDPOINT
@@ -189,7 +189,7 @@ class WhiteListFilter(AnnotationFilter):
         self.users = self.data.get('users', [])
         self.permissions = self.data.get('permissions', {})
 
-    @staticmethod
+    @annotation_getter
     def get_access_policies(resource_filter, resource):
         vault = resource_filter.manager.get_client().vaults.get(
             resource['resourceGroup'], resource['name'])
@@ -209,7 +209,6 @@ class WhiteListFilter(AnnotationFilter):
             return resource_filter._enhance_policies(access_policies)
         return access_policies
 
-    annotation_getter = get_access_policies
 
     def __call__(self, i):
         # Ensure each policy is

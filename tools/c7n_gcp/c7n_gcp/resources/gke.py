@@ -11,7 +11,7 @@ from c7n_gcp.actions import MethodAction
 from c7n_gcp.utils import get_firewall_port_ranges
 
 from c7n.filters import ValueFilter
-from c7n.filters.core import AnyAnnotationFilter, AnnotationPipelineFilter
+from c7n.filters.core import AnyAnnotationFilter, AnnotationPipelineFilter, annotation_batcher
 
 
 @resources.register('gke-cluster')
@@ -117,7 +117,7 @@ class EffectiveFirewall(AnyAnnotationFilter):
     permissions = ('compute.instances.getEffectiveFirewalls',)
     annotation_key = "c7n:firewall"
 
-    @staticmethod
+    @annotation_batcher
     def annotate_firewalls(resource_filter, resources):
         session = local_session(resource_filter.manager.session_factory)
         project = session.get_default_project()
@@ -131,7 +131,6 @@ class EffectiveFirewall(AnyAnnotationFilter):
 
             resource[resource_filter.annotation_key] = get_firewall_port_ranges(firewalls)
 
-    annotation_batcher = annotate_firewalls
 
 
 @resources.register('gke-nodepool')
@@ -238,7 +237,7 @@ class ServerConfig(AnnotationPipelineFilter):
     def _get_location(self, r):
         return r["location"] if "location" in r else r['selfLink'].split('/')[-5]
 
-    @staticmethod
+    @annotation_batcher
     def annotate_config(resource_filter, resources):
         session = local_session(resource_filter.manager.session_factory)
         project = session.get_default_project()
@@ -253,7 +252,6 @@ class ServerConfig(AnnotationPipelineFilter):
     def get_filter_resource(self, resource):
         return {"serverConfig": resource[self.annotation_key], "resource": resource}
 
-    annotation_batcher = annotate_config
 
 
 @KubernetesCluster.action_registry.register('delete')

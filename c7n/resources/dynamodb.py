@@ -17,7 +17,7 @@ from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 from datetime import datetime, timedelta
 from c7n.filters import Filter
 from c7n.filters import ValueFilter
-from c7n.filters.core import AnnotationPipelineFilter
+from c7n.filters.core import AnnotationPipelineFilter, annotation_batcher
 from c7n.query import RetryPageIterator
 from c7n.filters.backup import ConsecutiveAwsBackupsFilter
 from c7n.filters.policystatement import HasStatementFilter
@@ -114,7 +114,7 @@ class ImportSummaryFilter(AnnotationPipelineFilter):
 
         return results
 
-    @staticmethod
+    @annotation_batcher
     def annotate_imports(resource_filter, resources):
         client = local_session(resource_filter.manager.session_factory).client('dynamodb')
 
@@ -136,7 +136,6 @@ class ImportSummaryFilter(AnnotationPipelineFilter):
 
             table[resource_filter.annotation_key] = summaries
 
-    annotation_batcher = annotate_imports
 
 
 @Table.filter_registry.register('continuous-backup')
@@ -169,7 +168,7 @@ class TableContinuousBackupFilter(AnnotationPipelineFilter):
     schema_alias = False
     permissions = ('dynamodb:DescribeContinuousBackups',)
 
-    @staticmethod
+    @annotation_batcher
     def annotate_continuous_backups(resource_filter, resources):
         client = local_session(resource_filter.manager.session_factory).client('dynamodb')
         for r in resources:
@@ -182,7 +181,6 @@ class TableContinuousBackupFilter(AnnotationPipelineFilter):
     def __call__(self, r):
         return ValueFilter.__call__(self, r.get(self.annotation_key, {}))
 
-    annotation_batcher = annotate_continuous_backups
 
 
 @Table.filter_registry.register('cross-account')
@@ -275,7 +273,7 @@ class ExportDescriptionFilter(AnnotationPipelineFilter):
 
         return results
 
-    @staticmethod
+    @annotation_batcher
     def annotate_exports(resource_filter, resources):
         client = local_session(resource_filter.manager.session_factory).client('dynamodb')
 
@@ -302,7 +300,6 @@ class ExportDescriptionFilter(AnnotationPipelineFilter):
 
             table[resource_filter.annotation_key] = exports
 
-    annotation_batcher = annotate_exports
 
 
 @Table.action_registry.register('set-continuous-backup')

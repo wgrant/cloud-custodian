@@ -4,7 +4,7 @@
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 
-from c7n.filters.core import AnnotationPipelineFilter, ValueFilter, type_schema
+from c7n.filters.core import AnnotationPipelineFilter, ValueFilter, type_schema, annotation_getter
 
 
 @resources.register('webapp')
@@ -86,13 +86,12 @@ class ConfigurationFilter(AnnotationPipelineFilter):
     schema = type_schema('configuration', rinherit=ValueFilter.schema)
     annotation_key = 'c7n:configuration'
 
-    @staticmethod
+    @annotation_getter
     def get_configuration(resource_filter, resource):
         client = resource_filter.manager.get_client().web_apps
         instance = client.get_configuration(resource['resourceGroup'], resource['name'])
         return instance.serialize(keep_readonly=True)['properties']
 
-    annotation_getter = get_configuration
 
 
 @WebApp.filter_registry.register('authentication')
@@ -118,10 +117,8 @@ class AuthenticationFilter(AnnotationPipelineFilter):
     schema = type_schema('authentication', rinherit=ValueFilter.schema)
     annotation_key = 'c7n:authentication'
 
-    @staticmethod
+    @annotation_getter
     def get_authentication(resource_filter, resource):
         client = resource_filter.manager.get_client().web_apps
         instance = client.get_auth_settings(resource['resourceGroup'], resource['name'])
         return instance.serialize(keep_readonly=True)['properties']
-
-    annotation_getter = get_authentication

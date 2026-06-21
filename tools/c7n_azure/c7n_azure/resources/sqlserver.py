@@ -12,7 +12,8 @@ from netaddr import IPRange, IPSet, IPNetwork, IPAddress
 
 from c7n.utils import type_schema
 from c7n.filters.core import (
-    BatchedFilter, EnabledAnnotationFilter, ListItemAnnotationFilter, ValueFilter)
+    BatchedFilter, EnabledAnnotationFilter, ListItemAnnotationFilter, ValueFilter,
+    annotation_getter)
 
 AZURE_SERVICES = IPRange('0.0.0.0', '0.0.0.0')  # nosec
 log = logging.getLogger('custodian.azure.sql-server')
@@ -160,7 +161,7 @@ class FailoverGroupFilter(ListItemAnnotationFilter):
     annotate_items = True
     item_annotation_key = "c7n:FailoverGroups"
 
-    @staticmethod
+    @annotation_getter
     def get_failover_groups(resource_filter, resource):
         groups = resource_filter.manager.get_client().failover_groups.list_by_server(
             resource_group_name=resource['resourceGroup'],
@@ -168,7 +169,6 @@ class FailoverGroupFilter(ListItemAnnotationFilter):
         )
         return [g.serialize(True) for g in groups]
 
-    annotation_getter = get_failover_groups
 
 
 @SqlServer.filter_registry.register('azure-ad-administrators')
@@ -284,7 +284,9 @@ class VulnerabilityAssessmentFilter(EnabledAnnotationFilter):
     annotation_key = 'c7n:vulnerability_assessment'
     legacy_enabled_path = ('recurringScans', 'isEnabled')
 
-    @staticmethod
+    @annotation_getter(
+        size=constants.DEFAULT_CHUNK_SIZE,
+        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
     def get_vulnerability_assessment(resource_filter, resource):
         client = resource_filter.manager.get_client()
         va = list(client.server_vulnerability_assessments.list_by_server(
@@ -296,9 +298,6 @@ class VulnerabilityAssessmentFilter(EnabledAnnotationFilter):
             return va[0].serialize(True).get('properties', {})
         return {}
 
-    annotation_getter = get_vulnerability_assessment
-    annotation_batch_size = constants.DEFAULT_CHUNK_SIZE
-    annotation_max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
 
 @SqlServer.filter_registry.register('firewall-rules')
@@ -390,16 +389,15 @@ class AuditingFilter(EnabledAnnotationFilter):
     legacy_enabled_path = ('state',)
     legacy_enabled_value = 'Enabled'
 
-    @staticmethod
+    @annotation_getter(
+        size=constants.DEFAULT_CHUNK_SIZE,
+        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
     def get_auditing_settings(resource_filter, resource):
         auditing_settings = resource_filter.manager.get_client().server_blob_auditing_policies.get(
             resource['resourceGroup'],
             resource['name'])
         return auditing_settings.serialize(True).get('properties', {})
 
-    annotation_getter = get_auditing_settings
-    annotation_batch_size = constants.DEFAULT_CHUNK_SIZE
-    annotation_max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
 
 @SqlServer.filter_registry.register('security-alert-policies')
@@ -426,7 +424,7 @@ class SecurityAlertPoliciesFilter(ListItemAnnotationFilter):
     annotate_items = True
     item_annotation_key = "c7n:SecurityAlertPolicies"
 
-    @staticmethod
+    @annotation_getter
     def get_security_alert_policies(resource_filter, resource):
         client = resource_filter.manager.get_client()
         policies = client.server_security_alert_policies.list_by_server(
@@ -435,7 +433,6 @@ class SecurityAlertPoliciesFilter(ListItemAnnotationFilter):
         )  # always only one item
         return [p.serialize(True) for p in policies]
 
-    annotation_getter = get_security_alert_policies
 
 
 @SqlServer.action_registry.register('set-firewall-rules')
@@ -599,14 +596,12 @@ class SqlServerAuditingSettingsFilter(ListItemAnnotationFilter):
     annotation_path = ('properties', annotation_key)
     annotate_items = True
 
-    @staticmethod
+    @annotation_getter(
+        size=constants.DEFAULT_CHUNK_SIZE,
+        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
     def get_auditing_settings(resource_filter, resource):
         settings = resource_filter.manager.get_client().server_blob_auditing_policies.list_by_server(
             resource_group_name=resource['resourceGroup'],
             server_name=resource['name']
         )
         return [s.serialize(True).get('properties', {}) for s in settings]
-
-    annotation_getter = get_auditing_settings
-    annotation_batch_size = constants.DEFAULT_CHUNK_SIZE
-    annotation_max_workers = constants.DEFAULT_MAX_THREAD_WORKERS

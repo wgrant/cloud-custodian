@@ -4,7 +4,7 @@
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 from c7n.utils import type_schema
-from c7n.filters.core import AnnotationPipelineFilter, ValueFilter
+from c7n.filters.core import AnnotationPipelineFilter, ValueFilter, annotation_getter
 
 
 @resources.register('mysql-flexibleserver')
@@ -81,7 +81,7 @@ class ServerParametersFilter(AnnotationPipelineFilter):
     def get_annotation_path(self):
         return ('properties', self.get_annotation_key())
 
-    @staticmethod
+    @annotation_getter
     def get_parameter(resource_filter, resource):
         query = resource_filter.manager.get_client().configurations.get(
             resource['resourceGroup'],
@@ -89,5 +89,3 @@ class ServerParametersFilter(AnnotationPipelineFilter):
             resource_filter.data["name"]
         )
         return query.serialize(True).get('properties')
-
-    annotation_getter = get_parameter

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from c7n.filters.core import (
-    AnnotationPipelineFilter, ListItemAnnotationFilter, ValueFilter)
+    AnnotationPipelineFilter, ListItemAnnotationFilter, ValueFilter, annotation_getter)
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -69,7 +69,7 @@ class PostgresqlServerConfigurationFilter(ListItemAnnotationFilter):
     item_annotation_key = "c7n:ServerConfigurations"
     annotate_items = True
 
-    @staticmethod
+    @annotation_getter
     def get_configurations(resource_filter, resource):
         it = resource_filter.manager.get_client().configurations.list_by_server(
             resource_group_name=resource["resourceGroup"],
@@ -77,7 +77,6 @@ class PostgresqlServerConfigurationFilter(ListItemAnnotationFilter):
         )
         return [item.serialize(True) for item in it]
 
-    annotation_getter = get_configurations
 
 
 @PostgresqlServer.filter_registry.register('security-alert-policies')
@@ -92,7 +91,7 @@ class PostgresqlServerSecurityAlertPoliciesFilter(ListItemAnnotationFilter):
     annotate_items = True
     item_annotation_key = "c7n:SecurityAlertPolicies"
 
-    @staticmethod
+    @annotation_getter
     def get_security_alert_policies(resource_filter, resource):
         it = resource_filter.manager.get_client().server_security_alert_policies.list_by_server(
             resource_group_name=resource["resourceGroup"],
@@ -100,7 +99,6 @@ class PostgresqlServerSecurityAlertPoliciesFilter(ListItemAnnotationFilter):
         )
         return [item.serialize(True) for item in it]
 
-    annotation_getter = get_security_alert_policies
 
 
 @PostgresqlServer.filter_registry.register("firewall-bypass")
@@ -212,7 +210,7 @@ class ConfigurationParametersFilter(AnnotationPipelineFilter):
     def get_annotation_path(self):
         return ('properties', self.get_annotation_key())
 
-    @staticmethod
+    @annotation_getter
     def get_configuration(resource_filter, resource):
         query = resource_filter.manager.get_client().configurations.get(
             resource['resourceGroup'],
@@ -220,5 +218,3 @@ class ConfigurationParametersFilter(AnnotationPipelineFilter):
             resource_filter.data["name"]
         )
         return query.serialize(True).get('properties')
-
-    annotation_getter = get_configuration

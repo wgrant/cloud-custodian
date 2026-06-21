@@ -3,7 +3,7 @@
 
 from azure.mgmt.web import models
 from c7n.lookup import Lookup
-from c7n.filters.core import ListItemAnnotationFilter
+from c7n.filters.core import ListItemAnnotationFilter, annotation_batcher
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -96,7 +96,7 @@ class AppServicePlanWebAppsFilter(ListItemAnnotationFilter):
             serialized.setdefault("location", resource["location"])
             yield serialized
 
-    @staticmethod
+    @annotation_batcher
     def annotate_webapps(resource_filter, resources):
         webapp = resource_filter.manager.get_resource_manager("azure.webapp")
 
@@ -112,7 +112,6 @@ class AppServicePlanWebAppsFilter(ListItemAnnotationFilter):
             for r in resources:
                 r[resource_filter.annotation_key] = web_apps_by_asp.get(r["id"], [])
 
-    annotation_batcher = annotate_webapps
 
 
 @AppServicePlan.action_registry.register('resize-plan')

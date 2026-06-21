@@ -14,7 +14,7 @@ from dateutil.tz import tzutc
 from c7n.actions import ActionRegistry, BaseAction
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import Filter, FilterRegistry, ValueFilter
-from c7n.filters.core import AnnotationPipelineFilter
+from c7n.filters.core import AnnotationPipelineFilter, annotation_batcher
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.multiattr import MultiAttrFilter
 from c7n.filters.missing import Missing
@@ -1704,7 +1704,7 @@ class S3PublicBlock(AnnotationPipelineFilter):
     schema_alias = False
     permissions = ('s3:GetAccountPublicAccessBlock',)
 
-    @staticmethod
+    @annotation_batcher
     def annotate_public_block(resource_filter, resources):
         client = local_session(resource_filter.manager.session_factory).client('s3control')
         for r in resources:
@@ -1714,7 +1714,6 @@ class S3PublicBlock(AnnotationPipelineFilter):
             except client.exceptions.NoSuchPublicAccessBlockConfiguration:
                 r[resource_filter.annotation_key] = {}
 
-    annotation_batcher = annotate_public_block
 
 
 @actions.register('set-s3-public-block')
@@ -1943,7 +1942,7 @@ class EMRBlockPublicAccessConfiguration(AnnotationPipelineFilter):
     schema_alias = False
     permissions = ("elasticmapreduce:GetBlockPublicAccessConfiguration",)
 
-    @staticmethod
+    @annotation_batcher
     def annotate_block_public_access(resource_filter, resources):
         client = local_session(resource_filter.manager.session_factory).client(
             'emr', region_name=resource_filter.manager.config.region)
@@ -1953,7 +1952,6 @@ class EMRBlockPublicAccessConfiguration(AnnotationPipelineFilter):
                 client.get_block_public_access_configuration)
             r[resource_filter.annotation_key].pop('ResponseMetadata')
 
-    annotation_batcher = annotate_block_public_access
 
 
 @actions.register('set-emr-block-public-access')
@@ -2560,14 +2558,13 @@ class EC2MetadataDefaults(AnnotationPipelineFilter):
     schema = type_schema('ec2-metadata-defaults', rinherit=ValueFilter.schema)
     permissions = ('ec2:GetInstanceMetadataDefaults',)
 
-    @staticmethod
+    @annotation_batcher
     def annotate_metadata_defaults(resource_filter, resources):
         client = local_session(resource_filter.manager.session_factory).client('ec2')
         for r in resources:
             r[resource_filter.annotation_key] = resource_filter.manager.retry(
                 client.get_instance_metadata_defaults)["AccountLevel"]
 
-    annotation_batcher = annotate_metadata_defaults
 
 
 @actions.register('set-ec2-metadata-defaults')

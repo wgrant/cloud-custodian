@@ -5,7 +5,7 @@ from c7n.query import MutateResource
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod
-from c7n.filters.core import AnnotationPipelineFilter, Filter, ValueFilter
+from c7n.filters.core import AnnotationPipelineFilter, Filter, ValueFilter, annotation_batcher
 
 
 @resources.register('security-group')
@@ -230,7 +230,7 @@ class StatisticsFilter(AnnotationPipelineFilter):
     schema = type_schema('used', rinherit=ValueFilter.schema)
     annotation_key = "c7n:usage_stats"
 
-    @staticmethod
+    @annotation_batcher(size=50)
     def annotate_usage_stats(resource_filter, resources):
         client = resource_filter.manager.get_client()
 
@@ -251,5 +251,3 @@ class StatisticsFilter(AnnotationPipelineFilter):
             )
 
     # DescribeSecurityGroupAssociationStatistics supports at most 100 ids.
-    annotation_batcher = annotate_usage_stats
-    annotation_batch_size = 50

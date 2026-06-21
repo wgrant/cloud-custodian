@@ -5,7 +5,7 @@ from c7n_azure.resources.arm import ArmResourceManager
 from c7n_azure.provider import resources
 from c7n_azure.utils import ResourceIdParser
 from c7n.filters import Filter
-from c7n.filters.core import ListItemAnnotationFilter
+from c7n.filters.core import ListItemAnnotationFilter, annotation_getter
 from c7n.utils import type_schema
 
 
@@ -107,7 +107,7 @@ class WAFPolicies(ListItemAnnotationFilter):
         super().__init__(*args, **kwargs)
         self._cache = {}  # policy id to policy item
 
-    @staticmethod
+    @annotation_getter
     def get_waf_policies(resource_filter, resource):
         ids = set()
         for fe in resource['properties'].get('frontendEndpoints') or []:
@@ -130,5 +130,3 @@ class WAFPolicies(ListItemAnnotationFilter):
             item = resource_filter._cache[i]
             items.append(item.serialize(True))
         return items
-
-    annotation_getter = get_waf_policies

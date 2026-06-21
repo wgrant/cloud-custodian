@@ -11,7 +11,7 @@ from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n.resolver import ValuesFrom
 from c7n.utils import type_schema, local_session
 from c7n.filters.core import (
-    AnnotationPipelineFilter, ListItemAnnotationFilter, ValueFilter)
+    AnnotationPipelineFilter, ListItemAnnotationFilter, ValueFilter, annotation_getter)
 from c7n.filters.missing import Missing
 
 from googleapiclient.errors import HttpError
@@ -169,13 +169,12 @@ class ProjectComputeMetaFilter(AnnotationPipelineFilter):
     permissions = ('compute.projects.get',)
     schema = type_schema('compute-meta', rinherit=ValueFilter.schema)
 
-    @staticmethod
+    @annotation_getter
     def get_compute_meta(resource_filter, resource):
         session = local_session(resource_filter.manager.session_factory)
         client = session.client('compute', 'v1', 'projects')
         return client.execute_command('get', {"project": resource['projectId']})
 
-    annotation_getter = get_compute_meta
 
 
 @Project.action_registry.register('delete')
@@ -391,7 +390,7 @@ class OrgContactsFilter(ListItemAnnotationFilter):
     annotate_items = True
     permissions = ("essentialcontacts.contacts.list",)
 
-    @staticmethod
+    @annotation_getter
     def get_contacts(resource_filter, resource):
         session = local_session(resource_filter.manager.session_factory)
         client = session.client("essentialcontacts", "v1", "organizations.contacts")
@@ -401,7 +400,6 @@ class OrgContactsFilter(ListItemAnnotationFilter):
             contacts.extend(page.get('contacts', []))
         return contacts
 
-    annotation_getter = get_contacts
 
 
 @Organization.filter_registry.register('org-policy')
@@ -428,7 +426,7 @@ class OrgPoliciesFilter(ListItemAnnotationFilter):
     annotate_items = True
     permissions = ("orgpolicy.policy.get",)
 
-    @staticmethod
+    @annotation_getter
     def get_policies(resource_filter, resource):
         session = local_session(resource_filter.manager.session_factory)
         client = session.client("cloudresourcemanager", "v1", "organizations")
@@ -438,7 +436,6 @@ class OrgPoliciesFilter(ListItemAnnotationFilter):
             policies.extend(page.get('policies', []))
         return policies
 
-    annotation_getter = get_policies
 
 
 @Project.filter_registry.register('access-approval')

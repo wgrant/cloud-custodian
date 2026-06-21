@@ -7,7 +7,7 @@ from c7n.actions import BaseAction, ModifyVpcSecurityGroupsAction
 from c7n.deprecated import DeprecatedField
 from c7n.exceptions import PolicyValidationError, ClientError
 from c7n.filters import Filter, ValueFilter, MetricsFilter, ListItemFilter
-from c7n.filters.core import AnnotationPipelineFilter
+from c7n.filters.core import AnnotationPipelineFilter, annotation_mutator
 import c7n.filters.vpc as net_filters
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.related import RelatedResourceFilter, RelatedResourceByIdFilter
@@ -796,7 +796,7 @@ class SubnetIpAddressUsageFilter(AnnotationPipelineFilter):
         rinherit=ValueFilter.schema,
     )
 
-    @staticmethod
+    @annotation_mutator
     def annotate_ip_usage(resource_filter, resource):
         cidr_block = parse_cidr(resource['CidrBlock'])
         max_addresses = cidr_block.num_addresses - resource_filter.aws_reserved_addresses
@@ -809,7 +809,6 @@ class SubnetIpAddressUsageFilter(AnnotationPipelineFilter):
             ),
         )
 
-    annotation_mutator = annotate_ip_usage
 
 
 @Subnet.action_registry.register('delete')

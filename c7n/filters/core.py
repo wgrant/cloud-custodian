@@ -1040,6 +1040,32 @@ class AnnotateBatch:
         return resources
 
 
+def _annotation_decorator(role, func=None, size=None, max_workers=None):
+    def decorate(f):
+        if isinstance(f, staticmethod):
+            f = f.__func__
+        f.annotation_pipeline_role = role
+        f.annotation_batch_size = size
+        f.annotation_max_workers = max_workers
+        return staticmethod(f)
+
+    if func is None:
+        return decorate
+    return decorate(func)
+
+
+def annotation_getter(func=None, *, size=None, max_workers=None):
+    return _annotation_decorator('getter', func, size, max_workers)
+
+
+def annotation_mutator(func=None):
+    return _annotation_decorator('mutator', func)
+
+
+def annotation_batcher(func=None, *, size=None, max_workers=None):
+    return _annotation_decorator('batcher', func, size, max_workers)
+
+
 class _FilterBatchOp:
     def __init__(self, func, size=None, max_workers=None):
         self.func = func
@@ -1111,6 +1137,24 @@ class AnnotationPipelineMixin:
         annotation_path = self.get_annotation_path()
         return [r for r in resources if not _has_path(r, annotation_path)]
 
+    def get_decorated_annotation_pipeline(self):
+        for cls in type(self).__mro__:
+            for name, value in cls.__dict__.items():
+                func = value.__func__ if isinstance(value, staticmethod) else value
+                role = getattr(func, 'annotation_pipeline_role', None)
+                if not role:
+                    continue
+                handler = getattr(self, name)
+                size = getattr(func, 'annotation_batch_size', None)
+                max_workers = getattr(func, 'annotation_max_workers', None)
+                if role == 'getter':
+                    return SetAnnotation(handler, size=size, max_workers=max_workers)
+                if role == 'mutator':
+                    return AnnotateResource(handler)
+                if role == 'batcher':
+                    return AnnotateBatch(handler, size=size, max_workers=max_workers)
+        return None
+
     def get_annotation_pipeline(self):
         if self.annotation_pipeline:
             return self.annotation_pipeline
@@ -1126,7 +1170,7 @@ class AnnotationPipelineMixin:
                 self.annotation_batcher,
                 size=self.annotation_batch_size,
                 max_workers=self.annotation_max_workers)
-        return None
+        return self.get_decorated_annotation_pipeline()
 
     def annotate_resources(self, resources):
         if resources:
