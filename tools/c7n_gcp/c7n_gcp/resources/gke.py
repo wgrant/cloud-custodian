@@ -11,7 +11,7 @@ from c7n_gcp.actions import MethodAction
 from c7n_gcp.utils import get_firewall_port_ranges
 
 from c7n.filters import ValueFilter
-from c7n.filters.core import AnnotateBatch, AnnotationPipelineFilter
+from c7n.filters.core import AnnotateBatch, AnyAnnotationFilter, AnnotationPipelineFilter
 
 
 @resources.register('gke-cluster')
@@ -90,7 +90,7 @@ class KubernetesCluster(QueryResourceManager):
 
 
 @KubernetesCluster.filter_registry.register('effective-firewall')
-class EffectiveFirewall(AnnotationPipelineFilter):
+class EffectiveFirewall(AnyAnnotationFilter):
     """Filters gke clusters  by their effective firewall rules.
     See `getEffectiveFirewalls
     https://cloud.google.com/workflows/docs/reference/googleapis/compute/v1/networks/getEffectiveFirewalls`_
@@ -130,11 +130,6 @@ class EffectiveFirewall(AnnotationPipelineFilter):
             ).get('firewalls', [])
 
             resource[resource_filter.annotation_key] = get_firewall_port_ranges(firewalls)
-
-    def __call__(self, resource):
-        return any(
-            ValueFilter.__call__(self, firewall)
-            for firewall in resource[self.annotation_key])
 
     annotation_pipeline = AnnotateBatch(annotate_firewalls)
 

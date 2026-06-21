@@ -14,7 +14,7 @@ from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo, ChildResourceManager, ChildTypeInfo
 
 from c7n.filters.core import (
-    AnnotateBatch, AnnotationPipelineFilter, ListItemAnnotationFilter,
+    AnnotateBatch, AnyAnnotationFilter, AnnotationPipelineFilter, ListItemAnnotationFilter,
     ListItemFilter, ValueFilter)
 from c7n.filters.offhours import OffHour, OnHour
 
@@ -87,7 +87,7 @@ Instance.filter_registry.register('onhour', OnHour)
 
 
 @Instance.filter_registry.register('effective-firewall')
-class EffectiveFirewall(AnnotationPipelineFilter):
+class EffectiveFirewall(AnyAnnotationFilter):
     """Filters instances by their effective firewall rules.
     See `getEffectiveFirewalls
     <https://cloud.google.com/compute/docs/reference/rest/v1/instances/getEffectiveFirewalls>`_
@@ -135,11 +135,6 @@ class EffectiveFirewall(AnnotationPipelineFilter):
     def get_client(self, session, model):
         return session.client(
             model.service, model.version, model.component)
-
-    def __call__(self, resource):
-        return any(
-            ValueFilter.__call__(self, firewall)
-            for firewall in resource[self.annotation_key])
 
     annotation_pipeline = AnnotateBatch(annotate_effective_firewalls)
 

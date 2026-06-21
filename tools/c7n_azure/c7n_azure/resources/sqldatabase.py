@@ -24,8 +24,7 @@ from azure.mgmt.sql.models import (
     DatabaseUpdate,
     Sku,
 )
-from c7n.filters import Filter
-from c7n.filters.core import FilterBatch, PolicyValidationError
+from c7n.filters.core import BatchFilter, PolicyValidationError
 from c7n.utils import get_annotation_prefix, type_schema
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.filters import scalar_ops
@@ -79,7 +78,7 @@ class SqlDatabase(ChildArmResourceManager):
 
 
 @SqlDatabase.filter_registry.register('transparent-data-encryption')
-class TransparentDataEncryptionFilter(Filter):
+class TransparentDataEncryptionFilter(BatchFilter):
     """
     Filter by the current Transparent Data Encryption
     configuration for this database.
@@ -108,16 +107,12 @@ class TransparentDataEncryptionFilter(Filter):
     )
 
     log = logging.getLogger('custodian.azure.sqldatabase.transparent-data-encryption-filter')
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(TransparentDataEncryptionFilter, self).__init__(data, manager)
         self.enabled = self.data['enabled']
-
-    def process(self, resources, event=None):
-        return FilterBatch(
-            self.filter_resource_set,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def filter_resource_set(resource_filter, resources, event=None):
@@ -148,7 +143,7 @@ class TransparentDataEncryptionFilter(Filter):
 
 
 @SqlDatabase.filter_registry.register('data-masking-policy')
-class DataMaskingPolicyFilter(Filter):
+class DataMaskingPolicyFilter(BatchFilter):
     """
     Filter by the current data masking policy
     configuration for this database.
@@ -180,16 +175,12 @@ class DataMaskingPolicyFilter(Filter):
     )
 
     log = logging.getLogger('custodian.azure.sqldatabase.data-masking-policy-filter')
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(DataMaskingPolicyFilter, self).__init__(data, manager)
         self.enabled = self.data['enabled']
-
-    def process(self, resources, event=None):
-        return FilterBatch(
-            self.filter_resource_set,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def filter_resource_set(resource_filter, resources, event=None):
@@ -285,7 +276,7 @@ class BackupRetentionPolicyHelper:
         return retention_policy
 
 
-class BackupRetentionPolicyBaseFilter(Filter, metaclass=abc.ABCMeta):
+class BackupRetentionPolicyBaseFilter(BatchFilter, metaclass=abc.ABCMeta):
 
     schema = type_schema(
         'backup-retention-policy',
@@ -293,6 +284,8 @@ class BackupRetentionPolicyBaseFilter(Filter, metaclass=abc.ABCMeta):
             'op': {'enum': list(scalar_ops.keys())}
         }
     )
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, operations_property, retention_limit, data, manager=None):
         super(BackupRetentionPolicyBaseFilter, self).__init__(data, manager)
@@ -302,12 +295,6 @@ class BackupRetentionPolicyBaseFilter(Filter, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def get_retention_from_backup_policy(self, retention_policy):
         raise NotImplementedError()
-
-    def process(self, resources, event=None):
-        return FilterBatch(
-            self.filter_resource_set,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def filter_resource_set(resource_filter, resources, event=None):

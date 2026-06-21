@@ -7,7 +7,7 @@ import logging
 from azure.keyvault.keys import KeyProperties
 
 from c7n.filters import Filter
-from c7n.filters.core import FilterBatch
+from c7n.filters.core import BatchFilter
 from c7n.query import FilterResources
 from c7n.utils import type_schema
 
@@ -127,19 +127,15 @@ class KeyVaultFilter(Filter):
 
 
 @KeyVaultKeys.filter_registry.register('key-type')
-class KeyTypeFilter(Filter):
+class KeyTypeFilter(BatchFilter):
     schema = type_schema(
         'key-type',
         **{
             'key-types': {'type': 'array', 'items': {'enum': ['EC', 'EC-HSM', 'RSA', 'RSA-HSM']}}
         }
     )
-
-    def process(self, resources, event=None):
-        return FilterBatch(
-            self.filter_resource_set,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     @staticmethod
     def filter_resource_set(resource_filter, resources, event=None):

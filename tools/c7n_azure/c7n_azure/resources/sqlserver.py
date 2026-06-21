@@ -12,8 +12,7 @@ from netaddr import IPRange, IPSet, IPNetwork, IPAddress
 
 from c7n.exceptions import PolicyValidationError
 from c7n.utils import type_schema
-from c7n.filters import Filter
-from c7n.filters.core import FilterBatch, ListItemAnnotationFilter, SetAnnotation, ValueFilter
+from c7n.filters.core import BatchFilter, ListItemAnnotationFilter, SetAnnotation, ValueFilter
 
 AZURE_SERVICES = IPRange('0.0.0.0', '0.0.0.0')  # nosec
 log = logging.getLogger('custodian.azure.sql-server')
@@ -87,7 +86,7 @@ class SqlServer(ArmResourceManager):
 
 
 @SqlServer.filter_registry.register('transparent-data-encryption')
-class TransparentDataEncryptionFilter(Filter):
+class TransparentDataEncryptionFilter(BatchFilter):
     """
     Filter by the current Transparent Data Encryption
     configuration for this server.
@@ -116,16 +115,12 @@ class TransparentDataEncryptionFilter(Filter):
     )
 
     log = logging.getLogger('custodian.azure.sqlserver.transparent-data-encryption-filter')
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(TransparentDataEncryptionFilter, self).__init__(data, manager)
         self.key_type = self.data['key_type']
-
-    def process(self, resources, event=None):
-        return FilterBatch(
-            self.filter_resource_set,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def filter_resource_set(resource_filter, resources, event=None):

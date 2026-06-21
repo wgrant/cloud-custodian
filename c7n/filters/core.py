@@ -1061,6 +1061,27 @@ class FilterBatch:
         return results
 
 
+class BatchFilter(Filter):
+    batch_filter = 'filter_resource_set'
+    batch_size = None
+    max_workers = None
+
+    def prepare_batch_filter(self):
+        pass
+
+    def get_batch_filter(self):
+        if isinstance(self.batch_filter, str):
+            return getattr(self, self.batch_filter)
+        return self.batch_filter
+
+    def process(self, resources, event=None):
+        self.prepare_batch_filter()
+        return FilterBatch(
+            self.get_batch_filter(),
+            size=self.batch_size,
+            max_workers=self.max_workers)(self, resources, event=event)
+
+
 class AnnotationPipelineMixin:
     annotation_key = None
     annotation_pipeline = None
@@ -1096,6 +1117,16 @@ class AnnotationPipelineFilter(AnnotationPipelineMixin, ValueFilter):
 
     def __call__(self, resource):
         return super().__call__(self.get_filter_resource(resource))
+
+
+class AnyAnnotationFilter(AnnotationPipelineFilter):
+    def get_filter_resources(self, resource):
+        return self.get_filter_resource(resource) or ()
+
+    def __call__(self, resource):
+        return any(
+            ValueFilter.__call__(self, filter_resource)
+            for filter_resource in self.get_filter_resources(resource))
 
 
 class EventFilter(ValueFilter):

@@ -13,7 +13,7 @@ from azure.storage.file import FileService
 from azure.storage.queue import QueueServiceClient
 from c7n.exceptions import PolicyValidationError
 from c7n.filters.core import (
-    FilterBatch, ListItemAnnotationFilter, SetAnnotation, type_schema)
+    BatchFilter, ListItemAnnotationFilter, SetAnnotation, type_schema)
 from c7n.utils import get_annotation_prefix, local_session
 from c7n_azure import constants
 from c7n_azure.actions.base import AzureBaseAction
@@ -332,7 +332,7 @@ class StorageFirewallBypassFilter(FirewallBypassFilter):
 
 
 @Storage.filter_registry.register('storage-diagnostic-settings')
-class StorageDiagnosticSettingsFilter(ValueFilter):
+class StorageDiagnosticSettingsFilter(BatchFilter, ValueFilter):
     """Filters storage accounts based on its diagnostic settings. The filter requires
     specifying the storage type (blob, queue, table, file) and will filter based on
     the settings for that specific type.
@@ -415,16 +415,13 @@ class StorageDiagnosticSettingsFilter(ValueFilter):
                          )
 
     log = logging.getLogger('custodian.azure.storage.StorageDiagnosticSettingsFilter')
+    batch_filter = 'process_resource_set'
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(StorageDiagnosticSettingsFilter, self).__init__(data, manager)
         self.storage_type = data.get('storage-type')
-
-    def process(self, resources, event=None):
-        return FilterBatch(
-            self.process_resource_set,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def process_resource_set(resource_filter, resources, event=None):
@@ -750,7 +747,7 @@ class RequireSecureTransferAction(AzureBaseAction):
 
 
 @Storage.filter_registry.register('blob-services')
-class BlobServicesFilter(ValueFilter):
+class BlobServicesFilter(BatchFilter, ValueFilter):
     """
     Filter by the current blob services
     configuration for this storage account.
@@ -779,15 +776,12 @@ class BlobServicesFilter(ValueFilter):
     schema = type_schema('blob-services', rinherit=ValueFilter.schema)
 
     log = logging.getLogger('custodian.azure.storage.blob-services-filter')
+    batch_filter = 'process_resource_set'
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(BlobServicesFilter, self).__init__(data, manager)
-
-    def process(self, resources, event=None):
-        return FilterBatch(
-            self.process_resource_set,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def process_resource_set(resource_filter, resources, event=None):

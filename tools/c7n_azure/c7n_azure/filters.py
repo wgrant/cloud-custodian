@@ -21,7 +21,7 @@ from azure.core.exceptions import HttpResponseError
 
 from c7n_azure.provider import resources
 from c7n.filters import Filter, FilterValidationError, ValueFilter
-from c7n.filters.core import FilterBatch, PolicyValidationError
+from c7n.filters.core import BatchFilter, PolicyValidationError
 from c7n.filters.metrics import METRIC_WINDOW_ALIGNMENT
 from c7n.filters.related import RelatedResourceFilter
 from c7n.filters.offhours import OffHour, OnHour, Time
@@ -578,7 +578,7 @@ class AzureOnHour(OnHour):
         return tag_value
 
 
-class FirewallRulesFilter(Filter, metaclass=ABCMeta):
+class FirewallRulesFilter(BatchFilter, metaclass=ABCMeta):
     """Filters resources by the firewall rules
 
     Rules can be specified as x.x.x.x-y.y.y.y or x.x.x.x or x.x.x.x/y.
@@ -654,6 +654,9 @@ class FirewallRulesFilter(Filter, metaclass=ABCMeta):
 
     schema_alias = True
     log = logging.getLogger('custodian.azure.filters.FirewallRulesFilter')
+    batch_filter = 'check_resources'
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(FirewallRulesFilter, self).__init__(data, manager)
@@ -663,18 +666,13 @@ class FirewallRulesFilter(Filter, metaclass=ABCMeta):
         self.policy_only = None
         self.client = None
 
-    def process(self, resources, event=None):
+    def prepare_batch_filter(self):
         self.policy_include = IpRangeHelper.parse_ip_ranges(self.data, 'include')
         self.policy_equal = IpRangeHelper.parse_ip_ranges(self.data, 'equal')
         self.policy_any = IpRangeHelper.parse_ip_ranges(self.data, 'any')
         self.policy_only = IpRangeHelper.parse_ip_ranges(self.data, 'only')
 
         self.client = self.manager.get_client()
-
-        return FilterBatch(
-            self.check_resources,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def check_resources(resource_filter, resources, event=None):
@@ -710,7 +708,7 @@ class FirewallRulesFilter(Filter, metaclass=ABCMeta):
             raise FilterValidationError("Internal error.")
 
 
-class FirewallBypassFilter(Filter, metaclass=ABCMeta):
+class FirewallBypassFilter(BatchFilter, metaclass=ABCMeta):
     """Filters resources by the firewall bypass rules
     """
 
@@ -725,6 +723,9 @@ class FirewallBypassFilter(Filter, metaclass=ABCMeta):
             })
 
     log = logging.getLogger('custodian.azure.filters.FirewallRulesFilter')
+    batch_filter = 'check_resources'
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(FirewallBypassFilter, self).__init__(data, manager)
@@ -732,13 +733,8 @@ class FirewallBypassFilter(Filter, metaclass=ABCMeta):
         self.list = set(self.data['list'])
         self.client = None
 
-    def process(self, resources, event=None):
+    def prepare_batch_filter(self):
         self.client = self.manager.get_client()
-
-        return FilterBatch(
-            self.check_resources,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def check_resources(resource_filter, resources, event=None):
@@ -774,7 +770,7 @@ class FirewallBypassFilter(Filter, metaclass=ABCMeta):
             raise FilterValidationError("Internal error.")
 
 
-class ResourceLockFilter(Filter):
+class ResourceLockFilter(BatchFilter):
     """
     Filter locked resources.
     Lock can be of 2 types: ReadOnly and CanNotDelete. To filter any lock, use "Any" type.
@@ -829,16 +825,12 @@ class ResourceLockFilter(Filter):
 
     schema_alias = True
     log = logging.getLogger('custodian.azure.filters.ResourceLockFilter')
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(ResourceLockFilter, self).__init__(data, manager)
         self.lock_type = self.data.get('lock-type', 'Any')
-
-    def process(self, resources, event=None):
-        return FilterBatch(
-            self.filter_resource_set,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def filter_resource_set(resource_filter, resources, event=None):

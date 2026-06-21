@@ -9,8 +9,7 @@ from c7n_azure import constants
 from c7n_azure.provider import resources
 from c7n_azure.query import QueryResourceManager
 
-from c7n.filters import Filter
-from c7n.filters.core import FilterBatch
+from c7n.filters.core import BatchFilter
 from c7n.utils import get_annotation_prefix
 from c7n.utils import type_schema
 
@@ -53,7 +52,7 @@ class CostManagementExport(QueryResourceManager):
 
 
 @CostManagementExport.filter_registry.register('last-execution')
-class CostManagementExportFilterLastExecution(Filter):
+class CostManagementExportFilterLastExecution(BatchFilter):
     """ Find Cost Management Exports with last execution more than X days ago.
 
     :example:
@@ -77,16 +76,14 @@ class CostManagementExportFilterLastExecution(Filter):
             'age': {'type': 'integer', 'minimum': 0}
         }
     )
+    batch_filter = 'check_resources'
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
-    def process(self, resources, event=None):
+    def prepare_batch_filter(self):
         self.client = self.manager.get_client()
         self.scope = 'subscriptions/{0}'.format(self.manager.get_session().get_subscription_id())
         self.min_date = datetime.datetime.now() - datetime.timedelta(days=self.data['age'])
-
-        return FilterBatch(
-            self.check_resources,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
     @staticmethod
     def check_resources(resource_filter, resources, event=None):
