@@ -439,6 +439,32 @@ class MapBatch:
         return results
 
 
+class SourceMapBatch:
+    def __init__(self, func, size=None, max_workers=None):
+        self.func = func
+        self.size = size
+        self.max_workers = max_workers
+
+    def process_source(self, source, resources):
+        results = []
+        resource_sets = chunks(resources, self.size) if self.size else (resources,)
+        if self.max_workers:
+            with source.manager.executor_factory(max_workers=self.max_workers) as w:
+                mapped_sets = w.map(
+                    functools.partial(self.func, source),
+                    resource_sets)
+                for mapped in mapped_sets:
+                    if mapped:
+                        results.extend(mapped)
+            return results
+
+        for resource_set in resource_sets:
+            mapped = self.func(source, resource_set)
+            if mapped:
+                results.extend(mapped)
+        return results
+
+
 class AnnotateParent:
     def __init__(self, field):
         self.field = field
@@ -462,6 +488,15 @@ def _iter_augments(augments):
 def _apply_augment_pipeline(manager, resources, augments=None):
     for augment in _iter_augments(augments):
         resources = augment(manager, resources)
+    return resources
+
+
+def _apply_source_augment_pipeline(source, resources, augments=None):
+    for augment in _iter_augments(augments):
+        if hasattr(augment, 'process_source'):
+            resources = augment.process_source(source, resources)
+        else:
+            resources = augment(source.manager, resources)
     return resources
 
 
@@ -544,8 +579,8 @@ class DescribeSource:
 
     def augment(self, resources):
         model = self.manager.get_model()
-        resources = _apply_augment_pipeline(
-            self.manager, resources, self.pre_augment_pipeline)
+        resources = _apply_source_augment_pipeline(
+            self, resources, self.pre_augment_pipeline)
         if not self.detail_augment:
             detail_spec = None
         elif getattr(model, 'detail_spec', None):
@@ -569,8 +604,8 @@ class DescribeSource:
                 results = list(w.map(
                     _augment, chunks(resources, self.manager.chunk_size)))
                 resources = list(itertools.chain(*results))
-        resources = _apply_augment_pipeline(
-            self.manager, resources, self.augment_pipeline)
+        resources = _apply_source_augment_pipeline(
+            self, resources, self.augment_pipeline)
         return _apply_tag_augment(self.manager, resources, self.tag_augment)
 
 

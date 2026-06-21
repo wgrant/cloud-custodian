@@ -153,29 +153,32 @@ class ECSClusterResourceDescribeSource(query.ChildDescribeSource):
                 self.process_cluster_resources(client, cid, resource_ids))
         return results
 
-    def augment(self, resources):
+    @staticmethod
+    def describe_cluster_resources(source, resources):
         parent_child_map = {}
         for pid, r in resources:
             parent_child_map.setdefault(pid, []).append(r)
         results = []
-        with self.manager.executor_factory(
-                max_workers=self.manager.max_workers) as w:
-            client = local_session(self.manager.session_factory).client('ecs')
+        with source.manager.executor_factory(
+                max_workers=source.manager.max_workers) as w:
+            client = local_session(source.manager.session_factory).client('ecs')
             futures = {}
             for pid, services in parent_child_map.items():
                 futures[
                     w.submit(
-                        self.process_cluster_resources, client, pid, services)
+                        source.process_cluster_resources, client, pid, services)
                 ] = (pid, services)
             for f in futures:
                 pid, services = futures[f]
                 if f.exception():
-                    self.manager.log.warning(
+                    source.manager.log.warning(
                         'error fetching ecs resources for cluster %s: %s',
                         pid, f.exception())
                     continue
                 results.extend(f.result())
         return results
+
+    augment_pipeline = query.SourceMapBatch(describe_cluster_resources)
 
 
 @query.sources.register('describe-ecs-service')

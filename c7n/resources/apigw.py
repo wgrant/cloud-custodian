@@ -510,22 +510,11 @@ class StageClientCertificateFilter(RelatedResourceFilter):
     RelatedIdsExpression = 'clientCertificateId'
     annotation_key = "c7n:matched-client-certificate"
 
-    def process(self, resources, event=None):
-        related = self.get_related(resources)
-        matched = []
-        for r in resources:
-            if self.process_resource(r, related):
-                # Add the full certificate details rather than just the ID
-                self.augment(related, r)
-                matched.append(r)
-        return matched
-
-    def augment(self, related, resource):
-        rid = resource[self.RelatedIdsExpression]
+    def annotate_related(self, related_ids, resource, related):
         with suppress(KeyError):
+            rid = resource[self.RelatedIdsExpression]
             resource[self.annotation_key] = {
-                self.data['key']: jmespath_search(self.data['key'], related[rid])
-            }
+                self.data['key']: jmespath_search(self.data['key'], related[rid])}
 
 
 @RestStage.filter_registry.register('waf-enabled')
