@@ -7,7 +7,6 @@ import copy
 import datetime
 from datetime import timedelta
 import enum
-import itertools
 from functools import partial, reduce
 import fnmatch
 import ipaddress
@@ -26,8 +25,11 @@ from c7n.exceptions import PolicyValidationError, PolicyExecutionError
 from c7n.manager import ResourceManager
 from c7n.registry import PluginRegistry
 from c7n.resolver import ValuesFrom
+from c7n.pipeline import (
+    MapBatches, MutateBatches, MutateItems, decorate_pipeline_func,
+    iter_decorated_pipeline, iter_pipeline_ops,
+)
 from c7n.utils import (
-    chunks,
     set_annotation,
     type_schema,
     parse_cidr,
@@ -923,16 +925,8 @@ class ResourceAttributeFilter(ValueFilter):
         return super().__call__(resource[self.attribute_key])
 
 
-def _iter_annotation_ops(ops):
-    if ops is None:
-        return ()
-    if isinstance(ops, (list, tuple)):
-        return ops
-    return (ops,)
-
-
 def _apply_annotation_pipeline(resource_filter, resources, ops=None):
-    for op in _iter_annotation_ops(ops):
+    for op in iter_pipeline_ops(ops):
         resources = op(resource_filter, resources)
     return resources
 
@@ -973,23 +967,15 @@ def _pop_path(resource, path):
     return current.pop(path[-1], None)
 
 
-class AnnotateResource:
-    def __init__(self, func):
-        self.func = func
-
-    def __call__(self, resource_filter, resources):
-        for resource in resources:
-            self.func(resource_filter, resource)
-        return resources
+AnnotateResource = MutateItems
 
 
-class SetAnnotation:
+class SetAnnotation(MutateBatches):
     def __init__(self, func, key=None, path=None, size=None, max_workers=None):
-        self.func = func
+        super().__init__(self.process_resource_set, size=size, max_workers=max_workers)
+        self.getter = func
         self.key = key
         self.path = path
-        self.size = size
-        self.max_workers = max_workers
 
     def get_annotation_key(self, resource_filter):
         if self.key:
@@ -1008,50 +994,16 @@ class SetAnnotation:
     def process_resource_set(self, resource_filter, resources):
         annotation_path = self.get_annotation_path(resource_filter)
         for resource in resources:
-            _set_path(resource, annotation_path, self.func(resource_filter, resource))
-
-    def __call__(self, resource_filter, resources):
-        resource_sets = chunks(resources, self.size) if self.size else (resources,)
-        if self.max_workers:
-            with resource_filter.manager.executor_factory(max_workers=self.max_workers) as w:
-                list(w.map(partial(self.process_resource_set, resource_filter), resource_sets))
-            return resources
-
-        for resource_set in resource_sets:
-            self.process_resource_set(resource_filter, resource_set)
-        return resources
+            _set_path(resource, annotation_path, self.getter(resource_filter, resource))
 
 
-class AnnotateBatch:
-    def __init__(self, func, size=None, max_workers=None):
-        self.func = func
-        self.size = size
-        self.max_workers = max_workers
-
-    def __call__(self, resource_filter, resources):
-        resource_sets = chunks(resources, self.size) if self.size else (resources,)
-        if self.max_workers:
-            with resource_filter.manager.executor_factory(max_workers=self.max_workers) as w:
-                list(w.map(partial(self.func, resource_filter), resource_sets))
-            return resources
-
-        for resource_set in resource_sets:
-            self.func(resource_filter, resource_set)
-        return resources
+AnnotateBatch = MutateBatches
 
 
 def _annotation_decorator(role, func=None, size=None, max_workers=None):
-    def decorate(f):
-        if isinstance(f, staticmethod):
-            f = f.__func__
-        f.annotation_pipeline_role = role
-        f.annotation_batch_size = size
-        f.annotation_max_workers = max_workers
-        return staticmethod(f)
-
-    if func is None:
-        return decorate
-    return decorate(func)
+    return decorate_pipeline_func(
+        'annotation_pipeline_role', 'annotation_pipeline_options',
+        role, func, size=size, max_workers=max_workers)
 
 
 def annotation_getter(func=None, *, size=None, max_workers=None):
@@ -1073,18 +1025,13 @@ class _FilterBatchOp:
         self.max_workers = max_workers
 
     def __call__(self, resource_filter, resources, event=None):
-        resource_sets = chunks(resources, self.size) if self.size else (resources,)
-        if self.max_workers:
-            with resource_filter.manager.executor_factory(max_workers=self.max_workers) as w:
-                results = w.map(partial(self.func, resource_filter, event=event), resource_sets)
-                return list(itertools.chain.from_iterable(r for r in results if r))
+        def process_batch(resource_filter, resource_set):
+            return self.func(resource_filter, resource_set, event=event)
 
-        results = []
-        for resource_set in resource_sets:
-            result = self.func(resource_filter, resource_set, event=event)
-            if result:
-                results.extend(result)
-        return results
+        return MapBatches(
+            process_batch,
+            size=self.size,
+            max_workers=self.max_workers)(resource_filter, resources)
 
 
 class BatchedFilter(Filter):
@@ -1138,21 +1085,20 @@ class AnnotationPipelineMixin:
         return [r for r in resources if not _has_path(r, annotation_path)]
 
     def get_decorated_annotation_pipeline(self):
-        for cls in type(self).__mro__:
-            for name, value in cls.__dict__.items():
-                func = value.__func__ if isinstance(value, staticmethod) else value
-                role = getattr(func, 'annotation_pipeline_role', None)
-                if not role:
-                    continue
-                handler = getattr(self, name)
-                size = getattr(func, 'annotation_batch_size', None)
-                max_workers = getattr(func, 'annotation_max_workers', None)
-                if role == 'getter':
-                    return SetAnnotation(handler, size=size, max_workers=max_workers)
-                if role == 'mutator':
-                    return AnnotateResource(handler)
-                if role == 'batcher':
-                    return AnnotateBatch(handler, size=size, max_workers=max_workers)
+        for name, role, options, handler in iter_decorated_pipeline(
+                self, 'annotation_pipeline_role', 'annotation_pipeline_options'):
+            if role == 'getter':
+                return SetAnnotation(
+                    handler,
+                    size=options.get('size'),
+                    max_workers=options.get('max_workers'))
+            if role == 'mutator':
+                return AnnotateResource(handler)
+            if role == 'batcher':
+                return AnnotateBatch(
+                    handler,
+                    size=options.get('size'),
+                    max_workers=options.get('max_workers'))
         return None
 
     def get_annotation_pipeline(self):

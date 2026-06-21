@@ -15,6 +15,11 @@ from c7n.actions import ActionRegistry
 from c7n.exceptions import ClientError, ResourceLimitExceeded, PolicyExecutionError
 from c7n.filters import FilterRegistry, MetricsFilter
 from c7n.manager import ResourceManager, ResourceQueryLifecycle
+from c7n.pipeline import (
+    FilterItems, MapBatches, MapItems, MutateItems,
+    decorate_pipeline_func, get_raw_class_attr, iter_decorated_pipeline,
+    iter_pipeline_ops,
+)
 from c7n.registry import PluginRegistry
 from c7n.tags import register_ec2_tags, register_universal_tags, universal_augment
 from c7n.utils import (
@@ -358,79 +363,10 @@ class MergeField:
         return resources
 
 
-class FilterResources:
-    """Filter resources with a ``(manager, resource)`` predicate."""
-
-    def __init__(self, predicate):
-        self.predicate = predicate
-
-    def __call__(self, manager, resources):
-        return [r for r in resources if self.predicate(manager, r)]
-
-
-class MutateResource:
-    """Run a per-resource mutator that changes resources in place."""
-
-    def __init__(self, func):
-        self.func = func
-
-    def __call__(self, manager, resources):
-        for resource in resources:
-            self.func(manager, resource)
-        return resources
-
-
-class MapResource:
-    """Map one input resource to zero or one output resources."""
-
-    def __init__(self, func, max_workers=None):
-        self.func = func
-        self.max_workers = max_workers
-
-    def __call__(self, manager, resources):
-        results = []
-        if self.max_workers:
-            with manager.executor_factory(max_workers=self.max_workers) as w:
-                mapped_resources = w.map(
-                    functools.partial(self.func, manager), resources)
-                for mapped in mapped_resources:
-                    if mapped is not None:
-                        results.append(mapped)
-            return results
-
-        for resource in resources:
-            mapped = self.func(manager, resource)
-            if mapped is not None:
-                results.append(mapped)
-        return results
-
-
-class MapBatch:
-    """Map a batch of resources to zero or more output resources."""
-
-    def __init__(self, func, size=None, max_workers=None):
-        self.func = func
-        self.size = size
-        self.max_workers = max_workers
-
-    def __call__(self, manager, resources):
-        results = []
-        resource_sets = chunks(resources, self.size) if self.size else (resources,)
-        if self.max_workers:
-            with manager.executor_factory(max_workers=self.max_workers) as w:
-                mapped_sets = w.map(
-                    functools.partial(self.func, manager),
-                    resource_sets)
-                for mapped in mapped_sets:
-                    if mapped:
-                        results.extend(mapped)
-            return results
-
-        for resource_set in resource_sets:
-            mapped = self.func(manager, resource_set)
-            if mapped:
-                results.extend(mapped)
-        return results
+FilterResources = FilterItems
+MutateResource = MutateItems
+MapResource = MapItems
+MapBatch = MapBatches
 
 
 class SourceMapBatch:
@@ -479,16 +415,9 @@ class Augment:
     """Decorators for declaring resource augmentation functions."""
 
     def _decorator(self, role, func=None, **options):
-        def decorate(f):
-            if isinstance(f, staticmethod):
-                f = f.__func__
-            f.augment_pipeline_role = role
-            f.augment_pipeline_options = options
-            return staticmethod(f)
-
-        if func is None:
-            return decorate
-        return decorate(func)
+        return decorate_pipeline_func(
+            'augment_pipeline_role', 'augment_pipeline_options',
+            role, func, **options)
 
     def pre_filter(self, func=None):
         return self._decorator('pre-filter', func)
@@ -513,61 +442,37 @@ class Augment:
 augment = Augment()
 
 
-def iter_augments(augments):
-    if augments is None:
-        return ()
-    if isinstance(augments, (list, tuple)):
-        return augments
-    return (augments,)
-
-
-def _get_raw_class_attr(owner, name):
-    for cls in type(owner).__mro__:
-        if name not in cls.__dict__:
-            continue
-        value = cls.__dict__[name]
-        if isinstance(value, staticmethod):
-            return value.__func__
-        return value
-    return None
+iter_augments = iter_pipeline_ops
+_get_raw_class_attr = get_raw_class_attr
 
 
 def _get_decorated_augments(owner, phase):
     augments = []
-    mro = list(type(owner).__mro__)
-    for cls in reversed(mro):
-        for name, value in cls.__dict__.items():
-            if any(name in sub_cls.__dict__ for sub_cls in mro[:mro.index(cls)]):
-                continue
-            func = value.__func__ if isinstance(value, staticmethod) else value
-            role = getattr(func, 'augment_pipeline_role', None)
-            if role is None:
-                continue
-            if phase == 'pre' and role != 'pre-filter':
-                continue
-            if phase != 'pre' and role == 'pre-filter':
-                continue
-            options = getattr(func, 'augment_pipeline_options', {})
-            handler = getattr(owner, name)
-            if role == 'pre-filter':
-                augments.append(FilterResources(handler))
-            elif role == 'filter':
-                augments.append(FilterResources(handler))
-            elif role == 'map':
-                augments.append(MapResource(
-                    handler, max_workers=options.get('max_workers')))
-            elif role == 'mutate':
-                augments.append(MutateResource(handler))
-            elif role == 'batch':
-                augments.append(MapBatch(
-                    handler,
-                    size=options.get('size'),
-                    max_workers=options.get('max_workers')))
-            elif role == 'source-batch':
-                augments.append(SourceMapBatch(
-                    handler,
-                    size=options.get('size'),
-                    max_workers=options.get('max_workers')))
+    for name, role, options, handler in iter_decorated_pipeline(
+            owner, 'augment_pipeline_role', 'augment_pipeline_options'):
+        if phase == 'pre' and role != 'pre-filter':
+            continue
+        if phase != 'pre' and role == 'pre-filter':
+            continue
+        if role == 'pre-filter':
+            augments.append(FilterResources(handler))
+        elif role == 'filter':
+            augments.append(FilterResources(handler))
+        elif role == 'map':
+            augments.append(MapResource(
+                handler, max_workers=options.get('max_workers')))
+        elif role == 'mutate':
+            augments.append(MutateResource(handler))
+        elif role == 'batch':
+            augments.append(MapBatch(
+                handler,
+                size=options.get('size'),
+                max_workers=options.get('max_workers')))
+        elif role == 'source-batch':
+            augments.append(SourceMapBatch(
+                handler,
+                size=options.get('size'),
+                max_workers=options.get('max_workers')))
     return augments
 
 
