@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.utils import type_schema, jmespath_search
 from c7n_gcp.query import QueryResourceManager, TypeInfo, ChildTypeInfo, ChildResourceManager
 from c7n_gcp.provider import resources
@@ -54,12 +55,11 @@ class DataSet(QueryResourceManager):
         def get_label_params(resource, all_labels):
             return {**resource['datasetReference'], 'body': {'labels': all_labels}}
 
-    @staticmethod
+    @augment.map
     def describe_dataset(manager, resource):
         return manager.get_client().execute_query(
             'get', verb_arguments=resource['datasetReference'])
 
-    augment_mapper = describe_dataset
 
 
 @resources.register('bq-job')
@@ -147,12 +147,11 @@ class BigQueryTable(ChildResourceManager):
         def get_label_params(resource, all_labels):
             return {**resource['tableReference'], 'body': {'labels': all_labels}}
 
-    @staticmethod
+    @augment.map
     def describe_table(manager, resource):
         return manager.get_client().execute_query(
             'get', verb_arguments=resource['tableReference'])
 
-    augment_mapper = describe_table
 
 
 @BigQueryTable.action_registry.register('delete')

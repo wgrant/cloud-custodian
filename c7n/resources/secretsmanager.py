@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import json
 from botocore.exceptions import ClientError
 from c7n.manager import resources
@@ -17,7 +18,7 @@ from c7n.filters.core import ValueFilter
 class DescribeSecret(DescribeSource):
     detail_augment = False
 
-    @staticmethod
+    @augment.map(max_workers=QueryResourceManager.max_workers)
     def augment_secret(manager, secret):
         client = local_session(manager.session_factory).client(
             manager.resource_type.service)
@@ -42,9 +43,7 @@ class DescribeSecret(DescribeSource):
             secret.setdefault('c7n:DeniedMethods', []).append(detail_op)
         return secret
 
-    augment_mapper = augment_secret
 
-    augment_map_workers = QueryResourceManager.max_workers
 
 
 @resources.register('secrets-manager')

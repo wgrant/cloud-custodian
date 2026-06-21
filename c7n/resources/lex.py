@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.manager import resources
 from c7n import query
 from c7n.query import QueryResourceManager
@@ -42,7 +43,7 @@ class LexV2Bot(QueryResourceManager):
 
 
 class LexV2BotAliasDescribe(query.ChildDescribeSource):
-    @staticmethod
+    @augment.mutate
     def augment_bot_alias(manager, resource):
         client = local_session(manager.session_factory).client('lexv2-models')
         botalias = manager.retry(
@@ -52,7 +53,6 @@ class LexV2BotAliasDescribe(query.ChildDescribeSource):
         botalias.pop('ResponseMetadata', None)
         resource.update(botalias)
 
-    augment_mutator = augment_bot_alias
     universal_tags = True
 
     def normalize_resources(self, resources, query):

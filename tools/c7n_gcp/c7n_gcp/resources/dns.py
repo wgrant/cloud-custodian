@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n_gcp.actions import MethodAction
@@ -42,13 +43,12 @@ class DnsManagedZone(QueryResourceManager):
                 'body': {'labels': all_labels}
             }
 
-    @staticmethod
+    @augment.mutate
     def set_project_id(manager, resource):
         project = local_session(manager.session_factory).get_default_project()
         # Make the project id accessible for `get_label_params`
         resource.setdefault('project_id', project)
 
-    augment_mutator = set_project_id
 
 
 @resources.register('dns-policy')

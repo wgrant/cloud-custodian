@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import re
 
 from c7n_gcp.provider import resources
@@ -80,12 +81,11 @@ class KubernetesCluster(QueryResourceManager):
                 }
             )
 
-    @staticmethod
+    @augment.mutate
     def set_labels(manager, resource):
         if resource.get('resourceLabels'):
             resource['labels'] = resource['resourceLabels']
 
-    augment_mutator = set_labels
 
 
 @KubernetesCluster.filter_registry.register('effective-firewall')

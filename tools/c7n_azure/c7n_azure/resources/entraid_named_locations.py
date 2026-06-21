@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 import logging
 
 from c7n.filters import Filter, ValueFilter
@@ -91,7 +92,7 @@ class EntraIDNamedLocation(GraphResourceManager):
                 )
             return []
 
-    @staticmethod
+    @augment.mutate
     def augment_location(manager, resource):
         try:
             # Add computed fields based on location type
@@ -115,7 +116,6 @@ class EntraIDNamedLocation(GraphResourceManager):
         except Exception as e:
             log.warning(f"Failed to augment EntraID named locations: {e}")
 
-    augment_mutator = augment_location
 
 
 @EntraIDNamedLocation.filter_registry.register('location-type')

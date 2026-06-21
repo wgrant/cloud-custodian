@@ -1,9 +1,16 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.manager import resources
 from c7n.query import (
-    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
-    MutateResource, ResourceQuery, TypeInfo, UniversalTags)
+    ConfigSource,
+    DescribeSource,
+    DescribeWithResourceTags,
+    QueryResourceManager,
+    ResourceQuery,
+    TypeInfo,
+    UniversalTags,
+)
 from c7n.filters import ValueFilter, ListItemFilter
 from c7n.utils import type_schema, local_session
 from c7n.actions import BaseAction
@@ -47,7 +54,7 @@ class WafV2ResourceQuery(ResourceQuery):
 
 
 class DescribeWafV2(DescribeSource):
-    @staticmethod
+    @augment.mutate
     def augment_web_acl(manager, resource):
         # CloudFront WebACLs are always detailed from us-east-1.
         region = 'us-east-1' if resource.get('Scope') == 'CLOUDFRONT' else manager.region
@@ -59,7 +66,6 @@ class DescribeWafV2(DescribeSource):
             Scope=resource['Scope']).get('WebACL', {}))
 
     resource_query_factory = WafV2ResourceQuery
-    augment_mutator = augment_web_acl
     universal_tags = True
 
     def get_permissions(self):

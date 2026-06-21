@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 from c7n.actions.core import BaseAction
 from c7n.manager import resources as c7n_resources
 from c7n.query import (
@@ -10,11 +11,10 @@ from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 
 
 class DescribeNetwork(DescribeSource):
-    @staticmethod
+    @augment.pre_filter
     def is_account_owned(manager, resource):
         return resource['OwnerAccountId'] == manager.config.account_id
 
-    pre_augment_filter = is_account_owned
 
 
 @c7n_resources.register('networkmanager-core')

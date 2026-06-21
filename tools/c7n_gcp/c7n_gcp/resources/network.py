@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import re
 
 from c7n_gcp.actions import MethodAction
@@ -173,11 +174,10 @@ class Firewall(QueryResourceManager):
                 'get', {'project': resource_info['project_id'],
                         'firewall': resource_info['resourceName'].rsplit('/', 1)[-1]})
 
-    @staticmethod
+    @augment.batch
     def set_port_ranges(manager, resources):
         return get_firewall_port_ranges(resources)
 
-    augment_batcher = set_port_ranges
 
 
 @Firewall.action_registry.register('delete')

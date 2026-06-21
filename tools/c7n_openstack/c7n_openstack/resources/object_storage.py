@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 #
+from c7n.query import augment
 from c7n_openstack.query import QueryResourceManager, TypeInfo, DescribeSource
 from c7n_openstack.provider import resources
 from c7n.utils import local_session
@@ -8,14 +9,13 @@ from c7n.utils import local_session
 
 class StorageContainerMeta(DescribeSource):
 
-    @staticmethod
+    @augment.map
     def get_container_metadata(manager, resource):
         client = local_session(manager.session_factory).client()
         container_metadata = client.object_store.get_container_metadata(
             resource['name']).toDict()
         return container_metadata or None
 
-    augment_mapper = get_container_metadata
 
 
 @resources.register('storage-container')

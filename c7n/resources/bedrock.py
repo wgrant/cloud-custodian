@@ -1,10 +1,15 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 from c7n.manager import resources
 from c7n.query import (
-    QueryResourceManager, TypeInfo, DescribeSource, DescribeWithResourceTags,
-    MutateResource, TagsFromApi)
+    QueryResourceManager,
+    TypeInfo,
+    DescribeSource,
+    DescribeWithResourceTags,
+    TagsFromApi,
+)
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universal_augment
 from c7n.utils import local_session, type_schema, QueryParser
 from c7n.actions import BaseAction
@@ -403,11 +408,10 @@ class StopModelInvocationJob(BaseAction):
 
 @resources.register('bedrock-agent')
 class BedrockAgent(QueryResourceManager):
-    @staticmethod
+    @augment.mutate
     def remove_prompt_override(manager, resource):
         resource.pop('promptOverrideConfiguration', None)
 
-    augment_mutator = remove_prompt_override
     tag_api = dict(resource_path='agentArn', request_arg='resourceArn', result_path='tags', tag_format='dict')
 
     class resource_type(TypeInfo):

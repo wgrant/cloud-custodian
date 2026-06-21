@@ -1,17 +1,17 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.actions import Action
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.manager import resources
 from c7n.resources.aws import Arn
-from c7n.query import (
-    MutateResource, QueryResourceManager, TypeInfo, DescribeSource, UniversalTags)
+from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, UniversalTags
 from c7n.utils import local_session, type_schema
 from c7n.actions import BaseAction
 
 
 class AccessPointDescribe(DescribeSource):
-    @staticmethod
+    @augment.mutate
     def augment_access_point(manager, resource):
         client = local_session(manager.session_factory).client('s3control')
         arn = Arn.parse(resource['AccessPointArn'])
@@ -23,7 +23,6 @@ class AccessPointDescribe(DescribeSource):
         details['AccessPointArn'] = arn.arn
         resource.update(details)
 
-    augment_mutator = augment_access_point
 
     def get_query_params(self, query_params):
         query_params = query_params or {}
@@ -127,7 +126,7 @@ class MultiRegionAccessPointCrossAccount(CrossAccountAccessFilter):
 
 
 class StorageLensDescribe(DescribeSource):
-    @staticmethod
+    @augment.mutate
     def augment_storage_lens(manager, resource):
         client = local_session(manager.session_factory).client('s3control')
         resource.update(manager.retry(
@@ -135,7 +134,6 @@ class StorageLensDescribe(DescribeSource):
             AccountId=manager.config.account_id,
             ConfigId=resource['Id']).get('StorageLensConfiguration'))
 
-    augment_mutator = augment_storage_lens
     universal_tags = True
 
     def get_query_params(self, query_params):

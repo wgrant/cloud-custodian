@@ -475,6 +475,44 @@ class AnnotateParent:
         return results
 
 
+class Augment:
+    """Decorators for declaring resource augmentation functions."""
+
+    def _decorator(self, role, func=None, **options):
+        def decorate(f):
+            if isinstance(f, staticmethod):
+                f = f.__func__
+            f.augment_pipeline_role = role
+            f.augment_pipeline_options = options
+            return staticmethod(f)
+
+        if func is None:
+            return decorate
+        return decorate(func)
+
+    def pre_filter(self, func=None):
+        return self._decorator('pre-filter', func)
+
+    def filter(self, func=None):
+        return self._decorator('filter', func)
+
+    def map(self, func=None, *, max_workers=None):
+        return self._decorator('map', func, max_workers=max_workers)
+
+    def mutate(self, func=None):
+        return self._decorator('mutate', func)
+
+    def batch(self, func=None, *, size=None, max_workers=None):
+        return self._decorator('batch', func, size=size, max_workers=max_workers)
+
+    def source_batch(self, func=None, *, size=None, max_workers=None):
+        return self._decorator(
+            'source-batch', func, size=size, max_workers=max_workers)
+
+
+augment = Augment()
+
+
 def iter_augments(augments):
     if augments is None:
         return ()
@@ -492,6 +530,45 @@ def _get_raw_class_attr(owner, name):
             return value.__func__
         return value
     return None
+
+
+def _get_decorated_augments(owner, phase):
+    augments = []
+    mro = list(type(owner).__mro__)
+    for cls in reversed(mro):
+        for name, value in cls.__dict__.items():
+            if any(name in sub_cls.__dict__ for sub_cls in mro[:mro.index(cls)]):
+                continue
+            func = value.__func__ if isinstance(value, staticmethod) else value
+            role = getattr(func, 'augment_pipeline_role', None)
+            if role is None:
+                continue
+            if phase == 'pre' and role != 'pre-filter':
+                continue
+            if phase != 'pre' and role == 'pre-filter':
+                continue
+            options = getattr(func, 'augment_pipeline_options', {})
+            handler = getattr(owner, name)
+            if role == 'pre-filter':
+                augments.append(FilterResources(handler))
+            elif role == 'filter':
+                augments.append(FilterResources(handler))
+            elif role == 'map':
+                augments.append(MapResource(
+                    handler, max_workers=options.get('max_workers')))
+            elif role == 'mutate':
+                augments.append(MutateResource(handler))
+            elif role == 'batch':
+                augments.append(MapBatch(
+                    handler,
+                    size=options.get('size'),
+                    max_workers=options.get('max_workers')))
+            elif role == 'source-batch':
+                augments.append(SourceMapBatch(
+                    handler,
+                    size=options.get('size'),
+                    max_workers=options.get('max_workers')))
+    return augments
 
 
 def _as_list(value):
@@ -512,47 +589,20 @@ def get_augment_pipeline(owner, augments=None, phase='augment'):
     if augments is not None:
         return augments
     if phase == 'pre':
-        pre_filter = _get_raw_class_attr(owner, 'pre_augment_filter')
-        return FilterResources(pre_filter) if pre_filter else None
+        pipeline = _get_decorated_augments(owner, phase)
+        return tuple(pipeline) if pipeline else None
 
     pipeline = []
     parent_annotation = _get_raw_class_attr(owner, 'parent_annotation')
     merge_field = _get_raw_class_attr(owner, 'merge_field')
     merge_fields = _get_raw_class_attr(owner, 'merge_fields')
-    augment_filter = _get_raw_class_attr(owner, 'augment_filter')
-    augment_mapper = _get_raw_class_attr(owner, 'augment_mapper')
-    augment_mutator = _get_raw_class_attr(owner, 'augment_mutator')
-    augment_batcher = _get_raw_class_attr(owner, 'augment_batcher')
-    augment_source_batcher = _get_raw_class_attr(owner, 'augment_source_batcher')
-    augment_map_workers = _get_raw_class_attr(owner, 'augment_map_workers')
-    augment_batch_size = _get_raw_class_attr(owner, 'augment_batch_size')
-    augment_batch_workers = _get_raw_class_attr(owner, 'augment_batch_workers')
-    augment_source_batch_size = _get_raw_class_attr(owner, 'augment_source_batch_size')
-    augment_source_batch_workers = _get_raw_class_attr(owner, 'augment_source_batch_workers')
     if parent_annotation:
         pipeline.append(AnnotateParent(parent_annotation))
     if merge_field:
         pipeline.append(_get_merge_field_augment(merge_field))
     for field in _as_list(merge_fields):
         pipeline.append(_get_merge_field_augment(field))
-    if augment_filter:
-        pipeline.append(FilterResources(augment_filter))
-    if augment_mapper:
-        pipeline.append(MapResource(
-            augment_mapper,
-            max_workers=augment_map_workers))
-    if augment_mutator:
-        pipeline.append(MutateResource(augment_mutator))
-    if augment_batcher:
-        pipeline.append(MapBatch(
-            augment_batcher,
-            size=augment_batch_size,
-            max_workers=augment_batch_workers))
-    if augment_source_batcher:
-        pipeline.append(SourceMapBatch(
-            augment_source_batcher,
-            size=augment_source_batch_size,
-            max_workers=augment_source_batch_workers))
+    pipeline.extend(_get_decorated_augments(owner, phase))
     return tuple(pipeline) if pipeline else None
 
 
@@ -603,10 +653,10 @@ class DescribeSource:
     """Default query source for resource listing and augmentation.
 
     Preferred declarative augmentation attributes run in this order:
-    ``pre_augment_filter`` before detail fetch, then ``parent_annotation``,
-    ``merge_field(s)``, ``augment_filter``, and one of
-    ``augment_mapper`` / ``augment_mutator`` / ``augment_batcher`` /
-    ``augment_source_batcher``. Tag declarations run after source and manager
+    methods decorated with ``augment.pre_filter`` before detail fetch, then
+    ``parent_annotation``, ``merge_field(s)``, and methods decorated with ``augment.filter``,
+    ``augment.map``, ``augment.mutate``, ``augment.batch``, or
+    ``augment.source_batch``. Tag declarations run after source and manager
     augmentation.
 
     ``augment_pipeline``, ``pre_augment_pipeline``, and ``tag_augment`` are
@@ -617,20 +667,9 @@ class DescribeSource:
     detail_augment = True
     pre_augment_pipeline = None
     augment_pipeline = None
-    pre_augment_filter = None
     parent_annotation = None
     merge_field = None
     merge_fields = None
-    augment_filter = None
-    augment_mapper = None
-    augment_mutator = None
-    augment_batcher = None
-    augment_source_batcher = None
-    augment_map_workers = None
-    augment_batch_size = None
-    augment_batch_workers = None
-    augment_source_batch_size = None
-    augment_source_batch_workers = None
     tag_augment = None
     tag_api = None
     tag_batch_api = None
@@ -960,7 +999,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
 
     Manager-level declarations run after source augmentation and before tags in
     the same order as ``DescribeSource``: parent annotation, merge fields,
-    filtering, then map/mutate/batch operations. ``augment_pipeline`` and
+    then decorated filter/map/mutate/batch operations. ``augment_pipeline`` and
     ``tag_augment`` remain supported for explicit pipeline objects.
     """
 
@@ -980,16 +1019,6 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     parent_annotation = None
     merge_field = None
     merge_fields = None
-    augment_filter = None
-    augment_mapper = None
-    augment_mutator = None
-    augment_batcher = None
-    augment_source_batcher = None
-    augment_map_workers = None
-    augment_batch_size = None
-    augment_batch_workers = None
-    augment_source_batch_size = None
-    augment_source_batch_workers = None
     tag_augment = None
     tag_api = None
     tag_batch_api = None

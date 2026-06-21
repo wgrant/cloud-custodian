@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import itertools
 
 from c7n.query import QueryResourceManager, TypeInfo
@@ -49,7 +50,7 @@ class HealthEvents(QueryResourceManager):
             query['filter'] = q
         return super().prepare_query(query)
 
-    @staticmethod
+    @augment.batch(size=10)
     def augment_event_set(manager, resource_set):
         client = local_session(manager.session_factory).client('health')
         event_map = {r['arn']: r for r in resource_set}
@@ -75,9 +76,7 @@ class HealthEvents(QueryResourceManager):
 
         return resource_set
 
-    augment_batcher = augment_event_set
 
-    augment_batch_size = 10
 
 
 class HealthQueryParser(QueryParser):

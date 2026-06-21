@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import json
 from urllib.parse import urlparse, parse_qs
 
@@ -819,7 +820,7 @@ class LambdaLayerVersion(query.QueryResourceManager):
         arn_type = "layer"
         cfn_type = 'AWS::Lambda::LayerVersion'
 
-    @staticmethod
+    @augment.batch
     def expand_layer_versions(manager, resources):
         versions = {}
         for r in resources:
@@ -841,7 +842,6 @@ class LambdaLayerVersion(query.QueryResourceManager):
                 versions.append(v)
         return versions
 
-    augment_batcher = expand_layer_versions
 
 
 def get_layer_version_paginator(client):

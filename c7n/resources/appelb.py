@@ -3,6 +3,7 @@
 """
 Application & Network Load Balancers
 """
+from c7n.query import augment
 import json
 import logging
 import re
@@ -1235,7 +1236,7 @@ class AppELBDefaultVpcFilter(net_filters.DefaultVpcBase):
 
 
 class DescribeAppELBTargetGroup(DescribeSource):
-    @staticmethod
+    @augment.batch
     def augment_target_group_health(manager, target_groups):
         client = local_session(manager.session_factory).client('elbv2')
 
@@ -1250,7 +1251,6 @@ class DescribeAppELBTargetGroup(DescribeSource):
             list(w.map(_describe_target_group_health, target_groups))
         return target_groups
 
-    augment_batcher = augment_target_group_health
     tag_batch_api = dict(op='describe_tags', resource_path='TargetGroupArn', request_arg='ResourceArns', result_path='TagDescriptions', result_resource_path='ResourceArn')
 
 

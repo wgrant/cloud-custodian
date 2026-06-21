@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import json
 
 from c7n.actions import RemovePolicyBase, Action, ModifyPolicyBase
@@ -71,7 +72,7 @@ class ECRImageQuery(ChildResourceQuery):
 @sources.register('describe-ecr-image')
 class RepositoryImageDescribeSource(ChildDescribeSource):
 
-    @staticmethod
+    @augment.mutate
     def augment_image_arn(manager, resource):
         ecr_manager = manager.get_resource_manager(manager.resource_type.parent_spec[0])
         resource['imageArn'] = "{}/{}".format(
@@ -80,7 +81,6 @@ class RepositoryImageDescribeSource(ChildDescribeSource):
 
     resource_query_factory = ECRImageQuery
     parent_annotation = 'repositoryName'
-    augment_mutator = augment_image_arn
 
     def get_query(self):
         return super().get_query(capture_parent_id=True)

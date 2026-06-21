@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 import logging
 import requests
 from datetime import datetime
@@ -104,7 +105,7 @@ class EntraIDUser(GraphResourceManager):
                 )
             return []
 
-    @staticmethod
+    @augment.mutate
     def augment_user(manager, resource):
         try:
             # Add computed fields for policy evaluation
@@ -114,7 +115,6 @@ class EntraIDUser(GraphResourceManager):
         except Exception as e:
             log.warning(f"Failed to augment EntraID users: {e}")
 
-    augment_mutator = augment_user
 
     def _calculate_last_signin_days(self, user):
         """Calculate days since last sign-in"""

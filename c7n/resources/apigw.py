@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import functools
 import re
 from botocore.exceptions import ClientError
@@ -266,7 +267,7 @@ class DeleteApi(BaseAction):
 @query.sources.register('describe-rest-stage')
 class DescribeRestStage(query.ChildDescribeSource):
 
-    @staticmethod
+    @augment.batch
     def normalize_rest_stages(manager, resources):
         results = []
         rest_apis = manager.get_resource_manager('rest-api').resources()
@@ -285,7 +286,6 @@ class DescribeRestStage(query.ChildDescribeSource):
             results.append(r)
         return results
 
-    augment_batcher = normalize_rest_stages
     tag_field = dict(field='tags', remove=True, missing='empty', merge=True)
 
     def __init__(self, manager):

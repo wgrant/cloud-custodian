@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 import logging
 import requests
 
@@ -83,7 +84,7 @@ class EntraIDGroup(GraphResourceManager):
                 )
             raise
 
-    @staticmethod
+    @augment.mutate
     def augment_group(manager, resource):
         try:
             # Add computed fields for policy evaluation
@@ -94,7 +95,6 @@ class EntraIDGroup(GraphResourceManager):
         except Exception as e:
             log.warning(f"Failed to augment EntraID groups: {e}")
 
-    augment_mutator = augment_group
 
     def _is_security_group(self, group):
         """Determine if group is a security group"""

@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.actions import Action
 from c7n.manager import resources
 from c7n.query import QueryResourceManager, TypeInfo
@@ -17,7 +18,7 @@ class SimpleDB(QueryResourceManager):
 
     permissions = ('sdb:DomainMetadata',)
 
-    @staticmethod
+    @augment.batch(size=20, max_workers=3)
     def describe_domain_set(manager, resource_set):
         client = local_session(manager.session_factory).client('sdb')
         results = []
@@ -28,10 +29,7 @@ class SimpleDB(QueryResourceManager):
             results.append(info)
         return results
 
-    augment_batcher = describe_domain_set
 
-    augment_batch_size = 20
-    augment_batch_workers = 3
 
 
 @SimpleDB.action_registry.register('delete')

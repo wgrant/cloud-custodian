@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import itertools
 import zlib
 import re
@@ -2522,11 +2523,10 @@ class AclAwsS3Cidrs(Filter):
 
 
 class DescribeElasticIp(query.DescribeSource):
-    @staticmethod
+    @augment.filter
     def has_resource_id(manager, resource):
         return manager.resource_type.id in resource
 
-    augment_filter = has_resource_id
 
 
 @resources.register('elastic-ip', aliases=('network-addr',))

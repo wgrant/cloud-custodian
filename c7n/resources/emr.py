@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import logging
 import time
 import json
@@ -7,9 +8,7 @@ import json
 from c7n.actions import ActionRegistry, BaseAction
 from c7n.filters import FilterRegistry, MetricsFilter, ValueFilter
 from c7n.manager import resources
-from c7n.query import (
-    MapResource, MutateResource, QueryResourceManager, TypeInfo, ConfigSource,
-    DescribeWithResourceTags)
+from c7n.query import QueryResourceManager, TypeInfo, ConfigSource, DescribeWithResourceTags
 from c7n.utils import (
     local_session, type_schema, get_retry, jmespath_search, QueryParser)
 from c7n.tags import (
@@ -70,14 +69,13 @@ class EMRCluster(QueryResourceManager):
             query['ClusterStates'] = self.resource_type.default_cluster_states
         return super().prepare_query(query)
 
-    @staticmethod
+    @augment.map
     def describe_cluster(manager, resource):
         client = local_session(manager.session_factory).client('emr')
         # remap for cwmetrics
         return manager.retry(
             client.describe_cluster, ClusterId=resource['Id'])['Cluster']
 
-    augment_mapper = describe_cluster
 
 
 @EMRCluster.filter_registry.register('metrics')
@@ -289,7 +287,7 @@ class EMRSecurityConfiguration(QueryResourceManager):
     """Resource manager for EMR Security Configuration
     """
 
-    @staticmethod
+    @augment.mutate
     def decode_security_configuration(manager, resource):
         resource['SecurityConfiguration'] = json.loads(resource['SecurityConfiguration'])
 
@@ -305,7 +303,6 @@ class EMRSecurityConfiguration(QueryResourceManager):
     permissions = ('elasticmapreduce:ListSecurityConfigurations',
                   'elasticmapreduce:DescribeSecurityConfiguration',)
 
-    augment_mutator = decode_security_configuration
 
 
 @EMRSecurityConfiguration.action_registry.register('delete')

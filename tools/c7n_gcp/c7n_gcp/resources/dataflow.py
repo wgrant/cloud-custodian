@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from googleapiclient.errors import HttpError
 
 from c7n_gcp.provider import resources
@@ -43,7 +44,7 @@ class DataflowJob(QueryResourceManager):
 
         return super().prepare_query({'filter': query_filter})
 
-    @staticmethod
+    @augment.map
     def describe_job(manager, resource):
         ref = {
             'jobId': resource['id'],
@@ -55,5 +56,3 @@ class DataflowJob(QueryResourceManager):
                 'get', verb_arguments=ref)
         except HttpError:
             return resource
-
-    augment_mapper = describe_job

@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import base64
 import itertools
 import operator
@@ -63,7 +64,7 @@ class DescribeEC2(query.DescribeSource):
     def normalize_resources(self, resources, query):
         return self._flatten_reservations(resources)
 
-    @staticmethod
+    @augment.batch
     def augment_awol_tags(manager, resources):
         """EC2 API and AWOL Tags
 
@@ -114,7 +115,6 @@ class DescribeEC2(query.DescribeSource):
             r['Tags'] = resource_tags.get(r[m.id], [])
         return resources
 
-    augment_batcher = augment_awol_tags
 
 
 @resources.register('ec2')
@@ -2396,7 +2396,7 @@ class LaunchTemplate(query.QueryResourceManager):
         arn_type = "launch-template"
         cfn_type = "AWS::EC2::LaunchTemplate"
 
-    @staticmethod
+    @augment.batch
     def expand_versions(manager, resources):
         client = utils.local_session(
             manager.session_factory).client('ec2')
@@ -2408,7 +2408,6 @@ class LaunchTemplate(query.QueryResourceManager):
                         'LaunchTemplateVersions', ()))
         return template_versions
 
-    augment_batcher = expand_versions
 
     def get_arns(self, resources):
         arns = []

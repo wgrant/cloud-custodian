@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 import datetime
 import logging
 
@@ -101,12 +102,11 @@ class KeyVaultKeys(ChildResourceManager):
 
         keyvault_child = True
 
-    @staticmethod
+    @augment.filter
     def is_unmanaged(manager, resource):
         # Key Vault creates managed keys for certificates; those cannot be acted on directly.
         return not resource.get('managed')
 
-    augment_filter = is_unmanaged
 
 
 @KeyVaultKeys.filter_registry.register('keyvault')

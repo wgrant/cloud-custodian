@@ -26,6 +26,7 @@ Actions:
    delivery.
 
 """
+from c7n.query import augment
 import copy
 import functools
 import json
@@ -81,7 +82,7 @@ MAX_COPY_SIZE = 1024 * 1024 * 1024 * 2
 class DescribeS3(query.DescribeSource):
     detail_augment = False
 
-    @staticmethod
+    @augment.batch
     def assemble_buckets(manager, buckets):
         assembler = BucketAssembly(manager)
         assembler.initialize()
@@ -92,7 +93,6 @@ class DescribeS3(query.DescribeSource):
             results = list(filter(None, results))
             return results
 
-    augment_batcher = assemble_buckets
 
 
 class ConfigS3(query.ConfigSource):

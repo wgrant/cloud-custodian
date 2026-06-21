@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import copy
 from botocore.exceptions import ClientError
 
@@ -152,7 +153,7 @@ class ECSClusterResourceDescribeSource(query.ChildDescribeSource):
                 self.process_cluster_resources(client, cid, resource_ids))
         return results
 
-    @staticmethod
+    @augment.source_batch
     def describe_cluster_resources(source, resources):
         parent_child_map = {}
         for pid, r in resources:
@@ -177,7 +178,6 @@ class ECSClusterResourceDescribeSource(query.ChildDescribeSource):
                 results.extend(f.result())
         return results
 
-    augment_source_batcher = describe_cluster_resources
 
 
 @query.sources.register('describe-ecs-service')
@@ -796,7 +796,7 @@ class StopTask(BaseAction):
 
 
 class DescribeTaskDefinition(DescribeSource):
-    @staticmethod
+    @augment.map
     def get_task_definition(manager, resource):
         client = local_session(manager.session_factory).client('ecs')
         response = manager.retry(
@@ -808,7 +808,6 @@ class DescribeTaskDefinition(DescribeSource):
         ecs_tag_normalize([task_definition])
         return task_definition
 
-    augment_mapper = get_task_definition
 
     def get_resources(self, ids, cache=True):
         if cache:

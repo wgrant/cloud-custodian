@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager, DescribeSource
 from c7n_tencentcloud.utils import PageMethod
@@ -9,11 +10,10 @@ from c7n_tencentcloud.utils import PageMethod
 class LogGroupDescribe(DescribeSource):
     tag_augment = False
 
-    @staticmethod
+    @augment.mutate
     def set_uin(manager, resource):
         resource["c7n:uin"] = manager.config.account_id
 
-    augment_mutator = set_uin
 
 
 @resources.register("cls")

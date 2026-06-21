@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from collections import defaultdict
 import json
 import time
@@ -49,7 +50,7 @@ def parse_es_version(version: str) -> Tuple[str, str]:
 
 
 class DescribeDomain(DescribeSource):
-    @staticmethod
+    @augment.batch(size=5)
     def describe_domain_set(manager, resource_set):
         client = local_session(manager.session_factory).client('es')
         model = manager.get_model()
@@ -62,9 +63,7 @@ class DescribeDomain(DescribeSource):
                 client.list_tags, ARN=rarn).get('TagList', [])
         return resources
 
-    augment_batcher = describe_domain_set
 
-    augment_batch_size = 5
 
     def fetch_resources_by_ids(self, resource_ids):
         # augment will turn these into resource dictionaries

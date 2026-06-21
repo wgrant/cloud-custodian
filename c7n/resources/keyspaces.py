@@ -1,10 +1,10 @@
+from c7n.query import augment
 from c7n.actions import BaseAction
 from c7n.manager import resources
 from c7n.query import (
     ChildDescribeSource,
     ChildResourceManager,
     DescribeWithResourceTags,
-    MutateResource,
     QueryResourceManager,
     TypeInfo,
     UniversalTags,
@@ -153,7 +153,7 @@ class DeleteKeyspace(BaseAction):
 
 
 class DescribeTables(ChildDescribeSource):
-    @staticmethod
+    @augment.mutate
     def augment_table(manager, resource):
         client = local_session(manager.session_factory).client(
             manager.resource_type.service)
@@ -163,7 +163,6 @@ class DescribeTables(ChildDescribeSource):
             tableName=resource['tableName'])
         resource.update(details)
 
-    augment_mutator = augment_table
     universal_tags = True
 
 

@@ -1,11 +1,11 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.actions import BaseAction
 from c7n.filters.vpc import NetworkLocation, SecurityGroupFilter, SubnetFilter
 from c7n.manager import resources
 from concurrent.futures import as_completed
-from c7n.query import (
-    MapResource, QueryResourceManager, ChildResourceManager, TypeInfo, ChildDescribeSource)
+from c7n.query import QueryResourceManager, ChildResourceManager, TypeInfo, ChildDescribeSource
 from c7n.utils import local_session, type_schema
 
 
@@ -201,7 +201,7 @@ class DescribeTransferUser(ChildDescribeSource):
     def get_permissions(self):
         return super().get_permissions() + ['transfer:DescribeUser']
 
-    @staticmethod
+    @augment.map
     def get_transfer_user(manager, resource):
         parent_id, user = resource
         client = local_session(manager.session_factory).client('transfer')
@@ -210,7 +210,6 @@ class DescribeTransferUser(ChildDescribeSource):
             ServerId=parent_id,
             UserName=user['UserName']).get('User')
 
-    augment_mapper = get_transfer_user
 
     def get_query(self):
         return super().get_query(capture_parent_id=True)

@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import re
 
 from c7n_gcp.actions import MethodAction
@@ -29,13 +30,12 @@ class DMDeployment(QueryResourceManager):
                 'get', {'project': resource_info['project_id'],
                         'deployment': resource_info['name']})
 
-    @staticmethod
+    @augment.mutate
     def normalize_labels(manager, resource):
         # normalize labels from array to mapping like other gcp resources.
         if isinstance(resource.get('labels'), list):
             resource['labels'] = {l['key']: l['value'] for l in resource['labels']}
 
-    augment_mutator = normalize_labels
 
     def get_resource(self, resource_info):
         resource = self.resource_type.get(self.get_client(), resource_info)

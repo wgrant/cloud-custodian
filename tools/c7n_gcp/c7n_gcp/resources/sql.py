@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 import re
 
 from c7n.utils import type_schema, jmespath_search
@@ -59,12 +60,11 @@ class SqlInstance(QueryResourceManager):
                 }
             }
 
-    @staticmethod
+    @augment.mutate
     def set_labels(manager, resource):
         if 'userLabels' in resource['settings']:
             resource['labels'] = resource['settings']['userLabels']
 
-    augment_mutator = set_labels
 
 
 SqlInstance.filter_registry.register('offhour', OffHour)

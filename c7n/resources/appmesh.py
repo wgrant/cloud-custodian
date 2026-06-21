@@ -1,6 +1,7 @@
 """
 AppMesh Communications
 """
+from c7n.query import augment
 from c7n.manager import resources
 from c7n.query import (
     ChildResourceManager,
@@ -9,7 +10,6 @@ from c7n.query import (
     DescribeWithResourceTags,
     ChildDescribeSource,
     ConfigSource,
-    MapResource,
     UniversalTags,
 )
 from c7n.resources.aws import Arn
@@ -71,7 +71,7 @@ class AppmeshMesh(QueryResourceManager):
 
 
 class DescribeVirtualGatewayDefinition(ChildDescribeSource):
-    @staticmethod
+    @augment.map
     def get_virtual_gateway(manager, resource):
         if "metadata" in resource:
             return resource
@@ -81,7 +81,6 @@ class DescribeVirtualGatewayDefinition(ChildDescribeSource):
             meshName=resource["meshName"],
             virtualGatewayName=resource["virtualGatewayName"])['virtualGateway']
 
-    augment_mapper = get_virtual_gateway
     universal_tags = True
 
     # This method is called in event mode and not pull mode.
@@ -193,7 +192,7 @@ class AppmeshVirtualGateway(ChildResourceManager):
 
 
 class DescribeVirtualNodeDefinition(ChildDescribeSource):
-    @staticmethod
+    @augment.map
     def get_virtual_node(manager, resource):
         if "metadata" in resource:
             return resource
@@ -203,7 +202,6 @@ class DescribeVirtualNodeDefinition(ChildDescribeSource):
             meshName=resource["meshName"],
             virtualNodeName=resource["virtualNodeName"])['virtualNode']
 
-    augment_mapper = get_virtual_node
     universal_tags = True
 
     # This method is called in event mode and not pull mode.

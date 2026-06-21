@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 import logging
 import re
 
@@ -102,7 +103,7 @@ class RoleAssignment(QueryResourceManager):
             'properties.roleDefinitionId'
         )
 
-    @staticmethod
+    @augment.batch
     def augment_principals(manager, resources):
         s = manager.get_session().get_session_for_resource(GRAPH_AUTH_ENDPOINT)
         graph_client = s.client('azure.graphrbac.GraphRbacManagementClient')
@@ -123,7 +124,6 @@ class RoleAssignment(QueryResourceManager):
 
         return resources
 
-    augment_batcher = augment_principals
 
 
 @resources.register('roledefinition')

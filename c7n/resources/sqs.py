@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from botocore.exceptions import ClientError
 
 import json
@@ -13,8 +14,12 @@ import c7n.filters.policystatement as polstmt_filter
 from c7n.manager import resources
 from c7n.utils import local_session
 from c7n.query import (
-    ConfigSource, DescribeSource, MapResource, QueryResourceManager,
-    TypeInfo, UniversalTags)
+    ConfigSource,
+    DescribeSource,
+    QueryResourceManager,
+    TypeInfo,
+    UniversalTags,
+)
 from c7n.actions import BaseAction
 from c7n.utils import type_schema
 
@@ -25,7 +30,7 @@ from c7n.resources.securityhub import PostFinding
 class DescribeQueue(DescribeSource):
     detail_augment = False
 
-    @staticmethod
+    @augment.map(max_workers=2)
     def describe_queue(manager, resource):
         client = manager.get_client()
         try:
@@ -44,9 +49,7 @@ class DescribeQueue(DescribeSource):
             raise
         return queue
 
-    augment_mapper = describe_queue
 
-    augment_map_workers = 2
     universal_tags = True
 
 

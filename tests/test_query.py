@@ -9,7 +9,7 @@ from c7n.query import (
     AnnotateParent, FilterResources, MapBatch, MapResource, MergeField,
     MutateResource, ResourceQuery, RetryPageIterator, TagsFromApi,
     TagsFromField, TypeInfo, apply_augment_pipeline,
-    apply_source_augment_pipeline, apply_tag_augment,
+    apply_source_augment_pipeline, apply_tag_augment, augment,
 )
 from c7n.resources.vpc import InternetGateway
 
@@ -311,17 +311,13 @@ class AugmentPipelineTest(BaseTest):
             parent_annotation = 'Parent'
             merge_field = 'Nested'
 
-            @staticmethod
+            @augment.filter
             def keep_resource(manager, resource):
                 return resource.get('Keep')
 
-            augment_filter = keep_resource
-
-            @staticmethod
+            @augment.mutate
             def mark_seen(manager, resource):
                 resource['Seen'] = resource['Parent']
-
-            augment_mutator = mark_seen
 
         resources = [
             ('parent-a', {'Nested': {'Keep': True}}),
@@ -335,11 +331,9 @@ class AugmentPipelineTest(BaseTest):
         class Source:
             manager = object()
 
-            @staticmethod
+            @augment.pre_filter
             def keep_resource(manager, resource):
                 return resource.get('Keep')
-
-            pre_augment_filter = keep_resource
 
         resources = [{'Name': 'keep', 'Keep': True}, {'Name': 'drop'}]
 

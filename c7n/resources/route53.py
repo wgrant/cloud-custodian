@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import functools
 import fnmatch
 import json
@@ -12,7 +13,6 @@ from c7n.query import (
     DescribeSource,
     ChildResourceManager,
     FixedRegionClientMixin,
-    MapBatch,
     QueryResourceManager,
     RetryPageIterator,
     TagsFromBatchApi,
@@ -76,11 +76,10 @@ def generate_rrset(recordset):
 
 @resources.register('hostedzone')
 class HostedZone(Route53Base, QueryResourceManager):
-    @staticmethod
+    @augment.mutate
     def set_config_hosted_zone_id(manager, resource):
         resource['c7n:ConfigHostedZoneId'] = resource['Id'].split("/")[-1]
 
-    augment_mutator = set_config_hosted_zone_id
 
     class resource_type(TypeInfo):
         service = 'route53'
@@ -554,7 +553,7 @@ class IsQueryLoggingEnabled(Filter):
 
 
 class ResolverRuleDescribeSource(DescribeSource):
-    @staticmethod
+    @augment.batch
     def augment_local_rules(manager, resources):
         owner_resource_map = dict(
             (owner, list(group))
@@ -568,7 +567,6 @@ class ResolverRuleDescribeSource(DescribeSource):
             + owner_resource_map.get('Shared', [])
         )
 
-    augment_batcher = augment_local_rules
 
 
 @resources.register('resolver-rule')
@@ -608,7 +606,7 @@ class ResolverQueryLogConfig(QueryResourceManager):
         'route53resolver:ListResolverQueryLogConfigs',
         'route53resolver:ListResolverQueryLogConfigAssociations')
 
-    @staticmethod
+    @augment.batch
     def augment_configs(manager, rqlcs):
         client = local_session(manager.session_factory).client('route53resolver')
         for rqlc in rqlcs:
@@ -621,7 +619,6 @@ class ResolverQueryLogConfig(QueryResourceManager):
                 'ResolverQueryLogConfigAssociations')
         return rqlcs
 
-    augment_batcher = augment_configs
 
 
 @ResolverQueryLogConfig.action_registry.register('associate-vpc')

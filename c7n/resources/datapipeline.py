@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Data Pipeline
 """
+from c7n.query import augment
 from botocore.exceptions import ClientError
 
 from c7n.actions import BaseAction
 from c7n.filters import FilterRegistry
 from c7n.manager import resources
-from c7n.query import (
-    ConfigSource, DescribeSource, MapBatch, QueryResourceManager, TypeInfo)
+from c7n.query import ConfigSource, DescribeSource, QueryResourceManager, TypeInfo
 from c7n.utils import local_session, get_retry, type_schema
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 
@@ -20,7 +20,7 @@ filters.register('marked-for-op', TagActionFilter)
 class DescribeDataPipeline(DescribeSource):
     detail_augment = False
 
-    @staticmethod
+    @augment.batch(size=20, max_workers=2)
     def describe_pipeline_set(manager, pipe_set):
         client = local_session(manager.session_factory).client('datapipeline')
         pipe_map = {pipe['id']: pipe for pipe in pipe_set}
@@ -54,9 +54,6 @@ class DescribeDataPipeline(DescribeSource):
                 pipe[key[1:]] = field['stringValue']
         return pipe_set
 
-    augment_batcher = describe_pipeline_set
-    augment_batch_size = 20
-    augment_batch_workers = 2
 
 
 @resources.register('datapipeline')

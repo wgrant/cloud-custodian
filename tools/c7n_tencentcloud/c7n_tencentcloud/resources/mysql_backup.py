@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod, isoformat_datetime_str
@@ -42,7 +43,7 @@ class MySQLBackUp(QueryResourceManager):
             "Date": ("%Y-%m-%d %H:%M:%S", pytz.timezone("Asia/Shanghai"))
         }
 
-    @staticmethod
+    @augment.batch
     def expand_backups(manager, resources):
         backup_resources = []
         cli = manager.get_client()
@@ -60,5 +61,3 @@ class MySQLBackUp(QueryResourceManager):
                                                       field_format[1])
             backup_resources += items
         return backup_resources
-
-    augment_batcher = expand_backups

@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import ipaddress
 import pytz
 
@@ -33,7 +34,7 @@ class CLB(QueryResourceManager):
             "CreateTime": ("%Y-%m-%d %H:%M:%S", pytz.timezone("Asia/Shanghai"))
         }
 
-    @staticmethod
+    @augment.mutate
     def augment_targets(manager, resource):
         instances = jmespath_search("filters[*].Instances", manager.data)
         if not instances:
@@ -51,7 +52,6 @@ class CLB(QueryResourceManager):
                 instance_ids.append(target["InstanceId"])
         resource["Instances"] = instance_ids
 
-    augment_mutator = augment_targets
     normalize_date_field = "CreateTime"
 
 

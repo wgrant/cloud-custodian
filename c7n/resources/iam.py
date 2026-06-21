@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from collections import OrderedDict
 import csv
 import datetime
@@ -29,8 +30,8 @@ from c7n.manager import resources
 from c7n.query import (
     ChildResourceManager,
     ConfigSource,
-    DescribeSource, DescribeWithResourceTags,
-    MapResource,
+    DescribeSource,
+    DescribeWithResourceTags,
     QueryResourceManager,
     TypeInfo,
 )
@@ -230,7 +231,7 @@ class DescribeUser(DescribeSource):
     def get_permissions(self):
         return super().get_permissions() + ['iam:GetUser']
 
-    @staticmethod
+    @augment.map
     def get_user(manager, resource):
         # IAM has a race condition where listing can return a new user
         # before it is available via get_user.
@@ -242,7 +243,6 @@ class DescribeUser(DescribeSource):
         if result:
             return result.get('User') or None
 
-    augment_mapper = get_user
 
     def get_resources(self, resource_ids, cache=True):
         client = local_session(self.manager.session_factory).client('iam')
@@ -3059,13 +3059,12 @@ class UserGroupDelete(BaseAction):
 
 
 class SamlProviderDescribe(DescribeSource):
-    @staticmethod
+    @augment.mutate
     def augment_sso_descriptor(manager, resource):
         if resource.get('SAMLMetadataDocument'):
             resource['IDPSSODescriptor'] = sso_metadata(
                 resource['SAMLMetadataDocument'])['IDPSSODescriptor']
 
-    augment_mutator = augment_sso_descriptor
 
     def get_permissions(self):
         return ('iam:GetSAMLProvider', 'iam:ListSAMLProviders')

@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.filters.iamaccess import _account, PolicyChecker
 from botocore.exceptions import ClientError
 
@@ -20,11 +21,10 @@ from .securityhub import PostFinding
 
 
 class DescribeAlias(DescribeSource):
-    @staticmethod
+    @augment.filter
     def has_target_key(manager, resource):
         return 'TargetKeyId' in resource
 
-    augment_filter = has_target_key
 
 
 @resources.register('kms')
@@ -46,7 +46,7 @@ class DescribeKey(DescribeSource):
     FetchThreshold = 10  # ie should we describe all keys or just fetch them directly
     detail_augment = False
 
-    @staticmethod
+    @augment.mutate
     def augment_key(manager, resource):
         client = local_session(manager.session_factory).client('kms')
         key_id = resource.get('KeyId')
@@ -74,7 +74,6 @@ class DescribeKey(DescribeSource):
         if alias_names:
             resource['AliasNames'] = alias_names
 
-    augment_mutator = augment_key
     universal_tags = True
 
     def get_permissions(self):

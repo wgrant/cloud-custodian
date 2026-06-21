@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 from .aws import AWS
 from c7n.query import (
     QueryResourceManager, TypeInfo, DescribeSource, ConfigSource)
@@ -14,7 +15,7 @@ from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 
 class FirewallDescribe(DescribeSource):
 
-    @staticmethod
+    @augment.map
     def normalize_firewall(manager, resource):
         status = resource.pop('FirewallStatus', {})
         resource['Firewall']['UpdateToken'] = resource['UpdateToken']
@@ -22,7 +23,6 @@ class FirewallDescribe(DescribeSource):
         firewall['FirewallStatus'] = status
         return firewall
 
-    augment_mapper = normalize_firewall
 
 
 class FirewallConfig(ConfigSource):

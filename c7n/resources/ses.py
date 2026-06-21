@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import json
 import logging
 
@@ -9,8 +10,12 @@ import c7n.filters.policystatement as polstmt_filter
 from c7n.exceptions import PolicyValidationError
 from c7n.manager import resources
 from c7n.query import (
-    DescribeSource, MapResource, MutateResource, QueryResourceManager, TypeInfo,
-    DescribeWithResourceTags, UniversalTags)
+    DescribeSource,
+    QueryResourceManager,
+    TypeInfo,
+    DescribeWithResourceTags,
+    UniversalTags,
+)
 from c7n.utils import local_session, type_schema, format_string_values
 from c7n.tags import universal_augment
 from c7n.tags import RemoveTag, Tag
@@ -22,7 +27,7 @@ log = logging.getLogger("custodian.ses")
 
 
 class DescribeConfigurationSet(DescribeSource):
-    @staticmethod
+    @augment.mutate
     def augment_configuration_set(manager, resource):
         client = local_session(manager.session_factory).client('ses')
         details = manager.retry(
@@ -38,7 +43,6 @@ class DescribeConfigurationSet(DescribeSource):
             for k in details
             if k not in {'ConfigurationSet', 'ResponseMetadata'}})
 
-    augment_mutator = augment_configuration_set
     universal_tags = True
 
 
@@ -59,7 +63,7 @@ class SESConfigurationSet(QueryResourceManager):
 
 
 class DescribeConfigurationSetV2(DescribeSource):
-    @staticmethod
+    @augment.map
     def get_configuration_set(manager, resource):
         client = local_session(manager.session_factory).client('sesv2')
         details = manager.retry(
@@ -70,7 +74,6 @@ class DescribeConfigurationSetV2(DescribeSource):
             for k in details
             if k not in {'ResponseMetadata'}}
 
-    augment_mapper = get_configuration_set
     universal_tags = True
 
 
@@ -353,7 +356,7 @@ class Delete(Action):
 class DescribeDedicatedIpPool(DescribeSource):
     default_shared_pools = ("ses-default-dedicated-pool", "ses-shared-pool")
 
-    @staticmethod
+    @augment.map
     def get_dedicated_ip_pool(manager, resource):
         # Default & Shared Dedicated IP pool names
         # https://docs.aws.amazon.com/ses/latest/dg/managing-ip-pools.html
@@ -365,7 +368,6 @@ class DescribeDedicatedIpPool(DescribeSource):
             client.get_dedicated_ip_pool,
             PoolName=resource)["DedicatedIpPool"]
 
-    augment_mapper = get_dedicated_ip_pool
     universal_tags = True
 
 

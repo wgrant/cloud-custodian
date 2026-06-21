@@ -1,17 +1,17 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.actions import BaseAction
 from c7n.filters import Filter, ValueFilter, CrossAccountAccessFilter
 from c7n.manager import resources
 from c7n.resolver import ValuesFrom
-from c7n.query import (
-    MutateResource, QueryResourceManager, TypeInfo, DescribeSource, ConfigSource)
+from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
 from c7n.utils import local_session, chunks, type_schema
 from c7n.tags import universal_augment
 
 
 class RecorderDescribe(DescribeSource):
-    @staticmethod
+    @augment.mutate
     def augment_recorder(manager, resource):
         client = local_session(manager.session_factory).client('config')
         status = manager.retry(
@@ -27,7 +27,6 @@ class RecorderDescribe(DescribeSource):
 
     # Config recorder is a singleton, so detail calls do not have the usual
     # cardinality concern and most policies inspect the full configuration.
-    augment_mutator = augment_recorder
 
 
 @resources.register('config-recorder')

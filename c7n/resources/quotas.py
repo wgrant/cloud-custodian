@@ -1,8 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 #
-
-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import re
@@ -14,6 +12,7 @@ from statistics import mean
 from time import sleep
 
 from c7n.actions import Action
+from c7n.query import augment
 from c7n.exceptions import PolicyExecutionError
 from c7n.filters import ValueFilter
 from c7n.filters.metrics import MetricsFilter
@@ -50,7 +49,7 @@ class ServiceQuota(QueryResourceManager):
         name = 'QuotaName'
         metrics_namespace = 'AWS/Usage'
 
-    @staticmethod
+    @augment.batch
     def expand_quotas(manager, resources):
         client = local_session(manager.session_factory).client('service-quotas')
         retry = get_retry(('TooManyRequestsException',))
@@ -124,7 +123,6 @@ class ServiceQuota(QueryResourceManager):
 
         return results
 
-    augment_batcher = expand_quotas
 
 
 @ServiceQuota.filter_registry.register('usage-metric')

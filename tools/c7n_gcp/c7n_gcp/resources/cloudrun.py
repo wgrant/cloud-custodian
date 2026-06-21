@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import copy
 
+from c7n.query import augment
 from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n_gcp.filters import IamPolicyFilter
@@ -48,7 +49,9 @@ class CloudRunService(QueryResourceManager):
                 'body': body
             }
 
-    augment_mutator = set_labels
+    @augment.mutate
+    def set_labels(manager, resource):
+        set_labels(manager, resource)
 
 
 @CloudRunService.filter_registry.register("iam-policy")
@@ -106,7 +109,9 @@ class CloudRunJob(QueryResourceManager):
                 'body': body
             }
 
-    augment_mutator = set_labels
+    @augment.mutate
+    def set_labels(manager, resource):
+        set_labels(manager, resource)
 
 
 @resources.register("cloud-run-revision")

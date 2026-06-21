@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from botocore.exceptions import ClientError
 
 from c7n.actions import BaseAction
@@ -351,7 +352,7 @@ class CodeDeployDeployment(QueryResourceManager):
 class DescribeDeploymentGroup(query.ChildDescribeSource):
     detail_augment = False
 
-    @staticmethod
+    @augment.map
     def get_deployment_group(manager, resource):
         parent_id, group_name = resource
         client = local_session(manager.session_factory).client('codedeploy')
@@ -365,7 +366,6 @@ class DescribeDeploymentGroup(query.ChildDescribeSource):
         return manager.generate_arn(
             resource['applicationName'] + '/' + resource['deploymentGroupName'])
 
-    augment_mapper = get_deployment_group
     tag_api = dict(resource_path=get_deployment_group_arn)
 
     def get_permissions(self):
