@@ -1162,7 +1162,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     def normalize_resources_by_ids(self, resources, ids):
         return self.normalize_resources(resources, None)
 
-    def augment_resources_by_ids(self, resources):
+    def augment_resources_by_ids(self, resources, ids=None):
         if not self.augment_by_id:
             return resources
         return self.augment_resources(resources)
@@ -1181,7 +1181,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
             resources = self.handle_fetch_resources_by_ids_error(e, ids)
         resources = self.normalize_resources_by_ids(resources, ids)
         if augment:
-            resources = self.augment_resources_by_ids(resources)
+            resources = self.augment_resources_by_ids(resources, ids)
         return resources
 
     def augment(self, resources):

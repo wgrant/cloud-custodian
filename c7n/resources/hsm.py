@@ -10,7 +10,7 @@ import c7n.filters.policystatement as polstmt_filter
 
 class DescribeCloudHSMCluster(DescribeWithInlineTags):
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('cloudhsmv2')
         return self.manager.retry(
             client.describe_clusters,

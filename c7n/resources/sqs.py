@@ -18,7 +18,6 @@ from c7n.query import (
     DescribeSource,
     QueryResourceManager,
     TypeInfo,
-    UniversalTags,
 )
 from c7n.actions import BaseAction
 from c7n.utils import type_schema
@@ -48,7 +47,6 @@ class DescribeQueue(DescribeSource):
                 return None
             raise
         return queue
-
 
     universal_tags = True
 
@@ -118,15 +116,18 @@ class SQS(QueryResourceManager):
         perms.append('sqs:GetQueueAttributes')
         return perms
 
-    def get_resources(self, ids, cache=True):
+    def prepare_resource_ids(self, ids):
         ids_normalized = []
         for i in ids:
             if not i.startswith('https://'):
                 ids_normalized.append(i)
                 continue
             ids_normalized.append(i.rsplit('/', 1)[-1])
-        resources = super(SQS, self).get_resources(ids_normalized, cache)
-        return [r for r in resources if Arn.parse(r['QueueArn']).resource in ids_normalized]
+        return ids_normalized
+
+    def augment_resources_by_ids(self, resources, ids=None):
+        resources = super().augment_resources_by_ids(resources, ids)
+        return [r for r in resources if Arn.parse(r['QueueArn']).resource in ids]
 
 
 @SQS.filter_registry.register('metrics')

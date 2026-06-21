@@ -122,9 +122,9 @@ class DeleteVpc(BaseAction):
 
 class DescribeFlow(query.DescribeSource):
 
-    def get_resources(self, ids, cache=True):
+    def fetch_resources_by_ids(self, ids):
         params = {'Filters': [{'Name': 'flow-log-id', 'Values': ids}]}
-        return self.query.filter(self.resource_manager, **params)
+        return self.query.filter(self.manager, **params)
 
 
 @resources.register('flow-log')
@@ -809,7 +809,6 @@ class SubnetIpAddressUsageFilter(AnnotationPipelineFilter):
                 2
             ),
         )
-
 
 
 @Subnet.action_registry.register('delete')
@@ -2528,7 +2527,6 @@ class DescribeElasticIp(query.DescribeSource):
         return manager.resource_type.id in resource
 
 
-
 @resources.register('elastic-ip', aliases=('network-addr',))
 class NetworkAddress(query.QueryResourceManager):
 
@@ -3296,7 +3294,7 @@ class SetFlowLogs(BaseAction):
 
 class PrefixListDescribe(query.DescribeSource):
 
-    def get_resources(self, ids, cache=True):
+    def fetch_resources_by_ids(self, ids):
         query = {'Filters': [
             {'Name': 'prefix-list-id',
              'Values': ids}]}
