@@ -7,7 +7,7 @@ from c7n.filters.core import AnnotationPipelineFilter, annotation_mutator
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TagsFromApi, TypeInfo
+from c7n.query import QueryResourceManager, TypeInfo
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 from c7n.utils import local_session, type_schema, yaml_load
 
@@ -27,9 +27,7 @@ class OpensearchServerless(QueryResourceManager):
         arn = "arn"
         permission_prefix = 'aoss'
         permissions_augment = ("aoss:ListTagsForResource",)
-    tag_augment = TagsFromApi(
-        request_arg='resourceArn', result_path='tags',
-        tag_format='lower-list')
+    tag_api = dict(request_arg='resourceArn', result_path='tags', tag_format='lower-list')
 
 
 @OpensearchServerless.filter_registry.register('kms-key')

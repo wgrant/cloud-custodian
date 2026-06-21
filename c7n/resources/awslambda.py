@@ -841,7 +841,7 @@ class LambdaLayerVersion(query.QueryResourceManager):
                 versions.append(v)
         return versions
 
-    augment_pipeline = query.MapBatch(expand_layer_versions)
+    augment_batcher = expand_layer_versions
 
 
 def get_layer_version_paginator(client):

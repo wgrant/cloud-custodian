@@ -4,7 +4,7 @@ import json
 from botocore.exceptions import ClientError
 from concurrent.futures import as_completed
 from c7n.manager import resources, ResourceManager, SyntheticResourceMixin
-from c7n.query import QueryResourceManager, TypeInfo, UniversalTags
+from c7n.query import QueryResourceManager, TypeInfo
 from c7n.utils import local_session, chunks, type_schema, generate_arn
 from c7n.actions import BaseAction, ActionRegistry, RemovePolicyBase
 from c7n.exceptions import PolicyValidationError
@@ -543,7 +543,7 @@ class GlueWorkflow(QueryResourceManager):
         arn_type = 'workflow'
         universal_taggable = object()
         cfn_type = 'AWS::Glue::Workflow'
-    tag_augment = UniversalTags()
+    universal_tags = True
 
 
 @GlueWorkflow.action_registry.register('delete')

@@ -518,7 +518,7 @@ class DeleteTarget(BaseAction):
 
 
 class EventBridgePipesDescribe(DescribeSource):
-    tag_augment = TagsFromField('Tags')
+    tag_field = dict(field='Tags')
 
 
 @resources.register('eventbridge-pipes')

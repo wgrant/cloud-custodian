@@ -86,4 +86,4 @@ class CloudControl:
         # nothing useful to do, most types via this control
         # include tags.
         return _apply_augment_pipeline(
-            self.manager, resources, self.augment_pipeline)
+            self.manager, resources, self.augment_pipeline, infer=True)

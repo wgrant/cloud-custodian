@@ -6,7 +6,7 @@ import json
 
 from c7n.actions import RemovePolicyBase
 from c7n.filters import CrossAccountAccessFilter
-from c7n.query import QueryResourceManager, TagsFromApi, TypeInfo
+from c7n.query import QueryResourceManager, TypeInfo
 from c7n.manager import resources
 from c7n.utils import get_retry, local_session, type_schema
 
@@ -24,9 +24,7 @@ class Glacier(QueryResourceManager):
         arn = "VaultARN"
         arn_type = 'vaults'
         universal_taggable = True
-    tag_augment = TagsFromApi(
-        op='list_tags_for_vault', resource_path='VaultName',
-        request_arg='vaultName', tag_format='dict')
+    tag_api = dict(op='list_tags_for_vault', resource_path='VaultName', request_arg='vaultName', tag_format='dict')
 
 
 @Glacier.filter_registry.register('cross-account')

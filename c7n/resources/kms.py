@@ -74,8 +74,8 @@ class DescribeKey(DescribeSource):
         if alias_names:
             resource['AliasNames'] = alias_names
 
-    augment_pipeline = MutateResource(augment_key)
-    tag_augment = UniversalTags()
+    augment_mutator = augment_key
+    universal_tags = True
 
     def get_permissions(self):
         return super().get_permissions() + ['kms:DescribeKey']

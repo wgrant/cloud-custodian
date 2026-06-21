@@ -38,7 +38,7 @@ class GlobalAccelerator(FixedRegionClientMixin, QueryResourceManager):
         arn_type = 'accelerator'
         cfn_type = 'AWS::GlobalAccelerator::Accelerator'
         permission_prefix = 'globalaccelerator'
-    tag_augment = TagsFromApi(resource_path='AcceleratorArn')
+    tag_api = dict(resource_path='AcceleratorArn')
 
 
 # When taggingresource api is used in tagging operation, got the error:

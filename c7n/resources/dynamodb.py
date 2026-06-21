@@ -635,12 +635,7 @@ class Stream(query.QueryResourceManager):
 
 
 class DescribeDaxCluster(query.DescribeSource):
-    tag_augment = query.TagsFromApi(
-        op='list_tags',
-        resource_path='ClusterArn',
-        request_arg='ResourceName',
-        ignore_errors=('ClusterNotFoundFault', 'InvalidClusterStateFault'),
-        drop_on_error=True)
+    tag_api = dict(op='list_tags', resource_path='ClusterArn', request_arg='ResourceName', ignore_errors=('ClusterNotFoundFault', 'InvalidClusterStateFault'), drop_on_error=True)
 
     def fetch_resources_by_ids(self, ids):
         """Retrieve dax resources for serverless policies or related resources

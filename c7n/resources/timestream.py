@@ -17,7 +17,7 @@ from c7n.filters import ValueFilter
 
 
 class DescribeTimestream(DescribeSource):
-    tag_augment = TagsFromApi(resource_path='Arn', request_arg='ResourceARN')
+    tag_api = dict(resource_path='Arn', request_arg='ResourceARN')
 
 
 @resources.register('timestream-database')
@@ -63,8 +63,7 @@ class TimestreamInfluxDB(QueryResourceManager):
         detail_spec = ('get_db_instance', 'identifier', 'id', None)
         permission_prefix = 'timestream-influxdb'
 
-    tag_augment = TagsFromApi(
-        request_arg='resourceArn', result_path='tags', tag_format='dict')
+    tag_api = dict(request_arg='resourceArn', result_path='tags', tag_format='dict')
 
 
 @resources.register('timestream-influxdb-cluster')
@@ -79,8 +78,7 @@ class TimestreamInfluxDBCluster(QueryResourceManager):
         permissions_enum = ('timestream-influxdb:ListDbClusters',
                             'timestream-influxdb:GetDbCluster')
 
-    tag_augment = TagsFromApi(
-        request_arg='resourceArn', result_path='tags', tag_format='dict')
+    tag_api = dict(request_arg='resourceArn', result_path='tags', tag_format='dict')
 
 
 @TimestreamDatabase.action_registry.register('tag')

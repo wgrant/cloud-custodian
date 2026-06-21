@@ -5,7 +5,6 @@ import re
 from c7n_gcp.actions import MethodAction
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 
-from c7n.query import MapBatch
 from c7n_gcp.provider import resources
 from c7n.filters.core import ListItemAnnotationFilter, annotation_getter
 from c7n.utils import type_schema, local_session
@@ -178,7 +177,7 @@ class Firewall(QueryResourceManager):
     def set_port_ranges(manager, resources):
         return get_firewall_port_ranges(resources)
 
-    augment_pipeline = MapBatch(set_port_ranges)
+    augment_batcher = set_port_ranges
 
 
 @Firewall.action_registry.register('delete')

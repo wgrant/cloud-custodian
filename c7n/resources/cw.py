@@ -198,9 +198,7 @@ class InsightRule(QueryResourceManager):
     def get_rule_arn(manager, resource):
         return manager.generate_arn(resource['Name'])
 
-    tag_augment = TagsFromApi(
-        resource_path=get_rule_arn,
-        request_arg='ResourceARN')
+    tag_api = dict(resource_path=get_rule_arn, request_arg='ResourceARN')
 
     class resource_type(TypeInfo):
         service = 'cloudwatch'
@@ -860,7 +858,7 @@ class SyntheticsCanary(QueryResourceManager):
         enum_spec = ('describe_canaries', 'Canaries', None)
         universal_taggable = object()
 
-    tag_augment = TagsFromField('Tags')
+    tag_field = dict(field='Tags')
 
 
 @SyntheticsCanary.action_registry.register('start')

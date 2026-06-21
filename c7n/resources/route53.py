@@ -50,14 +50,7 @@ class Route53Base:
     def get_tag_extra_args(manager):
         return {'ResourceType': manager.resource_type.arn_type}
 
-    tag_augment = TagsFromBatchApi(
-        op='list_tags_for_resources',
-        request_arg='ResourceIds',
-        result_path='ResourceTagSets',
-        result_resource_path='ResourceId',
-        resource_key=get_tag_resource_id,
-        batch_size=10,
-        extra_args=get_tag_extra_args)
+    tag_batch_api = dict(op='list_tags_for_resources', request_arg='ResourceIds', result_path='ResourceTagSets', result_resource_path='ResourceId', resource_key=get_tag_resource_id, batch_size=10, extra_args=get_tag_extra_args)
 
     @property
     def generate_arn(self):
@@ -146,12 +139,7 @@ class ResourceRecordSet(ChildResourceManager):
 
 @resources.register('r53domain')
 class Route53Domain(QueryResourceManager):
-    tag_augment = query.TagsFromApi(
-        op='list_tags_for_domain',
-        resource_path='DomainName',
-        request_arg='DomainName',
-        result_path='TagList',
-        service='route53domains')
+    tag_api = dict(op='list_tags_for_domain', resource_path='DomainName', request_arg='DomainName', result_path='TagList', service='route53domains')
 
     class resource_type(TypeInfo):
         service = 'route53domains'
@@ -582,7 +570,7 @@ class ResolverRuleDescribeSource(DescribeSource):
             + owner_resource_map.get('Shared', [])
         )
 
-    augment_pipeline = MapBatch(augment_local_rules)
+    augment_batcher = augment_local_rules
 
 
 @resources.register('resolver-rule')
@@ -635,7 +623,7 @@ class ResolverQueryLogConfig(QueryResourceManager):
                 'ResolverQueryLogConfigAssociations')
         return rqlcs
 
-    augment_pipeline = MapBatch(augment_configs)
+    augment_batcher = augment_configs
 
 
 @ResolverQueryLogConfig.action_registry.register('associate-vpc')
@@ -743,9 +731,7 @@ ARC_REGION = 'us-west-2'
 
 
 class DescribeCheck(query.DescribeSource):
-    tag_augment = query.TagsFromApi(
-        op='list_tags_for_resources', resource_path='ReadinessCheckArn',
-        tag_format='dict')
+    tag_api = dict(op='list_tags_for_resources', resource_path='ReadinessCheckArn', tag_format='dict')
 
 
 @resources.register('readiness-check')
@@ -870,8 +856,7 @@ class ReadinessCheckCrossAccount(CrossAccountAccessFilter):
 
 
 class DescribeCluster(query.DescribeSource):
-    tag_augment = query.TagsFromApi(
-        resource_path='ClusterArn', tag_format='dict')
+    tag_api = dict(resource_path='ClusterArn', tag_format='dict')
 
 
 @resources.register('recovery-cluster')
@@ -963,8 +948,7 @@ class DescribeControlPanel(query.ChildDescribeSource):
         self.query = query.ChildResourceQuery(
             self.manager.session_factory, self.manager)
 
-    tag_augment = query.TagsFromApi(
-        resource_path='ControlPanelArn', tag_format='dict')
+    tag_api = dict(resource_path='ControlPanelArn', tag_format='dict')
 
 
 @resources.register('recovery-control-panel')

@@ -14,7 +14,7 @@ from c7n.filters.offhours import OffHour, OnHour
 
 
 class NotebookDescribe(DescribeSource):
-    tag_augment = TagsFromApi(op='list_tags', resource_path='NotebookInstanceArn')
+    tag_api = dict(op='list_tags', resource_path='NotebookInstanceArn')
 
 
 @resources.register('sagemaker-notebook')
@@ -70,7 +70,7 @@ class SagemakerJob(SagemakerQueryManager):
         permission_augment = (
             'sagemaker:DescribeTrainingJob', 'sagemaker:ListTags')
 
-    tag_augment = TagsFromApi(op='list_tags', resource_path='TrainingJobArn')
+    tag_api = dict(op='list_tags', resource_path='TrainingJobArn')
 
 
 @resources.register('sagemaker-transform-job')
@@ -89,7 +89,7 @@ class SagemakerTransformJob(SagemakerQueryManager):
         filter_type = 'scalar'
         permission_augment = ('sagemaker:DescribeTransformJob', 'sagemaker:ListTags')
 
-    tag_augment = TagsFromApi(op='list_tags', resource_path='TransformJobArn')
+    tag_api = dict(op='list_tags', resource_path='TransformJobArn')
 
 
 class SagemakerHyperParameterTuningJobDescribe(DescribeWithResourceTags):
@@ -244,7 +244,7 @@ SagemakerCompilationJob.query_default = [{'StatusEquals': 'INPROGRESS'}]
 
 
 class EndpointDescribe(DescribeSource):
-    tag_augment = TagsFromApi(op='list_tags', resource_path='EndpointArn')
+    tag_api = dict(op='list_tags', resource_path='EndpointArn')
 
 
 @resources.register('sagemaker-endpoint')
@@ -270,7 +270,7 @@ SagemakerEndpoint.filter_registry.register('marked-for-op', TagActionFilter)
 
 
 class EndpointConfigDescribe(DescribeSource):
-    tag_augment = TagsFromApi(op='list_tags', resource_path='EndpointConfigArn')
+    tag_api = dict(op='list_tags', resource_path='EndpointConfigArn')
 
 
 @resources.register('sagemaker-endpoint-config')
@@ -295,8 +295,7 @@ SagemakerEndpointConfig.filter_registry.register('marked-for-op', TagActionFilte
 
 
 class DescribeModel(DescribeSource):
-    tag_augment = TagsFromApi(
-        op='list_tags', resource_path='ModelArn', merge=True)
+    tag_api = dict(op='list_tags', resource_path='ModelArn', merge=True)
 
 
 @resources.register('sagemaker-model')

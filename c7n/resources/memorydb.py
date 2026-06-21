@@ -20,8 +20,7 @@ from .aws import AWS
 
 
 class DescribeMemoryDb(DescribeSource):
-    tag_augment = TagsFromApi(
-        op='list_tags', resource_path='ARN', result_path='TagList')
+    tag_api = dict(op='list_tags', resource_path='ARN', result_path='TagList')
 
 
 @AWS.resources.register('memorydb')

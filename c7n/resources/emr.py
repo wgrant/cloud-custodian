@@ -77,7 +77,7 @@ class EMRCluster(QueryResourceManager):
         return manager.retry(
             client.describe_cluster, ClusterId=resource['Id'])['Cluster']
 
-    augment_pipeline = MapResource(describe_cluster)
+    augment_mapper = describe_cluster
 
 
 @EMRCluster.filter_registry.register('metrics')
@@ -305,7 +305,7 @@ class EMRSecurityConfiguration(QueryResourceManager):
     permissions = ('elasticmapreduce:ListSecurityConfigurations',
                   'elasticmapreduce:DescribeSecurityConfiguration',)
 
-    augment_pipeline = MutateResource(decode_security_configuration)
+    augment_mutator = decode_security_configuration
 
 
 @EMRSecurityConfiguration.action_registry.register('delete')

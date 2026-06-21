@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import re
 
-from c7n.query import MutateResource
 from c7n_gcp.provider import resources
 from c7n_gcp.query import (QueryResourceManager, TypeInfo, ChildTypeInfo,
                            ChildResourceManager)
@@ -86,7 +85,7 @@ class KubernetesCluster(QueryResourceManager):
         if resource.get('resourceLabels'):
             resource['labels'] = resource['resourceLabels']
 
-    augment_pipeline = MutateResource(set_labels)
+    augment_mutator = set_labels
 
 
 @KubernetesCluster.filter_registry.register('effective-firewall')

@@ -41,7 +41,7 @@ class NodeGroupDescribeSource(ChildDescribeSource):
                 for k, v in nodegroup['tags'].items()]
         return nodegroup
 
-    augment_pipeline = MapResource(get_nodegroup)
+    augment_mapper = get_nodegroup
 
     def get_query(self):
         return super().get_query(capture_parent_id=True)
@@ -88,7 +88,7 @@ class DeleteNodeGroup(Action):
 
 
 class EKSDescribeSource(DescribeSource):
-    tag_augment = query.TagsFromField('tags')
+    tag_field = dict(field='tags')
 
 
 class EKSConfigSource(ContainerConfigSource):

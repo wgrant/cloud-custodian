@@ -37,12 +37,7 @@ log = logging.getLogger('custodian.app-elb')
 
 
 class DescribeAppElb(DescribeSource):
-    tag_augment = TagsFromBatchApi(
-        op='describe_tags',
-        resource_path='LoadBalancerArn',
-        request_arg='ResourceArns',
-        result_path='TagDescriptions',
-        result_resource_path='ResourceArn')
+    tag_batch_api = dict(op='describe_tags', resource_path='LoadBalancerArn', request_arg='ResourceArns', result_path='TagDescriptions', result_resource_path='ResourceArn')
 
     def fetch_resources_by_ids(self, ids):
         """Support server side filtering on arns or names
@@ -1256,12 +1251,7 @@ class DescribeAppELBTargetGroup(DescribeSource):
             return target_groups
 
     augment_pipeline = TargetGroupHealth()
-    tag_augment = TagsFromBatchApi(
-        op='describe_tags',
-        resource_path='TargetGroupArn',
-        request_arg='ResourceArns',
-        result_path='TagDescriptions',
-        result_resource_path='ResourceArn')
+    tag_batch_api = dict(op='describe_tags', resource_path='TargetGroupArn', request_arg='ResourceArns', result_path='TagDescriptions', result_resource_path='ResourceArn')
 
 
 @resources.register('app-elb-target-group')

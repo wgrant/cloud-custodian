@@ -6,7 +6,6 @@ import requests
 
 from c7n.filters import Filter, ValueFilter
 
-from c7n.query import MutateResource
 from c7n.utils import type_schema
 
 from c7n_azure.provider import resources
@@ -95,7 +94,7 @@ class EntraIDGroup(GraphResourceManager):
         except Exception as e:
             log.warning(f"Failed to augment EntraID groups: {e}")
 
-    augment_pipeline = MutateResource(augment_group)
+    augment_mutator = augment_group
 
     def _is_security_group(self, group):
         """Determine if group is a security group"""

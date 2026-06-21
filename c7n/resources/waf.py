@@ -59,8 +59,8 @@ class DescribeWafV2(DescribeSource):
             Scope=resource['Scope']).get('WebACL', {}))
 
     resource_query_factory = WafV2ResourceQuery
-    augment_pipeline = MutateResource(augment_web_acl)
-    tag_augment = UniversalTags()
+    augment_mutator = augment_web_acl
+    universal_tags = True
 
     def get_permissions(self):
         perms = super().get_permissions()

@@ -92,9 +92,7 @@ class BedrockCustomModel(QueryResourceManager):
         id = arn = "modelArn"
         permission_prefix = 'bedrock'
 
-    tag_augment = TagsFromApi(
-        request_arg='resourceARN', result_path='tags',
-        tag_format='lower-list')
+    tag_api = dict(request_arg='resourceARN', result_path='tags', tag_format='lower-list')
 
 
 @BedrockCustomModel.action_registry.register('tag')
@@ -215,9 +213,7 @@ class BedrockCustomModelKmsFilter(KmsRelatedFilter):
 
 
 class DescribeBedrockCustomizationJob(DescribeSource):
-    tag_augment = TagsFromApi(
-        resource_path='jobArn', request_arg='resourceARN',
-        result_path='tags', tag_format='lower-list')
+    tag_api = dict(resource_path='jobArn', request_arg='resourceARN', result_path='tags', tag_format='lower-list')
 
     def get_resources(self, resource_ids, cache=True):
         client = local_session(self.manager.session_factory).client('bedrock')
@@ -411,10 +407,8 @@ class BedrockAgent(QueryResourceManager):
     def remove_prompt_override(manager, resource):
         resource.pop('promptOverrideConfiguration', None)
 
-    augment_pipeline = MutateResource(remove_prompt_override)
-    tag_augment = TagsFromApi(
-        resource_path='agentArn', request_arg='resourceArn',
-        result_path='tags', tag_format='dict')
+    augment_mutator = remove_prompt_override
+    tag_api = dict(resource_path='agentArn', request_arg='resourceArn', result_path='tags', tag_format='dict')
 
     class resource_type(TypeInfo):
         service = 'bedrock-agent'
@@ -563,8 +557,7 @@ class BedrockKnowledgeBase(QueryResourceManager):
         arn = "knowledgeBaseArn"
         permission_prefix = 'bedrock'
 
-    tag_augment = TagsFromApi(
-        request_arg='resourceArn', result_path='tags', tag_format='dict')
+    tag_api = dict(request_arg='resourceArn', result_path='tags', tag_format='dict')
 
 
 @BedrockKnowledgeBase.action_registry.register('tag')

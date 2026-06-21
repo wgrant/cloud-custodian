@@ -4,7 +4,6 @@
 import logging
 
 from c7n.filters import Filter, ValueFilter
-from c7n.query import MutateResource
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
 from c7n_azure.graph_utils import GraphResourceManager, GraphTypeInfo
@@ -116,7 +115,7 @@ class EntraIDNamedLocation(GraphResourceManager):
         except Exception as e:
             log.warning(f"Failed to augment EntraID named locations: {e}")
 
-    augment_pipeline = MutateResource(augment_location)
+    augment_mutator = augment_location
 
 
 @EntraIDNamedLocation.filter_registry.register('location-type')

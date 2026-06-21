@@ -3,12 +3,12 @@
 from c7n.actions import BaseAction
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TagsFromField, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
 from c7n.utils import local_session, type_schema
 
 
 class DescribeBatch(DescribeSource):
-    tag_augment = TagsFromField('tags', missing='empty')
+    tag_field = dict(field='tags', missing='empty')
 
 
 @resources.register('batch-compute')

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 from googleapiclient.errors import HttpError
 
-from c7n.query import MapResource
 from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n.utils import jmespath_search
@@ -57,4 +56,4 @@ class DataflowJob(QueryResourceManager):
         except HttpError:
             return resource
 
-    augment_pipeline = MapResource(describe_job)
+    augment_mapper = describe_job

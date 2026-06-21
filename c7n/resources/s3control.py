@@ -23,7 +23,7 @@ class AccessPointDescribe(DescribeSource):
         details['AccessPointArn'] = arn.arn
         resource.update(details)
 
-    augment_pipeline = MutateResource(augment_access_point)
+    augment_mutator = augment_access_point
 
     def get_query_params(self, query_params):
         query_params = query_params or {}
@@ -135,8 +135,8 @@ class StorageLensDescribe(DescribeSource):
             AccountId=manager.config.account_id,
             ConfigId=resource['Id']).get('StorageLensConfiguration'))
 
-    augment_pipeline = MutateResource(augment_storage_lens)
-    tag_augment = UniversalTags()
+    augment_mutator = augment_storage_lens
+    universal_tags = True
 
     def get_query_params(self, query_params):
         query_params = query_params or {}

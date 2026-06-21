@@ -114,7 +114,7 @@ class DescribeEC2(query.DescribeSource):
             r['Tags'] = resource_tags.get(r[m.id], [])
         return resources
 
-    augment_pipeline = query.MapBatch(augment_awol_tags)
+    augment_batcher = augment_awol_tags
 
 
 @resources.register('ec2')
@@ -2408,7 +2408,7 @@ class LaunchTemplate(query.QueryResourceManager):
                         'LaunchTemplateVersions', ()))
         return template_versions
 
-    augment_pipeline = query.MapBatch(expand_versions)
+    augment_batcher = expand_versions
 
     def get_arns(self, resources):
         arns = []

@@ -13,7 +13,7 @@ from c7n.utils import local_session, type_schema, get_retry
 
 
 class DescribeShieldProtection(DescribeSource):
-    tag_augment = TagsFromApi(resource_path='ProtectionArn', request_arg='ResourceARN')
+    tag_api = dict(resource_path='ProtectionArn', request_arg='ResourceARN')
 
 
 @resources.register('shield-protection')

@@ -6,7 +6,7 @@ import re
 
 from c7n.filters import Filter, FilterValidationError, ValueFilter
 from c7n.filters.related import RelatedResourceFilter
-from c7n.query import MapBatch, sources
+from c7n.query import sources
 from c7n.resources import load_resources
 from c7n.utils import local_session, type_schema
 from c7n_azure.actions.base import AzureBaseAction
@@ -123,7 +123,7 @@ class RoleAssignment(QueryResourceManager):
 
         return resources
 
-    augment_pipeline = MapBatch(augment_principals)
+    augment_batcher = augment_principals
 
 
 @resources.register('roledefinition')

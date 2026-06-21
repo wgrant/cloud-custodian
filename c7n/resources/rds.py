@@ -76,8 +76,7 @@ actions = ActionRegistry('rds.actions')
 
 
 class DescribeRDS(DescribeSource):
-    tag_augment = TagsFromField(
-        'TagList', tag_format='aws-list', remove=True, missing='empty')
+    tag_field = dict(field='TagList', tag_format='aws-list', remove=True, missing='empty')
 
 
 class ConfigRDS(ConfigSource):
@@ -1070,8 +1069,7 @@ class DescribeRDSSnapshot(DescribeSource):
     def get_resources(self, ids, cache=True):
         super_get = super().get_resources
         return list(itertools.chain(*[super_get((i,)) for i in ids]))
-    tag_augment = TagsFromField(
-        'TagList', tag_format='aws-list', remove=True, missing='empty')
+    tag_field = dict(field='TagList', tag_format='aws-list', remove=True, missing='empty')
 
 
 @resources.register('rds-snapshot')
@@ -1610,12 +1608,7 @@ class RDSModifyVpcSecurityGroups(ModifyVpcSecurityGroupsAction):
 
 
 class DescribeSubnetGroup(DescribeSource):
-    tag_augment = TagsFromApi(
-        resource_path='DBSubnetGroupArn',
-        request_arg='ResourceName',
-        result_path='TagList',
-        ignore_errors=('DBSubnetGroupNotFoundFault',),
-        drop_on_error=True)
+    tag_api = dict(resource_path='DBSubnetGroupArn', request_arg='ResourceName', result_path='TagList', ignore_errors=('DBSubnetGroupNotFoundFault',), drop_on_error=True)
 
 
 @resources.register('rds-subnet-group')

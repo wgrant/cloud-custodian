@@ -44,8 +44,10 @@ class DescribeQueue(DescribeSource):
             raise
         return queue
 
-    augment_pipeline = MapResource(describe_queue, max_workers=2)
-    tag_augment = UniversalTags()
+    augment_mapper = describe_queue
+
+    augment_max_workers = 2
+    universal_tags = True
 
 
 class QueueConfigSource(ConfigSource):

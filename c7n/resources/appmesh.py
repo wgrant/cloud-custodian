@@ -81,8 +81,8 @@ class DescribeVirtualGatewayDefinition(ChildDescribeSource):
             meshName=resource["meshName"],
             virtualGatewayName=resource["virtualGatewayName"])['virtualGateway']
 
-    augment_pipeline = MapResource(get_virtual_gateway)
-    tag_augment = UniversalTags()
+    augment_mapper = get_virtual_gateway
+    universal_tags = True
 
     # This method is called in event mode and not pull mode.
     # Its purpose is to take a list of virtual gateway ARN's that the
@@ -203,8 +203,8 @@ class DescribeVirtualNodeDefinition(ChildDescribeSource):
             meshName=resource["meshName"],
             virtualNodeName=resource["virtualNodeName"])['virtualNode']
 
-    augment_pipeline = MapResource(get_virtual_node)
-    tag_augment = UniversalTags()
+    augment_mapper = get_virtual_node
+    universal_tags = True
 
     # This method is called in event mode and not pull mode.
     # Its purpose is to take a list of virtual gateway ARN's that the

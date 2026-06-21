@@ -54,8 +54,9 @@ class DescribeDataPipeline(DescribeSource):
                 pipe[key[1:]] = field['stringValue']
         return pipe_set
 
-    augment_pipeline = MapBatch(
-        describe_pipeline_set, size=20, max_workers=2)
+    augment_batcher = describe_pipeline_set
+    augment_batch_size = 20
+    augment_max_workers = 2
 
 
 @resources.register('datapipeline')

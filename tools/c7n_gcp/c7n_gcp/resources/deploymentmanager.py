@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import re
 
-from c7n.query import MutateResource
 from c7n_gcp.actions import MethodAction
 from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
@@ -36,7 +35,7 @@ class DMDeployment(QueryResourceManager):
         if isinstance(resource.get('labels'), list):
             resource['labels'] = {l['key']: l['value'] for l in resource['labels']}
 
-    augment_pipeline = MutateResource(normalize_labels)
+    augment_mutator = normalize_labels
 
     def get_resource(self, resource_info):
         resource = self.resource_type.get(self.get_client(), resource_info)

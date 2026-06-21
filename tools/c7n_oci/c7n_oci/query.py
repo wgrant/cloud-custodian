@@ -257,7 +257,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         return max_resource_limits.check_resource_limits()
 
     def augment(self, resources):
-        return _apply_augment_pipeline(self, resources, self.augment_pipeline)
+        return _apply_augment_pipeline(self, resources, self.augment_pipeline, infer=True)
 
     def _get_extra_params(self):
         return {}

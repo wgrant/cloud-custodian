@@ -1,7 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-from c7n.query import MutateResource
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager, DescribeSource
 from c7n_tencentcloud.utils import PageMethod
@@ -14,7 +13,7 @@ class LogGroupDescribe(DescribeSource):
     def set_uin(manager, resource):
         resource["c7n:uin"] = manager.config.account_id
 
-    augment_pipeline = MutateResource(set_uin)
+    augment_mutator = set_uin
 
 
 @resources.register("cls")

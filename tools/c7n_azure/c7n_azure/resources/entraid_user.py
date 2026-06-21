@@ -7,7 +7,6 @@ from datetime import datetime
 
 from c7n.filters import Filter, ValueFilter
 from c7n.filters.core import AnnotationPipelineFilter, annotation_mutator
-from c7n.query import MutateResource
 from c7n.utils import local_session, type_schema
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.constants import MSGRAPH_RESOURCE_ID
@@ -115,7 +114,7 @@ class EntraIDUser(GraphResourceManager):
         except Exception as e:
             log.warning(f"Failed to augment EntraID users: {e}")
 
-    augment_pipeline = MutateResource(augment_user)
+    augment_mutator = augment_user
 
     def _calculate_last_signin_days(self, user):
         """Calculate days since last sign-in"""

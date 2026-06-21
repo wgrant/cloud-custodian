@@ -465,6 +465,36 @@ class SourceMapBatch:
         return results
 
 
+def _augment_decorator(role, func=None, size=None, max_workers=None):
+    def decorate(f):
+        if isinstance(f, staticmethod):
+            f = f.__func__
+        f.augment_pipeline_role = role
+        f.augment_batch_size = size
+        f.augment_max_workers = max_workers
+        return staticmethod(f)
+
+    if func is None:
+        return decorate
+    return decorate(func)
+
+
+def augment_mapper(func=None, *, max_workers=None):
+    return _augment_decorator('mapper', func, max_workers=max_workers)
+
+
+def augment_mutator(func=None):
+    return _augment_decorator('mutator', func)
+
+
+def augment_batcher(func=None, *, size=None, max_workers=None):
+    return _augment_decorator('batcher', func, size, max_workers)
+
+
+def augment_source_batcher(func=None, *, size=None, max_workers=None):
+    return _augment_decorator('source-batcher', func, size, max_workers)
+
+
 class AnnotateParent:
     def __init__(self, field):
         self.field = field
@@ -485,13 +515,77 @@ def _iter_augments(augments):
     return (augments,)
 
 
-def _apply_augment_pipeline(manager, resources, augments=None):
+def _get_decorated_augment_pipeline(owner):
+    for cls in type(owner).__mro__:
+        for name, value in cls.__dict__.items():
+            func = value.__func__ if isinstance(value, staticmethod) else value
+            role = getattr(func, 'augment_pipeline_role', None)
+            if not role:
+                continue
+            handler = getattr(owner, name)
+            size = getattr(func, 'augment_batch_size', None)
+            max_workers = getattr(func, 'augment_max_workers', None)
+            if role == 'mapper':
+                return MapResource(handler, max_workers=max_workers)
+            if role == 'mutator':
+                return MutateResource(handler)
+            if role == 'batcher':
+                return MapBatch(handler, size=size, max_workers=max_workers)
+            if role == 'source-batcher':
+                return SourceMapBatch(handler, size=size, max_workers=max_workers)
+    return None
+
+
+def _get_raw_class_attr(owner, name):
+    for cls in type(owner).__mro__:
+        if name not in cls.__dict__:
+            continue
+        value = cls.__dict__[name]
+        if isinstance(value, staticmethod):
+            return value.__func__
+        return value
+    return None
+
+
+def get_augment_pipeline(owner, augments=None):
+    if augments is not None:
+        return augments
+    augment_mapper = _get_raw_class_attr(owner, 'augment_mapper')
+    augment_mutator = _get_raw_class_attr(owner, 'augment_mutator')
+    augment_batcher = _get_raw_class_attr(owner, 'augment_batcher')
+    augment_source_batcher = _get_raw_class_attr(owner, 'augment_source_batcher')
+    augment_batch_size = _get_raw_class_attr(owner, 'augment_batch_size')
+    augment_max_workers = _get_raw_class_attr(owner, 'augment_max_workers')
+    if augment_mapper:
+        return MapResource(
+            augment_mapper,
+            max_workers=augment_max_workers)
+    if augment_mutator:
+        return MutateResource(augment_mutator)
+    if augment_batcher:
+        return MapBatch(
+            augment_batcher,
+            size=augment_batch_size,
+            max_workers=augment_max_workers)
+    if augment_source_batcher:
+        return SourceMapBatch(
+            augment_source_batcher,
+            size=augment_batch_size,
+            max_workers=augment_max_workers)
+    return _get_decorated_augment_pipeline(owner)
+
+
+def _apply_augment_pipeline(manager, resources, augments=None, infer=False):
+    if infer:
+        augments = get_augment_pipeline(manager, augments)
     for augment in _iter_augments(augments):
         resources = augment(manager, resources)
     return resources
 
 
-def _apply_source_augment_pipeline(source, resources, augments=None):
+def _apply_source_augment_pipeline(source, resources, augments=None, infer=True):
+    if infer:
+        augments = get_augment_pipeline(source, augments)
     for augment in _iter_augments(augments):
         if hasattr(augment, 'process_source'):
             resources = augment.process_source(source, resources)
@@ -500,8 +594,29 @@ def _apply_source_augment_pipeline(source, resources, augments=None):
     return resources
 
 
+def get_tag_augment(owner, augments=None):
+    if augments is not None:
+        return augments
+    if getattr(owner, 'universal_tags', False):
+        return UniversalTags()
+    if getattr(owner, 'tag_api', None):
+        return TagsFromApi(**owner.tag_api)
+    if getattr(owner, 'tag_batch_api', None):
+        return TagsFromBatchApi(**owner.tag_batch_api)
+    if getattr(owner, 'tag_field', None):
+        tag_field = owner.tag_field
+        if isinstance(tag_field, str):
+            return TagsFromField(tag_field)
+        return TagsFromField(**tag_field)
+    return None
+
+
 def _apply_tag_augment(manager, resources, augments=None):
-    return _apply_augment_pipeline(manager, resources, augments)
+    augments = get_tag_augment(manager, augments)
+    if augments is None:
+        return resources
+    augment_manager = getattr(manager, 'manager', manager)
+    return _apply_augment_pipeline(augment_manager, resources, augments)
 
 
 @sources.register('describe')
@@ -511,7 +626,17 @@ class DescribeSource:
     detail_augment = True
     pre_augment_pipeline = None
     augment_pipeline = None
+    augment_mapper = None
+    augment_mutator = None
+    augment_batcher = None
+    augment_source_batcher = None
+    augment_batch_size = None
+    augment_max_workers = None
     tag_augment = None
+    tag_api = None
+    tag_batch_api = None
+    tag_field = None
+    universal_tags = False
 
     def __init__(self, manager):
         self.manager = manager
@@ -580,7 +705,7 @@ class DescribeSource:
     def augment(self, resources):
         model = self.manager.get_model()
         resources = _apply_source_augment_pipeline(
-            self, resources, self.pre_augment_pipeline)
+            self, resources, self.pre_augment_pipeline, infer=False)
         if not self.detail_augment:
             detail_spec = None
         elif getattr(model, 'detail_spec', None):
@@ -606,7 +731,7 @@ class DescribeSource:
                 resources = list(itertools.chain(*results))
         resources = _apply_source_augment_pipeline(
             self, resources, self.augment_pipeline)
-        return _apply_tag_augment(self.manager, resources, self.tag_augment)
+        return _apply_tag_augment(self, resources, self.tag_augment)
 
 
 class DescribeWithResourceTags(DescribeSource):
@@ -846,7 +971,17 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
     permission_override = None
     ignore_fetch_error_message = None
     augment_pipeline = None
+    augment_mapper = None
+    augment_mutator = None
+    augment_batcher = None
+    augment_source_batcher = None
+    augment_batch_size = None
+    augment_max_workers = None
     tag_augment = None
+    tag_api = None
+    tag_batch_api = None
+    tag_field = None
+    universal_tags = False
 
     retry = staticmethod(
         get_retry((
@@ -1041,7 +1176,8 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         s3 buckets.
         """
         resources = self.source.augment(resources)
-        resources = _apply_augment_pipeline(self, resources, self.augment_pipeline)
+        resources = _apply_augment_pipeline(
+            self, resources, self.augment_pipeline, infer=True)
         return _apply_tag_augment(self, resources, self.tag_augment)
 
     @property

@@ -10,7 +10,7 @@ from c7n.actions import BaseAction
 
 class PmtcryptKeyDescribe(query.DescribeSource):
     detail_augment = False
-    tag_augment = query.TagsFromApi(resource_path='KeyArn')
+    tag_api = dict(resource_path='KeyArn')
 
 
 @resources.register('payment-cryptography-key')

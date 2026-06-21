@@ -82,8 +82,7 @@ class ContainerConfigSource(ConfigSource):
 
 
 class ClusterDescribe(query.DescribeSource):
-    tag_augment = query.TagsFromField(
-        'tags', tag_format='lower-list', remove=True)
+    tag_field = dict(field='tags', tag_format='lower-list', remove=True)
 
 
 @resources.register('ecs')
@@ -178,7 +177,7 @@ class ECSClusterResourceDescribeSource(query.ChildDescribeSource):
                 results.extend(f.result())
         return results
 
-    augment_pipeline = query.SourceMapBatch(describe_cluster_resources)
+    augment_source_batcher = describe_cluster_resources
 
 
 @query.sources.register('describe-ecs-service')
@@ -809,7 +808,7 @@ class DescribeTaskDefinition(DescribeSource):
         ecs_tag_normalize([task_definition])
         return task_definition
 
-    augment_pipeline = query.MapResource(get_task_definition)
+    augment_mapper = get_task_definition
 
     def get_resources(self, ids, cache=True):
         if cache:

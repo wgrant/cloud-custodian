@@ -4,7 +4,6 @@ from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod, isoformat_datetime_str
 import pytz
-from c7n.query import MapBatch
 
 
 @resources.register("mysql-backup")
@@ -62,4 +61,4 @@ class MySQLBackUp(QueryResourceManager):
             backup_resources += items
         return backup_resources
 
-    augment_pipeline = MapBatch(expand_backups)
+    augment_batcher = expand_backups

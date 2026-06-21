@@ -210,7 +210,7 @@ class DescribeTransferUser(ChildDescribeSource):
             ServerId=parent_id,
             UserName=user['UserName']).get('User')
 
-    augment_pipeline = MapResource(get_transfer_user)
+    augment_mapper = get_transfer_user
 
     def get_query(self):
         return super().get_query(capture_parent_id=True)

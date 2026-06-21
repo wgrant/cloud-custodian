@@ -13,7 +13,7 @@ from c7n.actions import Action
 from c7n.credentials import assumed_session
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import Filter, ValueFilter, ListItemFilter
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, UniversalTags
+from c7n.query import QueryResourceManager, TypeInfo, DescribeSource
 from c7n.resources.aws import AWS
 from c7n.tags import universal_augment
 from c7n.utils import local_session, type_schema
@@ -82,7 +82,7 @@ class OrgPolicy(QueryResourceManager, OrgAccess):
         if query is not None:
             q.update(query)
         return super().prepare_query(q)
-    tag_augment = UniversalTags()
+    universal_tags = True
 
     def parse_query(self, query=None):
         params = {}
@@ -168,7 +168,7 @@ class OrgAccount(QueryResourceManager, OrgAccess):
 
     org_session = None
 
-    tag_augment = UniversalTags()
+    universal_tags = True
 
     def validate(self):
         self.parse_query()

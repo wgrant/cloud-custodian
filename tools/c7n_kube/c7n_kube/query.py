@@ -106,7 +106,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         return self.source.get_resources(query)
 
     def augment(self, resources):
-        return _apply_augment_pipeline(self, resources, self.augment_pipeline)
+        return _apply_augment_pipeline(self, resources, self.augment_pipeline, infer=True)
 
 
 class CustomResourceQueryManager(QueryResourceManager, metaclass=QueryMeta):

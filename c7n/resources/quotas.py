@@ -19,7 +19,7 @@ from c7n.filters import ValueFilter
 from c7n.filters.metrics import MetricsFilter
 from c7n.filters.related import RelatedResourceFilter
 from c7n.manager import resources
-from c7n.query import MapBatch, QueryResourceManager, TypeInfo
+from c7n.query import QueryResourceManager, TypeInfo
 from c7n.utils import local_session, type_schema, get_retry
 
 
@@ -124,7 +124,7 @@ class ServiceQuota(QueryResourceManager):
 
         return results
 
-    augment_pipeline = MapBatch(expand_quotas)
+    augment_batcher = expand_quotas
 
 
 @ServiceQuota.filter_registry.register('usage-metric')

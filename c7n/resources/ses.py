@@ -38,8 +38,8 @@ class DescribeConfigurationSet(DescribeSource):
             for k in details
             if k not in {'ConfigurationSet', 'ResponseMetadata'}})
 
-    augment_pipeline = MutateResource(augment_configuration_set)
-    tag_augment = UniversalTags()
+    augment_mutator = augment_configuration_set
+    universal_tags = True
 
 
 @resources.register('ses-configuration-set')
@@ -70,8 +70,8 @@ class DescribeConfigurationSetV2(DescribeSource):
             for k in details
             if k not in {'ResponseMetadata'}}
 
-    augment_pipeline = MapResource(get_configuration_set)
-    tag_augment = UniversalTags()
+    augment_mapper = get_configuration_set
+    universal_tags = True
 
 
 @resources.register('ses-configuration-set-v2')
@@ -365,8 +365,8 @@ class DescribeDedicatedIpPool(DescribeSource):
             client.get_dedicated_ip_pool,
             PoolName=resource)["DedicatedIpPool"]
 
-    augment_pipeline = MapResource(get_dedicated_ip_pool)
-    tag_augment = UniversalTags()
+    augment_mapper = get_dedicated_ip_pool
+    universal_tags = True
 
 
 @resources.register('ses-dedicated-ip-pool')

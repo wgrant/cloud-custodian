@@ -4,7 +4,7 @@
 import logging
 
 from c7n.manager import resources
-from c7n.query import ConfigSource, QueryResourceManager, TagsFromApi, TypeInfo
+from c7n.query import ConfigSource, QueryResourceManager, TypeInfo
 from c7n import utils
 from c7n import tags
 from c7n.utils import local_session, type_schema
@@ -56,10 +56,7 @@ class ElasticBeanstalkEnvironment(QueryResourceManager):
         permissions_augment = ("elasticbeanstalk:ListTagsForResource",)
 
     permissions = ('elasticbeanstalk:ListTagsForResource',)
-    tag_augment = TagsFromApi(
-        resource_path='EnvironmentArn',
-        result_path='ResourceTags',
-        ignore_errors=('ResourceNotFoundException',))
+    tag_api = dict(resource_path='EnvironmentArn', result_path='ResourceTags', ignore_errors=('ResourceNotFoundException',))
     source_mapping = {
         'config': ConfigSource
     }

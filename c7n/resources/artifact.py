@@ -104,7 +104,7 @@ class DescribeRepo(DescribeSource):
         if result:
             return result['repository']
 
-    augment_pipeline = MapResource(describe_repository)
+    augment_mapper = describe_repository
 
 
 @resources.register('artifact-repo')

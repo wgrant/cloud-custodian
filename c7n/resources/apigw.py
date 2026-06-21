@@ -117,7 +117,7 @@ class UpdateAccount(BaseAction):
 
 
 class ApiDescribeSource(query.DescribeSource):
-    tag_augment = query.TagsFromField('tags', remove=True, missing='empty', merge=True)
+    tag_field = dict(field='tags', remove=True, missing='empty', merge=True)
 
 
 @resources.register('rest-api')
@@ -286,7 +286,7 @@ class DescribeRestStage(query.ChildDescribeSource):
             return results
 
     augment_pipeline = NormalizeRestStage()
-    tag_augment = query.TagsFromField('tags', remove=True, missing='empty', merge=True)
+    tag_field = dict(field='tags', remove=True, missing='empty', merge=True)
 
     def __init__(self, manager):
         self.manager = manager
@@ -1087,7 +1087,7 @@ class DomainNameRemediateTls(BaseAction):
 
 
 class ApiGwV2DescribeSource(query.DescribeSource):
-    tag_augment = query.TagsFromField('Tags', remove=True, missing='empty')
+    tag_field = dict(field='Tags', remove=True, missing='empty')
 
 
 @resources.register('apigwv2')
@@ -1187,7 +1187,7 @@ class DeleteApiV2(BaseAction):
 
 
 class StageDescribe(query.ChildDescribeSource):
-    tag_augment = query.TagsFromField('Tags', remove=True, missing='empty')
+    tag_field = dict(field='Tags', remove=True, missing='empty')
 
 
 @resources.register("apigwv2-stage")

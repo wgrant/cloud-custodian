@@ -243,7 +243,7 @@ class DescribeUser(DescribeSource):
         if result:
             return result.get('User') or None
 
-    augment_pipeline = MapResource(get_user)
+    augment_mapper = get_user
 
     def get_resources(self, resource_ids, cache=True):
         client = local_session(self.manager.session_factory).client('iam')

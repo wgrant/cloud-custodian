@@ -1,7 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 from c7n.utils import type_schema
-from c7n.query import MutateResource
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod
@@ -52,7 +51,7 @@ class SecurityGroup(QueryResourceManager):
         resource["IpPermissions"] = policy_set["Ingress"]
         resource["IpPermissionsEgress"] = policy_set["Egress"]
 
-    augment_pipeline = MutateResource(augment_policies)
+    augment_mutator = augment_policies
 
 
 class SGPermission(Filter):

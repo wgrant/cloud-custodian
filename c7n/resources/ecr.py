@@ -28,12 +28,7 @@ class ConfigECR(ConfigSource):
 
 
 class DescribeECR(DescribeSource):
-    tag_augment = TagsFromApi(
-        resource_path='repositoryArn',
-        request_arg='resourceArn',
-        result_path='tags',
-        ignore_errors=('RepositoryNotFoundException',),
-        drop_on_error=True)
+    tag_api = dict(resource_path='repositoryArn', request_arg='resourceArn', result_path='tags', ignore_errors=('RepositoryNotFoundException',), drop_on_error=True)
 
 
 @resources.register('ecr')

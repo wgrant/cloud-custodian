@@ -1,7 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 #
-from c7n.query import MapResource
 from c7n_openstack.query import QueryResourceManager, TypeInfo, DescribeSource
 from c7n_openstack.provider import resources
 from c7n.utils import local_session
@@ -16,7 +15,7 @@ class StorageContainerMeta(DescribeSource):
             resource['name']).toDict()
         return container_metadata or None
 
-    augment_pipeline = MapResource(get_container_metadata)
+    augment_mapper = get_container_metadata
 
 
 @resources.register('storage-container')

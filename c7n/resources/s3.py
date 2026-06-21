@@ -92,7 +92,7 @@ class DescribeS3(query.DescribeSource):
             results = list(filter(None, results))
             return results
 
-    augment_pipeline = query.MapBatch(assemble_buckets)
+    augment_batcher = assemble_buckets
 
 
 class ConfigS3(query.ConfigSource):

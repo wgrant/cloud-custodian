@@ -163,8 +163,8 @@ class DescribeTables(ChildDescribeSource):
             tableName=resource['tableName'])
         resource.update(details)
 
-    augment_pipeline = MutateResource(augment_table)
-    tag_augment = UniversalTags()
+    augment_mutator = augment_table
+    universal_tags = True
 
 
 @resources.register('keyspace-table')

@@ -6,7 +6,7 @@ from c7n.manager import resources
 from c7n.actions import BaseAction, RemovePolicyBase
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import iamaccess
-from c7n.query import MapResource, QueryResourceManager, TypeInfo, DescribeSource
+from c7n.query import QueryResourceManager, TypeInfo, DescribeSource
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, Action
 from c7n.utils import local_session, type_schema, jmespath_search
@@ -42,7 +42,9 @@ class DescribeSecret(DescribeSource):
             secret.setdefault('c7n:DeniedMethods', []).append(detail_op)
         return secret
 
-    augment_pipeline = MapResource(augment_secret, max_workers=QueryResourceManager.max_workers)
+    augment_mapper = augment_secret
+
+    augment_max_workers = QueryResourceManager.max_workers
 
 
 @resources.register('secrets-manager')

@@ -10,13 +10,7 @@ from c7n.utils import local_session
 
 class DescribeBackup(DescribeSource):
     augment_pipeline = MergeField('BackupPlan')
-    tag_augment = TagsFromApi(
-        op='list_tags',
-        resource_path='BackupPlanArn',
-        result_path='Tags',
-        tag_format='dict',
-        ignore_errors=('ResourceNotFoundException',),
-        drop_on_error=True)
+    tag_api = dict(op='list_tags', resource_path='BackupPlanArn', result_path='Tags', tag_format='dict', ignore_errors=('ResourceNotFoundException',), drop_on_error=True)
 
     def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('backup')

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 from c7n.filters.core import Filter, ValueFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TagsFromApi, TypeInfo
+from c7n.query import QueryResourceManager, TypeInfo
 from c7n.utils import local_session, type_schema, QueryParser
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter, VpcFilter
 from c7n.tags import Tag, RemoveTag, universal_augment, TagDelayedAction, TagActionFilter
@@ -22,7 +22,7 @@ class Directory(QueryResourceManager):
         arn_type = "directory"
         permission_augment = ('ds:ListTagsForResource',)
 
-    tag_augment = TagsFromApi(resource_path='DirectoryId', request_arg='ResourceId')
+    tag_api = dict(resource_path='DirectoryId', request_arg='ResourceId')
 
 
 @Directory.filter_registry.register('subnet')

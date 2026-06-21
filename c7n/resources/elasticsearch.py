@@ -13,7 +13,7 @@ from c7n.filters.core import ComparableVersion
 from c7n.exceptions import PolicyValidationError
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter, VpcFilter, Filter
 from c7n.manager import resources
-from c7n.query import ConfigSource, DescribeSource, MapBatch, QueryResourceManager, TypeInfo
+from c7n.query import ConfigSource, DescribeSource, QueryResourceManager, TypeInfo
 from c7n.utils import local_session, type_schema, jmespath_search
 from c7n.tags import Tag, RemoveTag, TagActionFilter, TagDelayedAction
 from c7n.filters.kms import KmsRelatedFilter
@@ -62,7 +62,9 @@ class DescribeDomain(DescribeSource):
                 client.list_tags, ARN=rarn).get('TagList', [])
         return resources
 
-    augment_pipeline = MapBatch(describe_domain_set, size=5)
+    augment_batcher = describe_domain_set
+
+    augment_batch_size = 5
 
     def fetch_resources_by_ids(self, resource_ids):
         # augment will turn these into resource dictionaries

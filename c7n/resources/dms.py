@@ -14,10 +14,7 @@ from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 
 
 class InstanceDescribe(DescribeSource):
-    tag_augment = TagsFromApi(
-        resource_path='ReplicationInstanceArn',
-        result_path='TagList',
-        ignore_errors=('ResourceNotFoundFault',))
+    tag_api = dict(resource_path='ReplicationInstanceArn', result_path='TagList', ignore_errors=('ResourceNotFoundFault',))
 
     def fetch_resources_by_ids(self, resource_ids):
         return self.query.filter(

@@ -356,7 +356,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         self.check_resource_limit(resources)
 
     def augment(self, resources):
-        return _apply_augment_pipeline(self, resources, self.augment_pipeline)
+        return _apply_augment_pipeline(self, resources, self.augment_pipeline, infer=True)
 
     # TODO
     # to support configs: max-resources, max-resources-percent

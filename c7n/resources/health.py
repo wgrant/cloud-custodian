@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import itertools
 
-from c7n.query import MapBatch, QueryResourceManager, TypeInfo
+from c7n.query import QueryResourceManager, TypeInfo
 from c7n.manager import resources
 from c7n.utils import local_session, QueryParser
 
@@ -75,7 +75,9 @@ class HealthEvents(QueryResourceManager):
 
         return resource_set
 
-    augment_pipeline = MapBatch(augment_event_set, size=10)
+    augment_batcher = augment_event_set
+
+    augment_batch_size = 10
 
 
 class HealthQueryParser(QueryParser):

@@ -12,7 +12,6 @@ from c7n_azure.provider import resources
 from c7n_azure.query import QueryResourceManager, QueryMeta, ChildResourceManager, TypeInfo, \
     ChildTypeInfo, TypeMeta
 from c7n_azure.utils import ResourceIdParser
-from c7n.query import MutateResource
 
 # ARM resources which do not currently support tagging
 # for database it is a C7N known issue (#4543)
@@ -47,7 +46,7 @@ class ArmResourceManager(QueryResourceManager, metaclass=QueryMeta):
         if 'id' in resource:
             resource['resourceGroup'] = ResourceIdParser.get_resource_group(resource['id'])
 
-    augment_pipeline = MutateResource(set_resource_group)
+    augment_mutator = set_resource_group
 
     def get_resources(self, resource_ids):
         resource_client = self.get_client('azure.mgmt.resource.ResourceManagementClient')

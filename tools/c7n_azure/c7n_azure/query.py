@@ -237,7 +237,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         self._session = None
 
     def augment(self, resources):
-        return _apply_augment_pipeline(self, resources, self.augment_pipeline)
+        return _apply_augment_pipeline(self, resources, self.augment_pipeline, infer=True)
 
     def get_permissions(self):
         return ()

@@ -288,8 +288,7 @@ class DescribeApplication(DescribeSource):
     def get_application_arn(manager, resource):
         return manager.get_arns([resource])[0]
 
-    tag_augment = TagsFromApi(
-        resource_path=get_application_arn)
+    tag_api = dict(resource_path=get_application_arn)
 
 
 @resources.register('codedeploy-app')
@@ -366,8 +365,8 @@ class DescribeDeploymentGroup(query.ChildDescribeSource):
         return manager.generate_arn(
             resource['applicationName'] + '/' + resource['deploymentGroupName'])
 
-    augment_pipeline = query.MapResource(get_deployment_group)
-    tag_augment = TagsFromApi(resource_path=get_deployment_group_arn)
+    augment_mapper = get_deployment_group
+    tag_api = dict(resource_path=get_deployment_group_arn)
 
     def get_permissions(self):
         return super().get_permissions() + [

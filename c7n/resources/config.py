@@ -27,7 +27,7 @@ class RecorderDescribe(DescribeSource):
 
     # Config recorder is a singleton, so detail calls do not have the usual
     # cardinality concern and most policies inspect the full configuration.
-    augment_pipeline = MutateResource(augment_recorder)
+    augment_mutator = augment_recorder
 
 
 @resources.register('config-recorder')

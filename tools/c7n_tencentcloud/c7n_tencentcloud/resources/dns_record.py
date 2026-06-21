@@ -1,6 +1,5 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
-from c7n.query import MapBatch
 from c7n_tencentcloud.provider import resources
 from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager
 from c7n_tencentcloud.utils import PageMethod
@@ -51,4 +50,4 @@ class DnsRecord(QueryResourceManager):
             record_resources += resp
         return record_resources
 
-    augment_pipeline = MapBatch(expand_records)
+    augment_batcher = expand_records

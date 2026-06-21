@@ -52,8 +52,8 @@ class LexV2BotAliasDescribe(query.ChildDescribeSource):
         botalias.pop('ResponseMetadata', None)
         resource.update(botalias)
 
-    augment_pipeline = query.MutateResource(augment_bot_alias)
-    tag_augment = query.UniversalTags()
+    augment_mutator = augment_bot_alias
+    universal_tags = True
 
     def normalize_resources(self, resources, query):
         return [r for r in resources if r['botAliasStatus'] == 'Available']
