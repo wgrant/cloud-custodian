@@ -1061,10 +1061,9 @@ class FilterBatch:
         return results
 
 
-class AnnotationPipelineFilter(ValueFilter):
+class AnnotationPipelineMixin:
     annotation_key = None
     annotation_pipeline = None
-    annotate = False
     source_annotation_path = None
 
     def get_annotation_key(self):
@@ -1084,12 +1083,19 @@ class AnnotationPipelineFilter(ValueFilter):
             return _apply_annotation_pipeline(self, resources, self.annotation_pipeline)
         return resources
 
+
+class AnnotationPipelineFilter(AnnotationPipelineMixin, ValueFilter):
+    annotate = False
+
     def process(self, resources, event=None):
         self.annotate_resources(self.get_annotation_resources(resources))
         return super().process(resources, event)
 
+    def get_filter_resource(self, resource):
+        return _get_path(resource, self.get_annotation_path())
+
     def __call__(self, resource):
-        return super().__call__(_get_path(resource, self.get_annotation_path()))
+        return super().__call__(self.get_filter_resource(resource))
 
 
 class EventFilter(ValueFilter):
@@ -1502,11 +1508,8 @@ class ListItemFilter(Filter):
         return False
 
 
-class ListItemAnnotationFilter(ListItemFilter):
-    annotation_key = None
-    annotation_pipeline = None
+class ListItemAnnotationFilter(AnnotationPipelineMixin, ListItemFilter):
     source_annotation_key = None
-    source_annotation_path = None
 
     def __init__(self, data, manager=None):
         data = dict(data)
@@ -1531,15 +1534,6 @@ class ListItemAnnotationFilter(ListItemFilter):
 
     def discard_annotation(self):
         return self.annotation_key is None and self.annotate_items
-
-    def get_annotation_resources(self, resources):
-        annotation_path = self.get_annotation_path()
-        return [r for r in resources if _get_path(r, annotation_path) is None]
-
-    def annotate_resources(self, resources):
-        if resources:
-            return _apply_annotation_pipeline(self, resources, self.annotation_pipeline)
-        return resources
 
     def process(self, resources, event=None):
         annotation_path = self.get_annotation_path()
