@@ -2,17 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 import logging
 import uuid
+from c7n_azure import constants
 from c7n_azure.actions.firewall import SetFirewallAction
 from c7n_azure.filters import FirewallRulesFilter, FirewallBypassFilter
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
-from c7n_azure.utils import ThreadHelper, StringUtils
+from c7n_azure.utils import StringUtils
 from netaddr import IPRange, IPSet, IPNetwork, IPAddress
 
 from c7n.exceptions import PolicyValidationError
 from c7n.utils import type_schema
 from c7n.filters import Filter
-from c7n.filters.core import ListItemAnnotationFilter, ListItemFilter, SetAnnotation, ValueFilter
+from c7n.filters.core import FilterBatch, ListItemAnnotationFilter, SetAnnotation, ValueFilter
 
 AZURE_SERVICES = IPRange('0.0.0.0', '0.0.0.0')  # nosec
 log = logging.getLogger('custodian.azure.sql-server')
@@ -121,19 +122,14 @@ class TransparentDataEncryptionFilter(Filter):
         self.key_type = self.data['key_type']
 
     def process(self, resources, event=None):
-        resources, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=log
-        )
-        if exceptions:
-            raise exceptions[0]
-        return resources
+        return FilterBatch(
+            self.filter_resource_set,
+            size=constants.DEFAULT_CHUNK_SIZE,
+            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
-    def _process_resource_set(self, resources, event=None):
-        client = self.manager.get_client()
+    @staticmethod
+    def filter_resource_set(resource_filter, resources, event=None):
+        client = resource_filter.manager.get_client()
         result = []
         for resource in resources:
 
@@ -145,9 +141,9 @@ class TransparentDataEncryptionFilter(Filter):
             resource['properties']['transparentDataEncryption'] = \
                 encryption_protector.serialize(True).get('properties', {})
 
-            if self.key_type == 'CustomerManaged':
+            if resource_filter.key_type == 'CustomerManaged':
                 encryption_type = 'AzureKeyVault'
-            elif self.key_type == 'ServiceManaged':
+            elif resource_filter.key_type == 'ServiceManaged':
                 encryption_type = 'ServiceManaged'
 
             if StringUtils.equal(
@@ -313,34 +309,24 @@ class VulnerabilityAssessmentFilter(ValueFilter):
         self.key = 'c7n:vulnerability_assessment'
 
     def process(self, resources, event=None):
-        # process the servers in parallel, updating them in place
-        # with the VA assesment properties
-        _, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=log
-        )
-
-        if exceptions:
-            raise exceptions[0]
-
+        SetAnnotation(
+            self.get_vulnerability_assessment,
+            key=self.key,
+            size=constants.DEFAULT_CHUNK_SIZE,
+            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources)
         return super(VulnerabilityAssessmentFilter, self).process(resources, event)
 
-    def _process_resource_set(self, resources, event=None):
-        client = self.manager.get_client()
-        for resource in resources:
-            if self.key not in resource['properties']:
-                va = list(client.server_vulnerability_assessments.list_by_server(
-                    resource['resourceGroup'],
-                    resource['name']))
+    @staticmethod
+    def get_vulnerability_assessment(resource_filter, resource):
+        client = resource_filter.manager.get_client()
+        va = list(client.server_vulnerability_assessments.list_by_server(
+            resource['resourceGroup'],
+            resource['name']))
 
-                if va:
-                    # there can only be a single instance
-                    resource[self.key] = va[0].serialize(True).get('properties', {})
-                else:
-                    resource[self.key] = {}
+        if va:
+            # there can only be a single instance
+            return va[0].serialize(True).get('properties', {})
+        return {}
 
     def __call__(self, resource):
         recurring_scan_enabled = resource[self.key] \
@@ -460,29 +446,19 @@ class AuditingFilter(ValueFilter):
             super().validate()
 
     def process(self, resources, event=None):
-        _, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=log
-        )
-
-        if exceptions:
-            raise exceptions[0]
-
+        SetAnnotation(
+            self.get_auditing_settings,
+            path=('properties', self.cache_key),
+            size=constants.DEFAULT_CHUNK_SIZE,
+            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources)
         return super().process(resources, event)
 
-    def _process_resource_set(self, resources, event=None):
-        client = self.manager.get_client()
-        for resource in resources:
-            if self.cache_key not in resource['properties']:
-                auditing_settings = client.server_blob_auditing_policies.get(
-                    resource['resourceGroup'],
-                    resource['name'])
-
-                resource['properties'][self.cache_key] = \
-                    auditing_settings.serialize(True).get('properties', {})
+    @staticmethod
+    def get_auditing_settings(resource_filter, resource):
+        auditing_settings = resource_filter.manager.get_client().server_blob_auditing_policies.get(
+            resource['resourceGroup'],
+            resource['name'])
+        return auditing_settings.serialize(True).get('properties', {})
 
     def __call__(self, resource):
         auditing_enabled = resource['properties'][self.cache_key].get('state') == 'Enabled'
@@ -658,7 +634,7 @@ class SqlSetFirewallAction(SetFirewallAction):
 
 
 @SqlServer.filter_registry.register('auditing-policies')
-class SqlServerAuditingSettingsFilter(ListItemFilter):
+class SqlServerAuditingSettingsFilter(ListItemAnnotationFilter):
     """
     Filter sql servers by auditing policies.
 
@@ -689,34 +665,19 @@ class SqlServerAuditingSettingsFilter(ListItemFilter):
     )
 
     annotation_key = 'c7n:auditing-settings-list'
+    source_annotation_path = ('properties', annotation_key)
     annotate_items = True
 
-    def process(self, resources, event=None):
-        _, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resources,
-            executor_factory=self.executor_factory,
-            log=log
+    @staticmethod
+    def get_auditing_settings(resource_filter, resource):
+        settings = resource_filter.manager.get_client().server_blob_auditing_policies.list_by_server(
+            resource_group_name=resource['resourceGroup'],
+            server_name=resource['name']
         )
+        return [s.serialize(True).get('properties', {}) for s in settings]
 
-        if exceptions:
-            raise exceptions[0]  # pragma: no cover
-        return super().process(resources, event)
-
-    def _process_resources(self, resources, event=None):
-        cl = self.manager.get_client()
-        for res in resources:
-            properties = res.setdefault('properties', {})
-            if self.annotation_key in properties:
-                continue  # pragma: no cover
-            settings = cl.server_blob_auditing_policies.list_by_server(
-                resource_group_name=res['resourceGroup'],
-                server_name=res['name']
-            )
-            properties[self.annotation_key] = [
-                s.serialize(True).get('properties', {}) for s in settings
-            ]
-
-    def get_item_values(self, resource):
-        return resource['properties'].get(self.annotation_key, [])
+    annotation_pipeline = SetAnnotation(
+        get_auditing_settings,
+        path=source_annotation_path,
+        size=constants.DEFAULT_CHUNK_SIZE,
+        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)

@@ -13,8 +13,9 @@ from azure.storage.file import FileService
 from azure.storage.queue import QueueServiceClient
 from c7n.exceptions import PolicyValidationError
 from c7n.filters.core import (
-    ListItemAnnotationFilter, ListItemFilter, SetAnnotation, type_schema)
+    FilterBatch, ListItemAnnotationFilter, SetAnnotation, type_schema)
 from c7n.utils import get_annotation_prefix, local_session
+from c7n_azure import constants
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.actions.firewall import SetFirewallAction
 from c7n_azure.constants import BLOB_TYPE, FILE_TYPE, QUEUE_TYPE, TABLE_TYPE
@@ -27,7 +28,7 @@ from c7n_azure.filters import (
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 from c7n_azure.storage_utils import StorageUtilities
-from c7n_azure.utils import ThreadHelper, serialize
+from c7n_azure.utils import serialize
 from netaddr import IPSet
 
 
@@ -65,7 +66,7 @@ class Storage(ArmResourceManager):
 
 
 @Storage.filter_registry.register("file-services")
-class StorageFileServicesFilter(ListItemFilter):
+class StorageFileServicesFilter(ListItemAnnotationFilter):
     """
     Filters Storage Accounts by their file services configuration.
 
@@ -95,36 +96,19 @@ class StorageFileServicesFilter(ListItemFilter):
     item_annotation_key = "c7n:FileServices"
     annotate_items = True
 
-    def _process_resources(self, resources, event=None, client=None):
-        if client is None:
-            client = self.manager.get_client()
-
-        for res in resources:
-            if self.item_annotation_key in res:
-                continue
-            file_services = client.file_services.list(
-                resource_group_name=res["resourceGroup"],
-                account_name=res["name"],
-            )
-            # at least one default is present
-            res[self.item_annotation_key] = file_services.serialize(True).get('value', [])
-
-    def process(self, resources, event=None):
-
-        _, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resources,
-            executor_factory=self.executor_factory,
-            log=self.log,
-            client=self.manager.get_client()  # seems like Azure mgmt clients are thread-safe
+    @staticmethod
+    def get_file_services(resource_filter, resource):
+        file_services = resource_filter.manager.get_client().file_services.list(
+            resource_group_name=resource["resourceGroup"],
+            account_name=resource["name"],
         )
-        if exceptions:
-            raise exceptions[0]  # pragma: no cover
-        return super().process(resources, event)
+        # at least one default is present
+        return file_services.serialize(True).get('value', [])
 
-    def get_item_values(self, resource):
-        return resource.pop(self.item_annotation_key, [])
+    annotation_pipeline = SetAnnotation(
+        get_file_services,
+        size=constants.DEFAULT_CHUNK_SIZE,
+        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
 
 
 @Storage.action_registry.register('set-firewall-rules')
@@ -437,26 +421,21 @@ class StorageDiagnosticSettingsFilter(ValueFilter):
         self.storage_type = data.get('storage-type')
 
     def process(self, resources, event=None):
-        session = local_session(self.manager.session_factory)
-        result, _ = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self.process_resource_set,
-            executor_factory=self.executor_factory,
-            log=self.log,
-            session=session
-        )
-        return result
+        return FilterBatch(
+            self.process_resource_set,
+            size=constants.DEFAULT_CHUNK_SIZE,
+            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
-    def process_resource_set(self, resources, event=None, session=None):
+    @staticmethod
+    def process_resource_set(resource_filter, resources, event=None):
+        session = local_session(resource_filter.manager.session_factory)
         matched = []
         for resource in resources:
-            settings = self._get_settings(resource, session)
+            settings = resource_filter._get_settings(resource, session)
             # New SDK renamed the property, this code is to ensure back compat
             if 'analytics_logging' in settings.keys():
                 settings['logging'] = settings.pop('analytics_logging')
-            filtered_settings = super(StorageDiagnosticSettingsFilter, self).process([settings],
-                                                                                     event)
+            filtered_settings = ValueFilter.process(resource_filter, [settings], event)
 
             if filtered_settings:
                 matched.append(resource)
@@ -805,19 +784,14 @@ class BlobServicesFilter(ValueFilter):
         super(BlobServicesFilter, self).__init__(data, manager)
 
     def process(self, resources, event=None):
-        resources, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=self.log
-        )
-        if exceptions:
-            raise exceptions[0]
-        return resources
+        return FilterBatch(
+            self.process_resource_set,
+            size=constants.DEFAULT_CHUNK_SIZE,
+            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
-    def _process_resource_set(self, resources, event=None):
-        client = self.manager.get_client()
+    @staticmethod
+    def process_resource_set(resource_filter, resources, event=None):
+        client = resource_filter.manager.get_client()
         result = []
         for resource in resources:
             if 'c7n:blobServices' not in resource['properties']:
@@ -828,7 +802,8 @@ class BlobServicesFilter(ValueFilter):
                 resource['properties']['c7n:blobServices'] = \
                     blob_services.serialize(True).get('properties', {})
 
-            filtered_resources = super(BlobServicesFilter, self).process(
+            filtered_resources = ValueFilter.process(
+                resource_filter,
                 [resource['properties']['c7n:blobServices']],
                 event)
 

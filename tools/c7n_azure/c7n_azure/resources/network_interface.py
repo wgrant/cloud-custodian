@@ -5,8 +5,7 @@ from c7n_azure import constants
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 
-from c7n.filters.core import ValueFilter, type_schema
-from c7n_azure.utils import ThreadHelper
+from c7n.filters.core import FilterBatch, ValueFilter, type_schema
 import logging
 
 max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
@@ -70,20 +69,14 @@ class EffectiveRouteTableFilter(ValueFilter):
     schema = type_schema('effective-route-table', rinherit=ValueFilter.schema)
 
     def process(self, resources, event=None):
+        return FilterBatch(
+            self.filter_resource_set,
+            size=chunk_size,
+            max_workers=max_workers)(self, resources, event=event)
 
-        resources, _ = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=log,
-            max_workers=max_workers,
-            chunk_size=chunk_size
-        )
-        return resources
-
-    def _process_resource_set(self, resources, event):
-        client = self.manager.get_client()
+    @staticmethod
+    def filter_resource_set(resource_filter, resources, event=None):
+        client = resource_filter.manager.get_client()
         matched = []
 
         for resource in resources:
@@ -97,8 +90,8 @@ class EffectiveRouteTableFilter(ValueFilter):
                     )
 
                     resource['routes'] = route_table.serialize()
-                    filtered_effective_route_table = super(EffectiveRouteTableFilter, self)\
-                        .process([resource], event)
+                    filtered_effective_route_table = ValueFilter.process(
+                        resource_filter, [resource], event)
 
                     if filtered_effective_route_table:
                         matched.append(resource)

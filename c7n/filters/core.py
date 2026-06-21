@@ -7,6 +7,7 @@ import copy
 import datetime
 from datetime import timedelta
 import enum
+import itertools
 from functools import partial, reduce
 import fnmatch
 import ipaddress
@@ -936,6 +937,33 @@ def _apply_annotation_pipeline(resource_filter, resources, ops=None):
     return resources
 
 
+def _get_path(resource, path):
+    current = resource
+    for part in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def _set_path(resource, path, value):
+    current = resource
+    for part in path[:-1]:
+        current = current.setdefault(part, {})
+    current[path[-1]] = value
+
+
+def _pop_path(resource, path):
+    current = resource
+    for part in path[:-1]:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    if not isinstance(current, dict):
+        return None
+    return current.pop(path[-1], None)
+
+
 class AnnotateResource:
     def __init__(self, func):
         self.func = func
@@ -947,9 +975,12 @@ class AnnotateResource:
 
 
 class SetAnnotation:
-    def __init__(self, func, key=None):
+    def __init__(self, func, key=None, path=None, size=None, max_workers=None):
         self.func = func
         self.key = key
+        self.path = path
+        self.size = size
+        self.max_workers = max_workers
 
     def get_annotation_key(self, resource_filter):
         if self.key:
@@ -958,10 +989,25 @@ class SetAnnotation:
             return resource_filter.get_annotation_key()
         return resource_filter.annotation_key
 
-    def __call__(self, resource_filter, resources):
-        annotation_key = self.get_annotation_key(resource_filter)
+    def get_annotation_path(self, resource_filter):
+        if self.path:
+            return self.path
+        return (self.get_annotation_key(resource_filter),)
+
+    def process_resource_set(self, resource_filter, resources):
+        annotation_path = self.get_annotation_path(resource_filter)
         for resource in resources:
-            resource[annotation_key] = self.func(resource_filter, resource)
+            _set_path(resource, annotation_path, self.func(resource_filter, resource))
+
+    def __call__(self, resource_filter, resources):
+        resource_sets = chunks(resources, self.size) if self.size else (resources,)
+        if self.max_workers:
+            with resource_filter.manager.executor_factory(max_workers=self.max_workers) as w:
+                list(w.map(partial(self.process_resource_set, resource_filter), resource_sets))
+            return resources
+
+        for resource_set in resource_sets:
+            self.process_resource_set(resource_filter, resource_set)
         return resources
 
 
@@ -981,6 +1027,27 @@ class AnnotateBatch:
         for resource_set in resource_sets:
             self.func(resource_filter, resource_set)
         return resources
+
+
+class FilterBatch:
+    def __init__(self, func, size=None, max_workers=None):
+        self.func = func
+        self.size = size
+        self.max_workers = max_workers
+
+    def __call__(self, resource_filter, resources, event=None):
+        resource_sets = chunks(resources, self.size) if self.size else (resources,)
+        if self.max_workers:
+            with resource_filter.manager.executor_factory(max_workers=self.max_workers) as w:
+                results = w.map(partial(self.func, resource_filter, event=event), resource_sets)
+                return list(itertools.chain.from_iterable(r for r in results if r))
+
+        results = []
+        for resource_set in resource_sets:
+            result = self.func(resource_filter, resource_set, event=event)
+            if result:
+                results.extend(result)
+        return results
 
 
 class AnnotationPipelineFilter(ValueFilter):
@@ -1418,12 +1485,13 @@ class ListItemAnnotationFilter(ListItemFilter):
     annotation_key = None
     annotation_pipeline = None
     source_annotation_key = None
+    source_annotation_path = None
 
     def __init__(self, data, manager=None):
         data = dict(data)
-        annotation_key = self.get_annotation_key()
-        if 'key' not in data and annotation_key:
-            data['key'] = f'"{annotation_key}"'
+        annotation_path = self.get_annotation_path()
+        if 'key' not in data and annotation_path:
+            data['key'] = '.'.join(f'"{p}"' for p in annotation_path)
         super().__init__(data, manager)
 
     def get_annotation_key(self):
@@ -1435,12 +1503,17 @@ class ListItemAnnotationFilter(ListItemFilter):
             return f'{self.item_annotation_key}:Items'
         return self.item_annotation_key
 
+    def get_annotation_path(self):
+        if self.source_annotation_path:
+            return self.source_annotation_path
+        return (self.get_annotation_key(),)
+
     def discard_annotation(self):
         return self.annotation_key is None and self.annotate_items
 
     def get_annotation_resources(self, resources):
-        annotation_key = self.get_annotation_key()
-        return [r for r in resources if annotation_key not in r]
+        annotation_path = self.get_annotation_path()
+        return [r for r in resources if _get_path(r, annotation_path) is None]
 
     def annotate_resources(self, resources):
         if resources:
@@ -1448,10 +1521,10 @@ class ListItemAnnotationFilter(ListItemFilter):
         return resources
 
     def process(self, resources, event=None):
-        annotation_key = self.get_annotation_key()
+        annotation_path = self.get_annotation_path()
         self.annotate_resources(self.get_annotation_resources(resources))
         results = super().process(resources, event)
         if self.discard_annotation():
             for resource in resources:
-                resource.pop(annotation_key, None)
+                _pop_path(resource, annotation_path)
         return results
