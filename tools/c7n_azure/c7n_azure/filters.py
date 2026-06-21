@@ -12,15 +12,16 @@ from azure.mgmt.costmanagement.models import (QueryAggregation,
                                               QueryDataset, QueryDefinition,
                                               QueryFilter, QueryGrouping,
                                               QueryTimePeriod, TimeframeType)
+from c7n_azure import constants
 from c7n_azure.tags import TagHelper
 from c7n_azure.utils import (IpRangeHelper, Math, ResourceIdParser,
-                             StringUtils, ThreadHelper, now, utcnow, is_resource_group)
+                             StringUtils, now, utcnow, is_resource_group)
 from dateutil.parser import parse
 from azure.core.exceptions import HttpResponseError
 
 from c7n_azure.provider import resources
 from c7n.filters import Filter, FilterValidationError, ValueFilter
-from c7n.filters.core import PolicyValidationError
+from c7n.filters.core import FilterBatch, PolicyValidationError
 from c7n.filters.metrics import METRIC_WINDOW_ALIGNMENT
 from c7n.filters.related import RelatedResourceFilter
 from c7n.filters.offhours import OffHour, OnHour, Time
@@ -670,18 +671,14 @@ class FirewallRulesFilter(Filter, metaclass=ABCMeta):
 
         self.client = self.manager.get_client()
 
-        result, _ = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._check_resources,
-            executor_factory=self.executor_factory,
-            log=self.log
-        )
+        return FilterBatch(
+            self.check_resources,
+            size=constants.DEFAULT_CHUNK_SIZE,
+            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
-        return result
-
-    def _check_resources(self, resources, event):
-        return [r for r in resources if self._check_resource(r)]
+    @staticmethod
+    def check_resources(resource_filter, resources, event=None):
+        return [r for r in resources if resource_filter._check_resource(r)]
 
     @abstractmethod
     def _query_rules(self, resource):
@@ -738,18 +735,14 @@ class FirewallBypassFilter(Filter, metaclass=ABCMeta):
     def process(self, resources, event=None):
         self.client = self.manager.get_client()
 
-        result, _ = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._check_resources,
-            executor_factory=self.executor_factory,
-            log=self.log
-        )
+        return FilterBatch(
+            self.check_resources,
+            size=constants.DEFAULT_CHUNK_SIZE,
+            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
-        return result
-
-    def _check_resources(self, resources, event):
-        return [r for r in resources if self._check_resource(r)]
+    @staticmethod
+    def check_resources(resource_filter, resources, event=None):
+        return [r for r in resources if resource_filter._check_resource(r)]
 
     @abstractmethod
     def _query_bypass(self, resource):
@@ -842,19 +835,15 @@ class ResourceLockFilter(Filter):
         self.lock_type = self.data.get('lock-type', 'Any')
 
     def process(self, resources, event=None):
-        resources, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=self.log
-        )
-        if exceptions:
-            raise exceptions[0]
-        return resources
+        return FilterBatch(
+            self.filter_resource_set,
+            size=constants.DEFAULT_CHUNK_SIZE,
+            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources, event=event)
 
-    def _process_resource_set(self, resources, event=None):
-        client = self.manager.get_client('azure.mgmt.resource.locks.ManagementLockClient')
+    @staticmethod
+    def filter_resource_set(resource_filter, resources, event=None):
+        client = resource_filter.manager.get_client(
+            'azure.mgmt.resource.locks.ManagementLockClient')
         result = []
         for resource in resources:
             if is_resource_group(resource):
@@ -869,12 +858,13 @@ class ResourceLockFilter(Filter):
                     ResourceIdParser.get_resource_type(resource['id']),
                     resource['name'])]
 
-            if StringUtils.equal('Absent', self.lock_type) and not locks:
+            if StringUtils.equal('Absent', resource_filter.lock_type) and not locks:
                 result.append(resource)
             else:
                 for lock in locks:
-                    if StringUtils.equal('Any', self.lock_type) or \
-                            StringUtils.equal(lock['properties']['level'], self.lock_type):
+                    if StringUtils.equal('Any', resource_filter.lock_type) or \
+                            StringUtils.equal(
+                                lock['properties']['level'], resource_filter.lock_type):
                         result.append(resource)
                         break
 
