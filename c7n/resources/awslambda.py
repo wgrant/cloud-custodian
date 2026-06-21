@@ -37,7 +37,7 @@ ErrAccessDenied = "AccessDeniedException"
 
 class DescribeLambda(query.DescribeWithResourceTags):
 
-    def get_resources(self, ids):
+    def fetch_resources_by_ids(self, ids):
         client = local_session(self.manager.session_factory).client('lambda')
         resources = []
         for rid in ids:
@@ -841,7 +841,6 @@ class LambdaLayerVersion(query.QueryResourceManager):
                 v['LayerName'] = layer_name
                 versions.append(v)
         return versions
-
 
 
 def get_layer_version_paginator(client):

@@ -8,7 +8,6 @@ from c7n.query import (
     TypeInfo,
     DescribeSource,
     DescribeWithResourceTags,
-    TagsFromApi,
 )
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universal_augment
 from c7n.utils import local_session, type_schema, QueryParser
@@ -213,9 +212,13 @@ class BedrockCustomModelKmsFilter(KmsRelatedFilter):
 
 
 class DescribeBedrockCustomizationJob(DescribeSource):
-    tag_api = dict(resource_path='jobArn', request_arg='resourceARN', result_path='tags', tag_format='lower-list')
+    tag_api = dict(
+        resource_path='jobArn',
+        request_arg='resourceARN',
+        result_path='tags',
+        tag_format='lower-list')
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('bedrock')
         resources = []
         for rid in resource_ids:
@@ -407,7 +410,11 @@ class BedrockAgent(QueryResourceManager):
     def remove_prompt_override(manager, resource):
         resource.pop('promptOverrideConfiguration', None)
 
-    tag_api = dict(resource_path='agentArn', request_arg='resourceArn', result_path='tags', tag_format='dict')
+    tag_api = dict(
+        resource_path='agentArn',
+        request_arg='resourceArn',
+        result_path='tags',
+        tag_format='dict')
 
     class resource_type(TypeInfo):
         service = 'bedrock-agent'

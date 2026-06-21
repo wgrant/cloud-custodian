@@ -47,7 +47,7 @@ class EMRCluster(QueryResourceManager):
         return ("elasticmapreduce:ListClusters",
                 "elasticmapreduce:DescribeCluster")
 
-    def get_resources(self, ids):
+    def fetch_resources_by_ids(self, ids):
         # no filtering by id set supported at the api
         client = local_session(self.session_factory).client('emr')
         results = []
@@ -66,7 +66,6 @@ class EMRCluster(QueryResourceManager):
         # remap for cwmetrics
         return manager.retry(
             client.describe_cluster, ClusterId=resource['Id'])['Cluster']
-
 
 
 @EMRCluster.filter_registry.register('metrics')
@@ -297,7 +296,6 @@ class EMRSecurityConfiguration(QueryResourceManager):
 
     permissions = ('elasticmapreduce:ListSecurityConfigurations',
                   'elasticmapreduce:DescribeSecurityConfiguration',)
-
 
 
 @EMRSecurityConfiguration.action_registry.register('delete')
