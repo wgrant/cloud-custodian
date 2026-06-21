@@ -6,7 +6,7 @@ from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 
 from c7n.filters.core import (
-    AnnotateBatch, AnnotationPipelineFilter, ListItemAnnotationFilter,
+    AnnotateBatch, AnnotationPipelineFilter, ListItemAnnotationFilter, SetAnnotation,
     ValueFilter, type_schema)
 from c7n.filters.related import RelatedResourceFilter
 from c7n.utils import local_session
@@ -167,24 +167,25 @@ class VirtualMachine(ArmResourceManager):
 
 
 @VirtualMachine.filter_registry.register('instance-view')
-class InstanceViewFilter(ValueFilter):
+class InstanceViewFilter(AnnotationPipelineFilter):
     schema = type_schema('instance-view', rinherit=ValueFilter.schema)
+    annotation_key = 'instanceView'
 
-    def __call__(self, i):
-        if 'instanceView' not in i:
-            client = self.manager.get_client()
-            instance = (
-                client.virtual_machines
-                .get(i['resourceGroup'], i['name'], expand='instanceview')
-                .instance_view
-            )
-            i['instanceView'] = instance.serialize()
+    @staticmethod
+    def get_instance_view(resource_filter, resource):
+        instance = (
+            resource_filter.manager.get_client()
+            .virtual_machines
+            .get(resource['resourceGroup'], resource['name'], expand='instanceview')
+            .instance_view
+        )
+        return instance.serialize()
 
-        return super(InstanceViewFilter, self).__call__(i['instanceView'])
+    annotation_pipeline = SetAnnotation(get_instance_view)
 
 
 @VirtualMachine.filter_registry.register('vm-extensions')
-class VMExtensionsFilter(ValueFilter):
+class VMExtensionsFilter(AnnotationPipelineFilter):
     """
         Provides a value filter targetting the virtual machine
         extensions array.  Requires an additional API call per
@@ -250,18 +251,18 @@ class VMExtensionsFilter(ValueFilter):
 
         """
     schema = type_schema('vm-extensions', rinherit=ValueFilter.schema)
-    annotate = False  # cannot annotate arrays
+    annotation_key = 'c7n:vm-extensions'
 
-    def __call__(self, i):
-        if 'c7n:vm-extensions' not in i:
-            client = self.manager.get_client()
-            extensions = (
-                client.virtual_machine_extensions
-                .list(i['resourceGroup'], i['name'])
-            )
-            i['c7n:vm-extensions'] = [e.serialize(True) for e in extensions.value]
+    @staticmethod
+    def get_extensions(resource_filter, resource):
+        extensions = (
+            resource_filter.manager.get_client()
+            .virtual_machine_extensions
+            .list(resource['resourceGroup'], resource['name'])
+        )
+        return [e.serialize(True) for e in extensions.value]
 
-        return super(VMExtensionsFilter, self).__call__(i['c7n:vm-extensions'])
+    annotation_pipeline = SetAnnotation(get_extensions)
 
 
 @VirtualMachine.filter_registry.register('network-interface')

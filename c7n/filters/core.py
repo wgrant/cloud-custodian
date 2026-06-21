@@ -1040,7 +1040,7 @@ class AnnotateBatch:
         return resources
 
 
-class FilterBatch:
+class _FilterBatchOp:
     def __init__(self, func, size=None, max_workers=None):
         self.func = func
         self.size = size
@@ -1061,7 +1061,7 @@ class FilterBatch:
         return results
 
 
-class BatchFilter(Filter):
+class BatchedFilter(Filter):
     batch_filter = 'filter_resource_set'
     batch_size = None
     max_workers = None
@@ -1076,21 +1076,28 @@ class BatchFilter(Filter):
 
     def process(self, resources, event=None):
         self.prepare_batch_filter()
-        return FilterBatch(
+        return _FilterBatchOp(
             self.get_batch_filter(),
             size=self.batch_size,
             max_workers=self.max_workers)(self, resources, event=event)
 
 
+FilterBatch = _FilterBatchOp
+BatchFilter = BatchedFilter
+
+
 class AnnotationPipelineMixin:
     annotation_key = None
     annotation_pipeline = None
+    annotation_path = None
     source_annotation_path = None
 
     def get_annotation_key(self):
         return self.annotation_key
 
     def get_annotation_path(self):
+        if self.annotation_path:
+            return self.annotation_path
         if self.source_annotation_path:
             return self.source_annotation_path
         return (self.get_annotation_key(),)
@@ -1105,12 +1112,14 @@ class AnnotationPipelineMixin:
         return resources
 
 
-class AnnotationPipelineFilter(AnnotationPipelineMixin, ValueFilter):
-    annotate = False
-
+class AnnotationFilter(AnnotationPipelineMixin, Filter):
     def process(self, resources, event=None):
         self.annotate_resources(self.get_annotation_resources(resources))
         return super().process(resources, event)
+
+
+class AnnotationPipelineFilter(AnnotationFilter, ValueFilter):
+    annotate = False
 
     def get_filter_resource(self, resource):
         return _get_path(resource, self.get_annotation_path())
@@ -1127,6 +1136,36 @@ class AnyAnnotationFilter(AnnotationPipelineFilter):
         return any(
             ValueFilter.__call__(self, filter_resource)
             for filter_resource in self.get_filter_resources(resource))
+
+
+class EnabledAnnotationFilter(AnnotationPipelineFilter):
+    legacy_enabled_path = None
+    legacy_enabled_value = None
+
+    def __init__(self, data, manager=None):
+        super().__init__(data, manager)
+        self.enabled = self.data.get('enabled')
+        self.is_legacy = 'enabled' in self.data
+
+    def validate(self):
+        if self.is_legacy:
+            if len(self.data) > 2:
+                raise PolicyValidationError(
+                    "When using 'enabled', ValueFilter properties are not allowed")
+            return self
+        return super().validate()
+
+    def get_legacy_enabled(self, annotation):
+        value = _get_path(annotation, self.legacy_enabled_path)
+        if self.legacy_enabled_value is not None:
+            return value == self.legacy_enabled_value
+        return bool(value)
+
+    def __call__(self, resource):
+        annotation = self.get_filter_resource(resource)
+        if self.is_legacy:
+            return self.get_legacy_enabled(annotation) == self.enabled
+        return ValueFilter.__call__(self, annotation)
 
 
 class EventFilter(ValueFilter):
@@ -1559,6 +1598,8 @@ class ListItemAnnotationFilter(AnnotationPipelineMixin, ListItemFilter):
         return self.item_annotation_key
 
     def get_annotation_path(self):
+        if self.annotation_path:
+            return self.annotation_path
         if self.source_annotation_path:
             return self.source_annotation_path
         return (self.get_annotation_key(),)

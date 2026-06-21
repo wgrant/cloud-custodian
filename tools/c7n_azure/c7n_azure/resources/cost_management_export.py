@@ -9,7 +9,7 @@ from c7n_azure import constants
 from c7n_azure.provider import resources
 from c7n_azure.query import QueryResourceManager
 
-from c7n.filters.core import BatchFilter
+from c7n.filters.core import BatchedFilter
 from c7n.utils import get_annotation_prefix
 from c7n.utils import type_schema
 
@@ -52,7 +52,7 @@ class CostManagementExport(QueryResourceManager):
 
 
 @CostManagementExport.filter_registry.register('last-execution')
-class CostManagementExportFilterLastExecution(BatchFilter):
+class CostManagementExportFilterLastExecution(BatchedFilter):
     """ Find Cost Management Exports with last execution more than X days ago.
 
     :example:

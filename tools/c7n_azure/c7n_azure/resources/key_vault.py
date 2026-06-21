@@ -4,6 +4,7 @@
 import logging
 
 from c7n.filters import Filter
+from c7n.filters.core import AnnotationFilter, SetAnnotation
 from c7n.utils import type_schema
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.constants import GRAPH_AUTH_ENDPOINT
@@ -168,7 +169,7 @@ class KeyVaultFirewallBypassFilter(FirewallBypassFilter):
 
 
 @KeyVault.filter_registry.register('whitelist')
-class WhiteListFilter(Filter):
+class WhiteListFilter(AnnotationFilter):
     schema = type_schema('whitelist', rinherit=None,
                          required=['key'],
                          key={'type': 'string'},
@@ -178,6 +179,7 @@ class WhiteListFilter(Filter):
                              'secrets': {'type': 'array'},
                              'keys': {'type': 'array'}})
     GRAPH_PROVIDED_KEYS = ['displayName', 'aadType', 'principalName']
+    annotation_key = 'accessPolicies'
     graph_client = None
 
     def __init__(self, data, manager=None):
@@ -187,28 +189,29 @@ class WhiteListFilter(Filter):
         self.users = self.data.get('users', [])
         self.permissions = self.data.get('permissions', {})
 
-    def __call__(self, i):
-        if 'accessPolicies' not in i:
-            client = self.manager.get_client()
-            vault = client.vaults.get(i['resourceGroup'], i['name'])
-            # Retrieve access policies for the keyvaults
-            access_policies = []
-            for policy in vault.properties.access_policies:
-                access_policies.append({
-                    'tenantId': policy.tenant_id,
-                    'objectId': policy.object_id,
-                    'applicationId': policy.application_id,
-                    'permissions': {
-                        'keys': policy.permissions.keys,
-                        'secrets': policy.permissions.secrets,
-                        'certificates': policy.permissions.certificates
-                    }
-                })
-            # Enhance access policies with displayName, aadType and
-            # principalName if necessary
-            if self.key in self.GRAPH_PROVIDED_KEYS:
-                i['accessPolicies'] = self._enhance_policies(access_policies)
+    @staticmethod
+    def get_access_policies(resource_filter, resource):
+        vault = resource_filter.manager.get_client().vaults.get(
+            resource['resourceGroup'], resource['name'])
+        access_policies = []
+        for policy in vault.properties.access_policies:
+            access_policies.append({
+                'tenantId': policy.tenant_id,
+                'objectId': policy.object_id,
+                'applicationId': policy.application_id,
+                'permissions': {
+                    'keys': policy.permissions.keys,
+                    'secrets': policy.permissions.secrets,
+                    'certificates': policy.permissions.certificates
+                }
+            })
+        if resource_filter.key in resource_filter.GRAPH_PROVIDED_KEYS:
+            return resource_filter._enhance_policies(access_policies)
+        return access_policies
 
+    annotation_pipeline = SetAnnotation(get_access_policies)
+
+    def __call__(self, i):
         # Ensure each policy is
         #   - User is whitelisted
         #   - Permissions don't exceed allowed permissions

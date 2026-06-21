@@ -21,7 +21,7 @@ from azure.core.exceptions import HttpResponseError
 
 from c7n_azure.provider import resources
 from c7n.filters import Filter, FilterValidationError, ValueFilter
-from c7n.filters.core import BatchFilter, PolicyValidationError
+from c7n.filters.core import BatchedFilter, PolicyValidationError
 from c7n.filters.metrics import METRIC_WINDOW_ALIGNMENT
 from c7n.filters.related import RelatedResourceFilter
 from c7n.filters.offhours import OffHour, OnHour, Time
@@ -578,7 +578,7 @@ class AzureOnHour(OnHour):
         return tag_value
 
 
-class FirewallRulesFilter(BatchFilter, metaclass=ABCMeta):
+class FirewallRulesFilter(BatchedFilter, metaclass=ABCMeta):
     """Filters resources by the firewall rules
 
     Rules can be specified as x.x.x.x-y.y.y.y or x.x.x.x or x.x.x.x/y.
@@ -708,7 +708,7 @@ class FirewallRulesFilter(BatchFilter, metaclass=ABCMeta):
             raise FilterValidationError("Internal error.")
 
 
-class FirewallBypassFilter(BatchFilter, metaclass=ABCMeta):
+class FirewallBypassFilter(BatchedFilter, metaclass=ABCMeta):
     """Filters resources by the firewall bypass rules
     """
 
@@ -770,7 +770,7 @@ class FirewallBypassFilter(BatchFilter, metaclass=ABCMeta):
             raise FilterValidationError("Internal error.")
 
 
-class ResourceLockFilter(BatchFilter):
+class ResourceLockFilter(BatchedFilter):
     """
     Filter locked resources.
     Lock can be of 2 types: ReadOnly and CanNotDelete. To filter any lock, use "Any" type.

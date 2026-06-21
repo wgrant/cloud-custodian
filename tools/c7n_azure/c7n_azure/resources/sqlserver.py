@@ -10,9 +10,9 @@ from c7n_azure.resources.arm import ArmResourceManager
 from c7n_azure.utils import StringUtils
 from netaddr import IPRange, IPSet, IPNetwork, IPAddress
 
-from c7n.exceptions import PolicyValidationError
 from c7n.utils import type_schema
-from c7n.filters.core import BatchFilter, ListItemAnnotationFilter, SetAnnotation, ValueFilter
+from c7n.filters.core import (
+    BatchedFilter, EnabledAnnotationFilter, ListItemAnnotationFilter, SetAnnotation, ValueFilter)
 
 AZURE_SERVICES = IPRange('0.0.0.0', '0.0.0.0')  # nosec
 log = logging.getLogger('custodian.azure.sql-server')
@@ -86,7 +86,7 @@ class SqlServer(ArmResourceManager):
 
 
 @SqlServer.filter_registry.register('transparent-data-encryption')
-class TransparentDataEncryptionFilter(BatchFilter):
+class TransparentDataEncryptionFilter(BatchedFilter):
     """
     Filter by the current Transparent Data Encryption
     configuration for this server.
@@ -225,7 +225,7 @@ class AzureADAdministratorsFilter(ValueFilter):
 
 
 @SqlServer.filter_registry.register('vulnerability-assessment')
-class VulnerabilityAssessmentFilter(ValueFilter):
+class VulnerabilityAssessmentFilter(EnabledAnnotationFilter):
     """
     Filter sql servers by whether they have recurring vulnerability scans
     enabled.
@@ -281,35 +281,8 @@ class VulnerabilityAssessmentFilter(ValueFilter):
     )
 
     log = logging.getLogger('custodian.azure.sqldatabase.vulnerability-assessment-filter')
-
-    def validate(self):
-        # only allow legacy behavior or new ValueFilter behavior, not both
-        # when in "legacy" mode the only entries should be "type" (required by schema) and
-        # "enabled" (required by is_legacy)
-        if self.is_legacy:
-            if len(self.data) > 2:
-                raise PolicyValidationError(
-                    "When using 'enabled', ValueFilter properties are not allowed")
-        # only validate value filter when not in "legacy" mode
-        else:
-            super(VulnerabilityAssessmentFilter, self).validate()
-
-    def __init__(self, data, manager=None):
-        super(VulnerabilityAssessmentFilter, self).__init__(data, manager)
-
-        self.enabled = self.data.get('enabled')
-        # track if we are using the legacy behavior
-        self.is_legacy = 'enabled' in self.data
-        # location on the resource object to store the VA properties
-        self.key = 'c7n:vulnerability_assessment'
-
-    def process(self, resources, event=None):
-        SetAnnotation(
-            self.get_vulnerability_assessment,
-            key=self.key,
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources)
-        return super(VulnerabilityAssessmentFilter, self).process(resources, event)
+    annotation_key = 'c7n:vulnerability_assessment'
+    legacy_enabled_path = ('recurringScans', 'isEnabled')
 
     @staticmethod
     def get_vulnerability_assessment(resource_filter, resource):
@@ -323,17 +296,10 @@ class VulnerabilityAssessmentFilter(ValueFilter):
             return va[0].serialize(True).get('properties', {})
         return {}
 
-    def __call__(self, resource):
-        recurring_scan_enabled = resource[self.key] \
-            .get('recurringScans', {}) \
-            .get('isEnabled', False)
-
-        # Apply filter based on legacy behavior which only verifies recurringScans.isEnabled
-        if self.is_legacy:
-            return recurring_scan_enabled == self.enabled
-        # otherwise process the VA info using ValueFilter logic for full flexibility
-        else:
-            return super(VulnerabilityAssessmentFilter, self).__call__(resource[self.key])
+    annotation_pipeline = SetAnnotation(
+        get_vulnerability_assessment,
+        size=constants.DEFAULT_CHUNK_SIZE,
+        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
 
 
 @SqlServer.filter_registry.register('firewall-rules')
@@ -391,7 +357,7 @@ class SqlServerFirewallBypassFilter(FirewallBypassFilter):
 
 
 @SqlServer.filter_registry.register('auditing')
-class AuditingFilter(ValueFilter):
+class AuditingFilter(EnabledAnnotationFilter):
     """
     Filter by the current auditing
     policy for this sql server.
@@ -420,33 +386,10 @@ class AuditingFilter(ValueFilter):
     )
 
     log = logging.getLogger('custodian.azure.sqlserver.auditing-filter')
-
-    def __init__(self, data, manager=None):
-        super().__init__(data, manager)
-
-        self.enabled = self.data.get('enabled')
-        # track if we are using the legacy behavior
-        self.is_legacy = 'enabled' in self.data
-
-    def validate(self):
-        # only allow legacy behavior or new ValueFilter behavior, not both
-        # when in "legacy" mode the only entries should be "type" (required by schema) and
-        # "enabled" (required by is_legacy)
-        if self.is_legacy:
-            if len(self.data) > 2:
-                raise PolicyValidationError(
-                    "When using 'enabled', ValueFilter properties are not allowed")
-        # only validate value filter when not in "legacy" mode
-        else:
-            super().validate()
-
-    def process(self, resources, event=None):
-        SetAnnotation(
-            self.get_auditing_settings,
-            path=('properties', self.cache_key),
-            size=constants.DEFAULT_CHUNK_SIZE,
-            max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)(self, resources)
-        return super().process(resources, event)
+    annotation_key = cache_key
+    annotation_path = ('properties', cache_key)
+    legacy_enabled_path = ('state',)
+    legacy_enabled_value = 'Enabled'
 
     @staticmethod
     def get_auditing_settings(resource_filter, resource):
@@ -455,15 +398,10 @@ class AuditingFilter(ValueFilter):
             resource['name'])
         return auditing_settings.serialize(True).get('properties', {})
 
-    def __call__(self, resource):
-        auditing_enabled = resource['properties'][self.cache_key].get('state') == 'Enabled'
-
-        # Apply filter based on legacy behavior which only checks against enablement
-        if self.is_legacy:
-            return auditing_enabled == self.enabled
-        # otherwise process the auditing settings using ValueFilter logic for full flexibility
-        else:
-            return super().__call__(resource['properties'][self.cache_key])
+    annotation_pipeline = SetAnnotation(
+        get_auditing_settings,
+        size=constants.DEFAULT_CHUNK_SIZE,
+        max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)
 
 
 @SqlServer.filter_registry.register('security-alert-policies')
@@ -660,7 +598,7 @@ class SqlServerAuditingSettingsFilter(ListItemAnnotationFilter):
     )
 
     annotation_key = 'c7n:auditing-settings-list'
-    source_annotation_path = ('properties', annotation_key)
+    annotation_path = ('properties', annotation_key)
     annotate_items = True
 
     @staticmethod
@@ -673,6 +611,6 @@ class SqlServerAuditingSettingsFilter(ListItemAnnotationFilter):
 
     annotation_pipeline = SetAnnotation(
         get_auditing_settings,
-        path=source_annotation_path,
+        path=annotation_path,
         size=constants.DEFAULT_CHUNK_SIZE,
         max_workers=constants.DEFAULT_MAX_THREAD_WORKERS)

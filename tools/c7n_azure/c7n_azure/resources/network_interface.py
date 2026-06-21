@@ -5,7 +5,7 @@ from c7n_azure import constants
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 
-from c7n.filters.core import BatchFilter, ValueFilter, type_schema
+from c7n.filters.core import BatchedFilter, ValueFilter, type_schema
 import logging
 
 max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
@@ -45,7 +45,7 @@ class NetworkInterface(ArmResourceManager):
 
 
 @NetworkInterface.filter_registry.register('effective-route-table')
-class EffectiveRouteTableFilter(BatchFilter, ValueFilter):
+class EffectiveRouteTableFilter(BatchedFilter, ValueFilter):
     """Filters network interfaces by the Effective Route Table
 
     :example:

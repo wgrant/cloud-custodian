@@ -13,7 +13,7 @@ from azure.storage.file import FileService
 from azure.storage.queue import QueueServiceClient
 from c7n.exceptions import PolicyValidationError
 from c7n.filters.core import (
-    BatchFilter, ListItemAnnotationFilter, SetAnnotation, type_schema)
+    BatchedFilter, ListItemAnnotationFilter, SetAnnotation, type_schema)
 from c7n.utils import get_annotation_prefix, local_session
 from c7n_azure import constants
 from c7n_azure.actions.base import AzureBaseAction
@@ -332,7 +332,7 @@ class StorageFirewallBypassFilter(FirewallBypassFilter):
 
 
 @Storage.filter_registry.register('storage-diagnostic-settings')
-class StorageDiagnosticSettingsFilter(BatchFilter, ValueFilter):
+class StorageDiagnosticSettingsFilter(BatchedFilter, ValueFilter):
     """Filters storage accounts based on its diagnostic settings. The filter requires
     specifying the storage type (blob, queue, table, file) and will filter based on
     the settings for that specific type.
@@ -747,7 +747,7 @@ class RequireSecureTransferAction(AzureBaseAction):
 
 
 @Storage.filter_registry.register('blob-services')
-class BlobServicesFilter(BatchFilter, ValueFilter):
+class BlobServicesFilter(BatchedFilter, ValueFilter):
     """
     Filter by the current blob services
     configuration for this storage account.

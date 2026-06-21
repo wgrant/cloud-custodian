@@ -24,7 +24,7 @@ from azure.mgmt.sql.models import (
     DatabaseUpdate,
     Sku,
 )
-from c7n.filters.core import BatchFilter, PolicyValidationError
+from c7n.filters.core import BatchedFilter, PolicyValidationError
 from c7n.utils import get_annotation_prefix, type_schema
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.filters import scalar_ops
@@ -78,7 +78,7 @@ class SqlDatabase(ChildArmResourceManager):
 
 
 @SqlDatabase.filter_registry.register('transparent-data-encryption')
-class TransparentDataEncryptionFilter(BatchFilter):
+class TransparentDataEncryptionFilter(BatchedFilter):
     """
     Filter by the current Transparent Data Encryption
     configuration for this database.
@@ -143,7 +143,7 @@ class TransparentDataEncryptionFilter(BatchFilter):
 
 
 @SqlDatabase.filter_registry.register('data-masking-policy')
-class DataMaskingPolicyFilter(BatchFilter):
+class DataMaskingPolicyFilter(BatchedFilter):
     """
     Filter by the current data masking policy
     configuration for this database.
@@ -276,7 +276,7 @@ class BackupRetentionPolicyHelper:
         return retention_policy
 
 
-class BackupRetentionPolicyBaseFilter(BatchFilter, metaclass=abc.ABCMeta):
+class BackupRetentionPolicyBaseFilter(BatchedFilter, metaclass=abc.ABCMeta):
 
     schema = type_schema(
         'backup-retention-policy',

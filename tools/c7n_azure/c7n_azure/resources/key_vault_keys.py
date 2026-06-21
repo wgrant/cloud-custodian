@@ -7,7 +7,7 @@ import logging
 from azure.keyvault.keys import KeyProperties
 
 from c7n.filters import Filter
-from c7n.filters.core import BatchFilter
+from c7n.filters.core import BatchedFilter
 from c7n.query import FilterResources
 from c7n.utils import type_schema
 
@@ -127,7 +127,7 @@ class KeyVaultFilter(Filter):
 
 
 @KeyVaultKeys.filter_registry.register('key-type')
-class KeyTypeFilter(BatchFilter):
+class KeyTypeFilter(BatchedFilter):
     schema = type_schema(
         'key-type',
         **{
