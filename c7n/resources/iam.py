@@ -243,7 +243,6 @@ class DescribeUser(DescribeSource):
         if result:
             return result.get('User') or None
 
-
     def get_resources(self, resource_ids, cache=True):
         client = local_session(self.manager.session_factory).client('iam')
         results = []
@@ -385,15 +384,6 @@ class UserSetBoundary(SetBoundary):
 
 class DescribePolicy(DescribeWithResourceTags):
 
-    def prepare_query(self, query=None):
-        queries = PolicyQueryParser.parse(self.manager.data.get('query', []))
-        query = query or {}
-        for q in queries:
-            query.update(q)
-        if 'Scope' not in query:
-            query['Scope'] = 'Local'
-        return query
-
     def get_resources(self, resource_ids, cache=True):
         client = local_session(self.manager.session_factory).client('iam')
         results = []
@@ -440,6 +430,10 @@ class PolicyQueryParser(QueryParser):
     }
     multi_value = False
     type_name = 'IAM Policy'
+
+
+DescribePolicy.source_policy_query_parser = PolicyQueryParser
+DescribePolicy.source_query_default = {'Scope': 'Local'}
 
 
 @resources.register('iam-profile')
@@ -3064,7 +3058,6 @@ class SamlProviderDescribe(DescribeSource):
         if resource.get('SAMLMetadataDocument'):
             resource['IDPSSODescriptor'] = sso_metadata(
                 resource['SAMLMetadataDocument'])['IDPSSODescriptor']
-
 
     def get_permissions(self):
         return ('iam:GetSAMLProvider', 'iam:ListSAMLProviders')

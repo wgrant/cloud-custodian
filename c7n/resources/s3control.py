@@ -5,12 +5,16 @@ from c7n.actions import Action
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.manager import resources
 from c7n.resources.aws import Arn
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, UniversalTags
+from c7n.query import (
+    QueryResourceManager, TypeInfo, DescribeSource,
+    source_account_id)
 from c7n.utils import local_session, type_schema
 from c7n.actions import BaseAction
 
 
 class AccessPointDescribe(DescribeSource):
+    source_query_default = {'AccountId': source_account_id}
+
     @augment.mutate
     def augment_access_point(manager, resource):
         client = local_session(manager.session_factory).client('s3control')
@@ -22,12 +26,6 @@ class AccessPointDescribe(DescribeSource):
         details.pop('ResponseMetadata', None)
         details['AccessPointArn'] = arn.arn
         resource.update(details)
-
-
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        query_params['AccountId'] = self.manager.config.account_id
-        return query_params
 
 
 @resources.register('s3-access-point')
@@ -84,11 +82,7 @@ class Delete(Action):
 
 
 class MultiRegionAccessPointDescribe(DescribeSource):
-
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        query_params['AccountId'] = self.manager.config.account_id
-        return query_params
+    source_query_default = {'AccountId': source_account_id}
 
 
 @resources.register('s3-access-point-multi')
@@ -126,6 +120,8 @@ class MultiRegionAccessPointCrossAccount(CrossAccountAccessFilter):
 
 
 class StorageLensDescribe(DescribeSource):
+    source_query_default = {'AccountId': source_account_id}
+
     @augment.mutate
     def augment_storage_lens(manager, resource):
         client = local_session(manager.session_factory).client('s3control')
@@ -135,11 +131,6 @@ class StorageLensDescribe(DescribeSource):
             ConfigId=resource['Id']).get('StorageLensConfiguration'))
 
     universal_tags = True
-
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        query_params['AccountId'] = self.manager.config.account_id
-        return query_params
 
 
 @resources.register('s3-storage-lens')

@@ -61,12 +61,7 @@ class DescribeElastiCache(DescribeSource):
                     value: 11211
     """
 
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        queries = ElastiCacheQueryParser.parse(self.manager.data.get('query', []))
-        for q in queries:
-            query_params.update(q)
-        return query_params
+    source_policy_query_parser = ElastiCacheQueryParser
 
 
 @resources.register('cache-cluster')

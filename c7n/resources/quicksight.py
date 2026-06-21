@@ -11,11 +11,10 @@ from c7n.utils import local_session, get_retry, type_schema
 
 class DescribeQuicksight(query.DescribeSource):
 
-    def prepare_query(self, query):
-        return {
-            "Namespace": "default",
-            "AwsAccountId": self.manager.config.account_id
-        }
+    source_query_default = {
+        "Namespace": "default",
+        "AwsAccountId": query.source_account_id,
+    }
 
     def handle_fetch_error(self, error, query):
         if isinstance(error, ClientError) and is_quicksight_account_missing(error):
@@ -125,10 +124,9 @@ class QuicksightAccount(SyntheticResourceMixin, ResourceManager):
 
 class DescribeQuicksightWithAccountId(query.DescribeSource):
 
-    def prepare_query(self, query):
-        return {
-            "AwsAccountId": self.manager.config.account_id
-        }
+    source_query_default = {
+        "AwsAccountId": query.source_account_id,
+    }
 
     def handle_fetch_error(self, error, query):
         if isinstance(error, ClientError) and is_quicksight_account_missing(error):

@@ -29,7 +29,12 @@ class ConfigECR(ConfigSource):
 
 
 class DescribeECR(DescribeSource):
-    tag_api = dict(resource_path='repositoryArn', request_arg='resourceArn', result_path='tags', ignore_errors=('RepositoryNotFoundException',), drop_on_error=True)
+    tag_api = dict(
+        resource_path='repositoryArn',
+        request_arg='resourceArn',
+        result_path='tags',
+        ignore_errors=('RepositoryNotFoundException',),
+        drop_on_error=True)
 
 
 @resources.register('ecr')
@@ -71,6 +76,7 @@ class ECRImageQuery(ChildResourceQuery):
 
 @sources.register('describe-ecr-image')
 class RepositoryImageDescribeSource(ChildDescribeSource):
+    source_policy_query_parser = True
 
     @augment.mutate
     def augment_image_arn(manager, resource):
@@ -81,14 +87,6 @@ class RepositoryImageDescribeSource(ChildDescribeSource):
 
     resource_query_factory = ECRImageQuery
     capture_parent_id = 'repositoryName'
-
-    def get_query_params(self, query):
-        query = query or {}
-        if 'query' not in self.manager.data:
-            return query
-        for q in self.manager.data['query']:
-            query.update(q)
-        return query
 
 
 @resources.register('ecr-image')

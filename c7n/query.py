@@ -341,6 +341,10 @@ class UniversalTags:
         return universal_augment(manager, resources)
 
 
+def source_account_id(source):
+    return source.manager.config.account_id
+
+
 class MergeField:
     def __init__(self, field, remove=True, overwrite=True, missing='skip'):
         self.field = field
@@ -569,6 +573,8 @@ class DescribeSource:
     tag_batch_api = None
     tag_field = None
     universal_tags = False
+    source_query_default = None
+    source_policy_query_parser = None
 
     def __init__(self, manager):
         self.manager = manager
@@ -589,7 +595,7 @@ class DescribeSource:
         return self.normalize_resources_by_ids(resources, ids)
 
     def prepare_query(self, query):
-        return query or {}
+        return self.apply_source_query_defaults(query)
 
     def fetch_resources(self, query):
         return self.query.filter(self.manager, **query)
@@ -600,8 +606,9 @@ class DescribeSource:
     def handle_fetch_error(self, error, query):
         raise error
 
-    def resources(self, query):
-        query = self.prepare_query(query)
+    def resources(self, query, prepared=False):
+        if not prepared:
+            query = self.prepare_query(query)
         if query is None:
             return []
         try:
@@ -614,7 +621,45 @@ class DescribeSource:
         return self.resource_query_factory(self.manager.session_factory)
 
     def get_query_params(self, query_params):
+        return self.apply_source_query_defaults(query_params)
+
+    def apply_source_query_defaults(self, query_params):
+        query_params = query_params or {}
+        source_defaults = self.get_source_query_defaults()
+        policy_query = self.get_source_policy_query()
+        if policy_query:
+            source_defaults.update(policy_query)
+        if source_defaults:
+            source_defaults.update(query_params)
+            return source_defaults
         return query_params
+
+    def get_source_policy_query(self):
+        parser = (
+            get_raw_class_attr(self, 'source_policy_query_parser') or
+            get_raw_class_attr(self.manager, 'source_policy_query_parser'))
+        if parser is None or 'query' not in self.manager.data:
+            return None
+        if parser is True:
+            return merge_dict_list(self.manager.data['query'])
+        parsed = parser.parse(self.manager.data.get('query', []))
+        return merge_dict_list(parsed)
+
+    def get_source_query_defaults(self):
+        default = (
+            get_raw_class_attr(self, 'source_query_default') or
+            get_raw_class_attr(self.manager, 'source_query_default'))
+        if default is None:
+            return {}
+        if callable(default):
+            default = default(self)
+        if isinstance(default, (list, tuple)):
+            default = merge_dict_list(default)
+        default = dict(default)
+        for key, value in list(default.items()):
+            if callable(value):
+                default[key] = value(self)
+        return default
 
     def get_permissions(self):
         m = self.manager.get_model()
@@ -866,9 +911,10 @@ class ConfigSource:
                     results.extend(f.result())
         return results
 
-    def resources(self, query=None):
+    def resources(self, query=None, prepared=False):
         client = local_session(self.manager.session_factory).client('config')
-        query = self.get_query_params(query)
+        if not prepared:
+            query = self.get_query_params(query)
         pager = Paginator(
             client.select_resource_config,
             {'input_token': 'NextToken', 'output_token': 'NextToken',
@@ -1035,7 +1081,7 @@ class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=Qu
         if query is None:
             query = {}
         with self.ctx.tracer.subsegment('resource-fetch'):
-            return self.source.resources(query)
+            return self.source.resources(query, prepared=True)
 
     def handle_fetch_error(self, error, query):
         if (self.ignore_fetch_error_message and isinstance(error, ClientError) and

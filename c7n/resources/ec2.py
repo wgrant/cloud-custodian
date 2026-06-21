@@ -44,13 +44,6 @@ actions = ActionRegistry('ec2.actions')
 
 class DescribeEC2(query.DescribeSource):
 
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        queries = EC2QueryParser.parse(self.manager.data.get('query', []))
-        for q in queries:
-            query_params.update(q)
-        return query_params
-
     @staticmethod
     def _flatten_reservations(reservations):
         instances = []
@@ -114,7 +107,6 @@ class DescribeEC2(query.DescribeSource):
         for r in resources:
             r['Tags'] = resource_tags.get(r[m.id], [])
         return resources
-
 
 
 @resources.register('ec2')
@@ -2311,6 +2303,9 @@ class EC2QueryParser(QueryParser):
     type_name = "EC2"
 
 
+DescribeEC2.source_policy_query_parser = EC2QueryParser
+
+
 @filters.register('instance-attribute')
 class InstanceAttribute(ValueFilter):
     """EC2 Instance Value Filter on a given instance attribute.
@@ -2407,7 +2402,6 @@ class LaunchTemplate(query.QueryResourceManager):
                     LaunchTemplateId=r['LaunchTemplateId']).get(
                         'LaunchTemplateVersions', ()))
         return template_versions
-
 
     def get_arns(self, resources):
         arns = []

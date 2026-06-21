@@ -9,7 +9,6 @@ from c7n.query import (
     QueryResourceManager,
     ResourceQuery,
     TypeInfo,
-    UniversalTags,
 )
 from c7n.filters import ValueFilter, ListItemFilter
 from c7n.utils import type_schema, local_session
@@ -54,6 +53,9 @@ class WafV2ResourceQuery(ResourceQuery):
 
 
 class DescribeWafV2(DescribeSource):
+    source_policy_query_parser = True
+    source_query_default = {'Scope': 'REGIONAL'}
+
     @augment.mutate
     def augment_web_acl(manager, resource):
         # CloudFront WebACLs are always detailed from us-east-1.
@@ -72,17 +74,6 @@ class DescribeWafV2(DescribeSource):
         perms = super().get_permissions()
         perms.remove('wafv2:GetWebAcl')
         return perms
-
-    # set REGIONAL for Scope as default
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        # Parse query from policy data
-        queries = self.manager.data.get('query', [])
-        for q in queries:
-            query_params.update(q)
-        if 'Scope' not in query_params:
-            query_params['Scope'] = 'REGIONAL'
-        return query_params
 
     def normalize_resources(self, resources, query):
         scope = (query or {}).get('Scope', 'REGIONAL')

@@ -6,8 +6,8 @@ import os
 
 
 from c7n.query import (
-    AnnotateParent, FilterResources, MapBatch, MapResource, MergeField,
-    MutateResource, ResourceQuery, RetryPageIterator, TagsFromApi,
+    AnnotateParent, DescribeSource, FilterResources, MapBatch, MapResource,
+    MergeField, MutateResource, ResourceQuery, RetryPageIterator, TagsFromApi,
     TagsFromField, TypeInfo, apply_augment_pipeline,
     apply_source_augment_pipeline, apply_tag_augment, augment,
 )
@@ -137,6 +137,67 @@ class ConfigSourceTest(BaseTest):
 
 
 class AugmentPipelineTest(BaseTest):
+
+    def test_source_query_default_on_source(self):
+        class Manager:
+            session_factory = None
+
+            class config:
+                account_id = '123456789012'
+
+        class Source(DescribeSource):
+            @staticmethod
+            def get_account_id(source):
+                return source.manager.config.account_id
+
+            source_query_default = {
+                'AccountId': get_account_id,
+                'Language': 'en'}
+
+        source = Source(Manager())
+
+        self.assertEqual(
+            source.get_query_params({'Language': 'fr'}),
+            {'AccountId': '123456789012', 'Language': 'fr'})
+        self.assertEqual(
+            source.prepare_query(None),
+            {'AccountId': '123456789012', 'Language': 'en'})
+
+    def test_source_query_default_on_manager(self):
+        class Manager:
+            session_factory = None
+            source_query_default = {'AccountId': '123456789012'}
+
+        source = DescribeSource(Manager())
+
+        self.assertEqual(
+            source.get_query_params({}),
+            {'AccountId': '123456789012'})
+
+    def test_source_resources_prepared_skips_query_defaults(self):
+        queries = []
+
+        class Manager:
+            session_factory = None
+
+        class Source(DescribeSource):
+            source_query_default = {'AccountId': '123456789012'}
+
+            def get_query(self):
+                return None
+
+            def fetch_resources(self, query):
+                queries.append(query)
+                return []
+
+        source = Source(Manager())
+
+        source.resources({}, prepared=True)
+        source.resources({})
+
+        self.assertEqual(
+            queries,
+            [{}, {'AccountId': '123456789012'}])
 
     def test_merge_field(self):
         resources = [{'Name': 'cluster', 'Provisioned': {'Name': 'nested', 'Size': 3}}]
