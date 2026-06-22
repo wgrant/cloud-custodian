@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.actions import Action
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.manager import resources
@@ -91,20 +92,18 @@ class DeleteDomain(Action):
 
 
 class DescribeRepo(DescribeSource):
+    @augment.map
+    def describe_repository(manager, resource):
+        client = local_session(manager.session_factory).client(
+            manager.resource_type.service)
+        result = manager.retry(
+            client.describe_repository,
+            repository=resource['name'],
+            domain=resource['domainName'],
+            ignore_err_codes=('ResourceNotFoundException',))
+        if result:
+            return result['repository']
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client(
-            self.manager.resource_type.service)
-        results = []
-        for r in resources:
-            rdescribe = self.manager.retry(
-                client.describe_repository,
-                repository=r['name'],
-                domain=r['domainName'],
-                ignore_err_codes=('ResourceNotFoundException',))
-            if rdescribe:
-                results.append(rdescribe['repository'])
-        return results
 
 
 @resources.register('artifact-repo')

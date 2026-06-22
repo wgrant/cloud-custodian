@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 from c7n_azure.actions.delete import DeleteAction
 from c7n_azure.actions.lock import LockAction
 from c7n_azure.actions.tagging import (AutoTagDate)
@@ -41,11 +42,11 @@ class ArmResourceManager(QueryResourceManager, metaclass=QueryMeta):
         client = 'ResourceManagementClient'
         enum_spec = ('resources', 'list', None)
 
-    def augment(self, resources):
-        for resource in resources:
-            if 'id' in resource:
-                resource['resourceGroup'] = ResourceIdParser.get_resource_group(resource['id'])
-        return resources
+    @augment.mutate
+    def set_resource_group(manager, resource):
+        if 'id' in resource:
+            resource['resourceGroup'] = ResourceIdParser.get_resource_group(resource['id'])
+
 
     def get_resources(self, resource_ids):
         resource_client = self.get_client('azure.mgmt.resource.ResourceManagementClient')

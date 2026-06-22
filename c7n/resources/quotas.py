@@ -1,8 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 #
-
-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import re
@@ -14,6 +12,7 @@ from statistics import mean
 from time import sleep
 
 from c7n.actions import Action
+from c7n.query import augment
 from c7n.exceptions import PolicyExecutionError
 from c7n.filters import ValueFilter
 from c7n.filters.metrics import MetricsFilter
@@ -50,12 +49,13 @@ class ServiceQuota(QueryResourceManager):
         name = 'QuotaName'
         metrics_namespace = 'AWS/Usage'
 
-    def augment(self, resources):
-        client = local_session(self.session_factory).client('service-quotas')
+    @augment.batch
+    def expand_quotas(manager, resources):
+        client = local_session(manager.session_factory).client('service-quotas')
         retry = get_retry(('TooManyRequestsException',))
 
         excl_sc = incl_sc = set()
-        for q in self.data.get("query", []):
+        for q in manager.data.get("query", []):
             if q.get("exclude_service_codes"):
                 excl_sc = set(q.get("exclude_service_codes"))
             elif q.get("include_service_codes"):
@@ -67,7 +67,7 @@ class ServiceQuota(QueryResourceManager):
                 token = None
                 kwargs = {
                     'ServiceCode': s['ServiceCode'],
-                    'MaxResults': self.batch_size
+                    'MaxResults': manager.batch_size
                 }
 
                 while True:
@@ -81,7 +81,7 @@ class ServiceQuota(QueryResourceManager):
                     token = response.get('NextToken')
                     new = set(rquotas) - set(quotas)
                     quotas.update(rquotas)
-                    self.log.debug(f"{s['ServiceCode']} has {len(response['Quotas'])} quotas")
+                    manager.log.debug(f"{s['ServiceCode']} has {len(response['Quotas'])} quotas")
 
                     # To fix TooManyRequestsException when calling the ListServiceQuotas
                     # Sleep before any break, no better option so far; default quota is 10rps
@@ -108,7 +108,7 @@ class ServiceQuota(QueryResourceManager):
         # NOTE TooManyRequestsException errors are reported in us-east-1 often
         # when calling the ListServiceQuotas operation,
         # set the max_workers to 1 instead of self.max_workers to slow down the rate
-        with self.executor_factory(max_workers=1) as w:
+        with manager.executor_factory(max_workers=1) as w:
             futures = {}
             for r in resources:
                 # Leveraging metadata to exclude unwanted service codes to reduce masive API calls
@@ -122,6 +122,7 @@ class ServiceQuota(QueryResourceManager):
                 results.extend(f.result())
 
         return results
+
 
 
 @ServiceQuota.filter_registry.register('usage-metric')

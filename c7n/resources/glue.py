@@ -3,7 +3,7 @@
 import json
 from botocore.exceptions import ClientError
 from concurrent.futures import as_completed
-from c7n.manager import resources, ResourceManager
+from c7n.manager import resources, ResourceManager, SyntheticResourceMixin
 from c7n.query import QueryResourceManager, TypeInfo
 from c7n.utils import local_session, chunks, type_schema, generate_arn
 from c7n.actions import BaseAction, ActionRegistry, RemovePolicyBase
@@ -352,9 +352,10 @@ class DeleteDatabase(BaseAction):
 
 
 @resources.register('glue-table')
-class GlueTable(query.ChildResourceManager):
+class GlueTable(query.ArnFormatMixin, query.ChildResourceManager):
 
     child_source = 'describe-table'
+    arn_id_template = '{DatabaseName}/{Name}'
 
     class resource_type(TypeInfo):
         service = 'glue'
@@ -364,22 +365,10 @@ class GlueTable(query.ChildResourceManager):
         date = 'CreatedOn'
         arn_type = 'table'
 
-    def get_arns(self, resources):
-        return [self.generate_arn(r['DatabaseName'] + '/' + r['Name']) for r in resources]
-
 
 @query.sources.register('describe-table')
 class DescribeTable(query.ChildDescribeSource):
-
-    def get_query(self):
-        return super(DescribeTable, self).get_query(capture_parent_id=True)
-
-    def augment(self, resources):
-        result = []
-        for parent_id, r in resources:
-            r['DatabaseName'] = parent_id
-            result.append(r)
-        return result
+    capture_parent_id = 'DatabaseName'
 
 
 @GlueTable.action_registry.register('delete')
@@ -429,6 +418,7 @@ class DeleteClassifier(BaseAction):
 
 @resources.register('glue-ml-transform')
 class GlueMLTransform(QueryResourceManager):
+    permission_override = ('glue:GetMLTransforms',)
 
     class resource_type(TypeInfo):
         service = 'glue'
@@ -441,9 +431,6 @@ class GlueMLTransform(QueryResourceManager):
 
     source_mapping = {'describe': query.DescribeWithResourceTags,
                       'config': query.ConfigSource}
-
-    def get_permissions(self):
-        return ('glue:GetMLTransforms',)
 
 
 @GlueMLTransform.action_registry.register('delete')
@@ -553,10 +540,7 @@ class GlueWorkflow(QueryResourceManager):
         arn_type = 'workflow'
         universal_taggable = object()
         cfn_type = 'AWS::Glue::Workflow'
-
-    def augment(self, resources):
-        return universal_augment(
-            self, super(GlueWorkflow, self).augment(resources))
+    universal_tags = True
 
 
 @GlueWorkflow.action_registry.register('delete')
@@ -580,7 +564,7 @@ class GlueWorkflowSecurityConfigFilter(SecurityConfigFilter):
 
 
 @resources.register('glue-catalog')
-class GlueDataCatalog(ResourceManager):
+class GlueDataCatalog(SyntheticResourceMixin, ResourceManager):
 
     filter_registry = FilterRegistry('glue-catalog.filters')
     action_registry = ActionRegistry('glue-catalog.actions')
@@ -625,10 +609,10 @@ class GlueDataCatalog(ResourceManager):
         settings.pop('ResponseMetadata', None)
         return [settings]
 
-    def resources(self):
-        return self.filter_resources(self._get_catalog_encryption_settings())
+    def get_synthetic_resources(self, query=None):
+        return self._get_catalog_encryption_settings()
 
-    def get_resources(self, resource_ids):
+    def get_synthetic_resources_by_ids(self, resource_ids):
         return [{'CatalogId': self.config.account_id}]
 
 

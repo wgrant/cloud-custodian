@@ -57,13 +57,14 @@ from c7n.filters import related
 import c7n.filters.vpc as net_filters
 from c7n.manager import resources
 from c7n.query import (
-    QueryResourceManager, DescribeSource, ConfigSource, TypeInfo, RetryPageIterator)
+    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
+    RetryPageIterator, TypeInfo)
 from c7n import deprecated, tags
 from c7n.tags import universal_augment
 
 from c7n.utils import (
     local_session, type_schema, get_retry, chunks, snapshot_identifier,
-    merge_dict_list, filter_empty, jmespath_search)
+    filter_empty, jmespath_search)
 from c7n.resources.kms import ResourceKmsKeyAlias
 from c7n.resources.securityhub import PostFinding
 from c7n.filters.backup import ConsecutiveAwsBackupsFilter
@@ -75,11 +76,7 @@ actions = ActionRegistry('rds.actions')
 
 
 class DescribeRDS(DescribeSource):
-
-    def augment(self, dbs):
-        for d in dbs:
-            d['Tags'] = d.pop('TagList', ())
-        return dbs
+    tag_field = dict(field='TagList', tag_format='aws-list', remove=True, missing='empty')
 
 
 class ConfigRDS(ConfigSource):
@@ -96,6 +93,7 @@ class ConfigRDS(ConfigSource):
 class RDS(QueryResourceManager):
     """Resource manager for RDS DB instances.
     """
+    policy_query_parser = True
 
     class resource_type(TypeInfo):
         service = 'rds'
@@ -127,13 +125,6 @@ class RDS(QueryResourceManager):
 
     filter_registry = filters
     action_registry = actions
-
-    def resources(self, query=None):
-        if query is None and 'query' in self.data:
-            query = merge_dict_list(self.data['query'])
-        elif query is None:
-            query = {}
-        return super(RDS, self).resources(query=query)
 
     source_mapping = {
         'describe': DescribeRDS,
@@ -1075,14 +1066,10 @@ class RDSSubscriptionDelete(BaseAction):
 
 class DescribeRDSSnapshot(DescribeSource):
 
-    def get_resources(self, ids, cache=True):
-        super_get = super().get_resources
+    def fetch_resources_by_ids(self, ids):
+        super_get = super().fetch_resources_by_ids
         return list(itertools.chain(*[super_get((i,)) for i in ids]))
-
-    def augment(self, snaps):
-        for s in snaps:
-            s['Tags'] = s.pop('TagList', ())
-        return snaps
+    tag_field = dict(field='TagList', tag_format='aws-list', remove=True, missing='empty')
 
 
 @resources.register('rds-snapshot')
@@ -1621,12 +1608,12 @@ class RDSModifyVpcSecurityGroups(ModifyVpcSecurityGroupsAction):
 
 
 class DescribeSubnetGroup(DescribeSource):
-
-    def augment(self, resources):
-        _db_subnet_group_tags(
-            resources, self.manager.session_factory,
-            self.manager.executor_factory, self.manager.retry)
-        return resources
+    tag_api = dict(
+        resource_path='DBSubnetGroupArn',
+        request_arg='ResourceName',
+        result_path='TagList',
+        ignore_errors=('DBSubnetGroupNotFoundFault',),
+        drop_on_error=True)
 
 
 @resources.register('rds-subnet-group')
@@ -1650,20 +1637,6 @@ class RDSSubnetGroup(QueryResourceManager):
         'config': ConfigSource,
         'describe': DescribeSubnetGroup
     }
-
-
-def _db_subnet_group_tags(subnet_groups, session_factory, executor_factory, retry):
-    client = local_session(session_factory).client('rds')
-
-    def process_tags(g):
-        try:
-            g['Tags'] = client.list_tags_for_resource(
-                ResourceName=g['DBSubnetGroupArn'])['TagList']
-            return g
-        except client.exceptions.DBSubnetGroupNotFoundFault:
-            return None
-
-    return list(filter(None, map(process_tags, subnet_groups)))
 
 
 @RDSSubnetGroup.action_registry.register('delete')
@@ -2167,9 +2140,8 @@ class DbRecommendations(Filter):
         return results
 
 
-class DescribeDBProxy(DescribeSource):
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class DescribeDBProxy(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('rds-proxy')

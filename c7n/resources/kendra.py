@@ -1,15 +1,12 @@
 from c7n.actions import Action
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
-from c7n.query import DescribeSource, QueryResourceManager, TypeInfo
-from c7n.tags import universal_augment
+from c7n.query import DescribeWithResourceTags, QueryResourceManager, TypeInfo
 from c7n.utils import local_session, type_schema
 
 
-class DescribeIndex(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class DescribeIndex(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('kendra')

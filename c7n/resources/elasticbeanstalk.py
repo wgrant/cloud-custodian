@@ -4,7 +4,7 @@
 import logging
 
 from c7n.manager import resources
-from c7n.query import ConfigSource, DescribeSource, QueryResourceManager, TypeInfo
+from c7n.query import ConfigSource, QueryResourceManager, TypeInfo
 from c7n import utils
 from c7n import tags
 from c7n.utils import local_session, type_schema
@@ -34,12 +34,6 @@ class ElasticBeanstalk(QueryResourceManager):
         permissions_augment = ("elasticbeanstalk:ListTagsForResource",)
 
 
-class DescribeEnvironment(DescribeSource):
-
-    def augment(self, resources):
-        return _eb_env_tags(resources, self.manager.session_factory, self.manager.retry)
-
-
 @resources.register('elasticbeanstalk-environment')
 class ElasticBeanstalkEnvironment(QueryResourceManager):
     """ Resource manager for Elasticbeanstalk Environments
@@ -62,8 +56,8 @@ class ElasticBeanstalkEnvironment(QueryResourceManager):
         permissions_augment = ("elasticbeanstalk:ListTagsForResource",)
 
     permissions = ('elasticbeanstalk:ListTagsForResource',)
+    tag_api = dict(resource_path='EnvironmentArn', result_path='ResourceTags', ignore_errors=('ResourceNotFoundException',))
     source_mapping = {
-        'describe': DescribeEnvironment,
         'config': ConfigSource
     }
 
@@ -72,25 +66,6 @@ ElasticBeanstalkEnvironment.filter_registry.register(
     'tag-count', tags.TagCountFilter)
 ElasticBeanstalkEnvironment.filter_registry.register(
     'marked-for-op', tags.TagActionFilter)
-
-
-def _eb_env_tags(envs, session_factory, retry):
-    """Augment ElasticBeanstalk Environments with their tags."""
-
-    client = local_session(session_factory).client('elasticbeanstalk')
-
-    def process_tags(eb_env):
-        try:
-            eb_env['Tags'] = retry(
-                client.list_tags_for_resource,
-                ResourceArn=eb_env['EnvironmentArn'])['ResourceTags']
-        except client.exceptions.ResourceNotFoundException:
-            eb_env['Tags'] = []
-        return eb_env
-
-    # Handle API rate-limiting, which is a problem for accounts with many
-    # EB Environments
-    return list(map(process_tags, envs))
 
 
 @ElasticBeanstalkEnvironment.action_registry.register('mark-for-op')

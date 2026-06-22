@@ -1,12 +1,13 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 import logging
 
 from c7n.filters import Filter, ValueFilter
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
-from c7n_azure.graph_utils import GraphResourceManager, GraphTypeInfo, GraphSource
+from c7n_azure.graph_utils import GraphResourceManager, GraphTypeInfo
 
 log = logging.getLogger('custodian.azure.entraid.named_locations')
 
@@ -54,10 +55,6 @@ class EntraIDNamedLocation(GraphResourceManager):
                 value: "10.0.0.0/8"
     """
 
-    def __init__(self, ctx, data):
-        super().__init__(ctx, data)
-        self.source = GraphSource(self)
-
     class resource_type(GraphTypeInfo):
         doc_groups = ['EntraID', 'Identity']
         enum_spec = ('identity/conditionalAccess/namedLocations', 'list', None)
@@ -95,33 +92,30 @@ class EntraIDNamedLocation(GraphResourceManager):
                 )
             return []
 
-    def augment(self, resources):
-        """Augment named location resources with additional fields."""
+    @augment.mutate
+    def augment_location(manager, resource):
         try:
-            for resource in resources:
-                # Add computed fields based on location type
-                odata_type = resource.get('@odata.type', '')
-                resource['c7n:IsIPLocation'] = (
-                    '#microsoft.graph.ipNamedLocation' in odata_type
-                )
-                resource['c7n:IsCountryLocation'] = (
-                    '#microsoft.graph.countryNamedLocation' in odata_type
-                )
+            # Add computed fields based on location type
+            odata_type = resource.get('@odata.type', '')
+            resource['c7n:IsIPLocation'] = (
+                '#microsoft.graph.ipNamedLocation' in odata_type
+            )
+            resource['c7n:IsCountryLocation'] = (
+                '#microsoft.graph.countryNamedLocation' in odata_type
+            )
 
-                # Add total IP ranges count for IP-based locations
-                if resource['c7n:IsIPLocation']:
-                    ip_ranges = resource.get('ipRanges', [])
-                    resource['c7n:IPRangesCount'] = len(ip_ranges)
+            # Add total IP ranges count for IP-based locations
+            if resource['c7n:IsIPLocation']:
+                ip_ranges = resource.get('ipRanges', [])
+                resource['c7n:IPRangesCount'] = len(ip_ranges)
 
-                # Add total countries count for country-based locations
-                if resource['c7n:IsCountryLocation']:
-                    countries = resource.get('countriesAndRegions', [])
-                    resource['c7n:CountriesCount'] = len(countries)
-
+            # Add total countries count for country-based locations
+            if resource['c7n:IsCountryLocation']:
+                countries = resource.get('countriesAndRegions', [])
+                resource['c7n:CountriesCount'] = len(countries)
         except Exception as e:
             log.warning(f"Failed to augment EntraID named locations: {e}")
 
-        return resources
 
 
 @EntraIDNamedLocation.filter_registry.register('location-type')

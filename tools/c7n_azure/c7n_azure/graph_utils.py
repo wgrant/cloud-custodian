@@ -131,6 +131,12 @@ class GraphResourceManager(QueryResourceManager):
     Provides common Graph API client functionality for all EntraID resources.
     """
 
+    source_class = GraphSource
+
+    def __init__(self, ctx, data):
+        super().__init__(ctx, data)
+        self.source = self.source_class(self)
+
     def get_client(self):
         """Get Microsoft Graph client session"""
         session = local_session(self.session_factory)

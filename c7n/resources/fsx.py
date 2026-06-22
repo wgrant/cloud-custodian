@@ -19,12 +19,16 @@ from c7n.filters.backup import ConsecutiveAwsBackupsFilter
 
 class DescribeFSx(DescribeSource):
 
-    def get_resources(self, ids):
+    def prepare_resource_ids(self, ids):
         """Support server side filtering on arns
         """
-        for n in range(len(ids)):
-            if ids[n].startswith('arn:'):
-                ids[n] = ids[n].rsplit('/', 1)[-1]
+        ids = list(ids)
+        for n, resource_id in enumerate(ids):
+            if resource_id.startswith('arn:'):
+                ids[n] = resource_id.rsplit('/', 1)[-1]
+        return ids
+
+    def fetch_resources_by_ids(self, ids):
         params = {'FileSystemIds': ids}
         return self.query.filter(self.manager, **params)
 

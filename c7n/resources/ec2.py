@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import base64
 import itertools
 import operator
@@ -43,13 +44,6 @@ actions = ActionRegistry('ec2.actions')
 
 class DescribeEC2(query.DescribeSource):
 
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        queries = EC2QueryParser.parse(self.manager.data.get('query', []))
-        for q in queries:
-            query_params.update(q)
-        return query_params
-
     @staticmethod
     def _flatten_reservations(reservations):
         instances = []
@@ -60,15 +54,11 @@ class DescribeEC2(query.DescribeSource):
                 instances.append(i)
         return instances
 
-    def resources(self, query):
-        reservations = self.query.filter(self.manager, **query)
-        return self._flatten_reservations(reservations)
+    def normalize_resources(self, resources, query):
+        return self._flatten_reservations(resources)
 
-    def get_resources(self, ids, cache=True):
-        reservations = self.query.get(self.manager, ids)
-        return self._flatten_reservations(reservations)
-
-    def augment(self, resources):
+    @augment.batch
+    def augment_awol_tags(manager, resources):
         """EC2 API and AWOL Tags
 
         While ec2 api generally returns tags when doing describe_x on for
@@ -82,7 +72,7 @@ class DescribeEC2(query.DescribeSource):
         name), so there isn't a good default to ensure that we will
         always get tags from describe_x calls.
         """
-        if not resources or self.manager.data.get(
+        if not resources or manager.data.get(
                 'mode', {}).get('type', '') in (
                     'cloudtrail', 'ec2-instance-state'):
             return resources
@@ -102,8 +92,8 @@ class DescribeEC2(query.DescribeSource):
             return resources
 
         # Okay go and do the tag lookup
-        client = utils.local_session(self.manager.session_factory).client('ec2')
-        tag_set = self.manager.retry(
+        client = utils.local_session(manager.session_factory).client('ec2')
+        tag_set = manager.retry(
             client.describe_tags,
             Filters=[{'Name': 'resource-type',
                       'Values': ['instance']}])['Tags']
@@ -113,7 +103,7 @@ class DescribeEC2(query.DescribeSource):
             rid = t.pop('ResourceId')
             resource_tags.setdefault(rid, []).append(t)
 
-        m = self.manager.get_model()
+        m = manager.get_model()
         for r in resources:
             r['Tags'] = resource_tags.get(r[m.id], [])
         return resources
@@ -2313,6 +2303,9 @@ class EC2QueryParser(QueryParser):
     type_name = "EC2"
 
 
+DescribeEC2.source_policy_query_parser = EC2QueryParser
+
+
 @filters.register('instance-attribute')
 class InstanceAttribute(ValueFilter):
     """EC2 Instance Value Filter on a given instance attribute.
@@ -2398,9 +2391,10 @@ class LaunchTemplate(query.QueryResourceManager):
         arn_type = "launch-template"
         cfn_type = "AWS::EC2::LaunchTemplate"
 
-    def augment(self, resources):
+    @augment.batch
+    def expand_versions(manager, resources):
         client = utils.local_session(
-            self.session_factory).client('ec2')
+            manager.session_factory).client('ec2')
         template_versions = []
         for r in resources:
             template_versions.extend(

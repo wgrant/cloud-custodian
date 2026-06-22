@@ -26,6 +26,7 @@ Actions:
    delivery.
 
 """
+from c7n.query import augment
 import copy
 import functools
 import json
@@ -79,12 +80,14 @@ MAX_COPY_SIZE = 1024 * 1024 * 1024 * 2
 
 
 class DescribeS3(query.DescribeSource):
+    detail_augment = False
 
-    def augment(self, buckets):
-        assembler = BucketAssembly(self.manager)
+    @augment.batch
+    def assemble_buckets(manager, buckets):
+        assembler = BucketAssembly(manager)
         assembler.initialize()
 
-        with self.manager.executor_factory(
+        with manager.executor_factory(
                 max_workers=min((10, len(buckets) + 1))) as w:
             results = w.map(assembler.assemble, buckets)
             results = list(filter(None, results))
@@ -95,12 +98,7 @@ class ConfigS3(query.ConfigSource):
 
     # normalize config's janky idiosyncratic bespoke formating to the
     # standard describe api responses.
-
-    def get_query_params(self, query):
-        q = super(ConfigS3, self).get_query_params(query)
-        if 'expr' in q:
-            q['expr'] = q['expr'].replace('select ', 'select awsRegion, ')
-        return q
+    config_select_fields = ('awsRegion',)
 
     def load_resource(self, item):
         resource = super(ConfigS3, self).load_resource(item)

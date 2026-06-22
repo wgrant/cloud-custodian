@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import json
 
 from c7n.actions import RemovePolicyBase, Action, ModifyPolicyBase
@@ -7,10 +8,11 @@ from c7n.exceptions import PolicyValidationError
 from c7n.filters import CrossAccountAccessFilter, Filter, ValueFilter, MetricsFilter
 from c7n.manager import resources
 from c7n.query import (
-    ConfigSource, DescribeSource, QueryResourceManager, TypeInfo,
-    ChildResourceManager, ChildDescribeSource, ChildResourceQuery, sources)
+    ConfigSource, DescribeSource,
+    QueryResourceManager, TypeInfo, ChildResourceManager, ChildDescribeSource,
+    ChildResourceQuery, sources)
 from c7n import tags
-from c7n.utils import generate_arn, local_session, type_schema
+from c7n.utils import local_session, type_schema
 
 
 class ConfigECR(ConfigSource):
@@ -27,18 +29,12 @@ class ConfigECR(ConfigSource):
 
 
 class DescribeECR(DescribeSource):
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('ecr')
-        results = []
-        for r in resources:
-            try:
-                r['Tags'] = client.list_tags_for_resource(
-                    resourceArn=r['repositoryArn']).get('tags')
-                results.append(r)
-            except client.exceptions.RepositoryNotFoundException:
-                continue
-        return results
+    tag_api = dict(
+        resource_path='repositoryArn',
+        request_arg='resourceArn',
+        result_path='tags',
+        ignore_errors=('RepositoryNotFoundException',),
+        drop_on_error=True)
 
 
 @resources.register('ecr')
@@ -80,41 +76,17 @@ class ECRImageQuery(ChildResourceQuery):
 
 @sources.register('describe-ecr-image')
 class RepositoryImageDescribeSource(ChildDescribeSource):
+    source_policy_query_parser = True
+
+    @augment.mutate
+    def augment_image_arn(manager, resource):
+        ecr_manager = manager.get_resource_manager(manager.resource_type.parent_spec[0])
+        resource['imageArn'] = "{}/{}".format(
+            ecr_manager.generate_arn(resource['repositoryName']),
+            resource['imageDigest'])
 
     resource_query_factory = ECRImageQuery
-
-    def get_query(self):
-        return super().get_query(capture_parent_id=True)
-
-    def get_query_params(self, query):
-        query = query or {}
-        if 'query' not in self.manager.data:
-            return query
-        for q in self.manager.data['query']:
-            query.update(q)
-        return query
-
-    def augment(self, resources):
-        # construct an image arn
-        ecr_manager = self.manager.get_resource_manager(self.manager.resource_type.parent_spec[0])
-        rtype = ecr_manager.resource_type
-
-        repo_arn_map = {}
-        for repo_name in list({repo_name for repo_name, image in resources}):
-            repo_arn_map[repo_name] = generate_arn(
-                rtype.service,
-                region=self.manager.config.region,
-                account_id=self.manager.account_id,
-                resource_type=ecr_manager.resource_type.arn_type,
-                separator="/",
-                resource=repo_name
-            )
-
-        results = []
-        for repo_name, image in resources:
-            image['imageArn'] = "{}/{}".format(repo_arn_map[repo_name], image['imageDigest'])
-            results.append(image)
-        return results
+    capture_parent_id = 'repositoryName'
 
 
 @resources.register('ecr-image')

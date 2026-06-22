@@ -8,13 +8,7 @@ from c7n.utils import get_retry, local_session, type_schema
 
 
 class ResourceShareDescribe(DescribeSource):
-
-    def augment(self, resources):
-        def _augment(r):
-            r['Tags'] = [{'Key': t['key'], 'Value': t['value']} for t in r.get('tags', [])]
-            return r
-        resources = super().augment(resources)
-        return list(map(_augment, resources))
+    tag_field = dict(field='tags', tag_format='lower-list', missing='empty')
 
 
 @resources.register('resource-share-other')

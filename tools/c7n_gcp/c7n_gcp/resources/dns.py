@@ -1,10 +1,11 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n_gcp.actions import MethodAction
 from c7n.utils import type_schema, local_session
-from c7n.filters.core import ListItemFilter
+from c7n.filters.core import ListItemAnnotationFilter, annotation_getter
 
 
 @resources.register('dns-managed-zone')
@@ -42,12 +43,12 @@ class DnsManagedZone(QueryResourceManager):
                 'body': {'labels': all_labels}
             }
 
-    def augment(self, resources):
-        project = local_session(self.session_factory).get_default_project()
-        for resource in resources:
-            # Make the project id accessible for `get_label_params`
-            resource.setdefault('project_id', project)
-        return resources
+    @augment.mutate
+    def set_project_id(manager, resource):
+        project = local_session(manager.session_factory).get_default_project()
+        # Make the project id accessible for `get_label_params`
+        resource.setdefault('project_id', project)
+
 
 
 @resources.register('dns-policy')
@@ -75,7 +76,7 @@ class DnsPolicy(QueryResourceManager):
 
 
 @DnsManagedZone.filter_registry.register('records-sets')
-class DNSZoneRecordsSetsFilter(ListItemFilter):
+class DNSZoneRecordsSetsFilter(ListItemAnnotationFilter):
 
     schema = type_schema(
         'records-sets',
@@ -84,13 +85,15 @@ class DNSZoneRecordsSetsFilter(ListItemFilter):
     annotate_items = True
     permissions = ("dns.managedZones.list",)
 
-    def get_item_values(self, resource):
-        session = local_session(self.manager.session_factory)
+    @annotation_getter
+    def get_record_sets(resource_filter, resource):
+        session = local_session(resource_filter.manager.session_factory)
         client = session.client(service_name='dns', version='v1', component='resourceRecordSets')
         project = session.get_default_project()
         result = client.execute_query(
             'list', {'project': project, 'managedZone': resource['name']}).get('rrsets')
         return result
+
 
 
 @DnsManagedZone.action_registry.register('delete')

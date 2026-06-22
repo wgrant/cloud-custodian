@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import logging
 import time
 import json
@@ -7,8 +8,7 @@ import json
 from c7n.actions import ActionRegistry, BaseAction
 from c7n.filters import FilterRegistry, MetricsFilter, ValueFilter
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, ConfigSource, DescribeSource
-from c7n.tags import universal_augment
+from c7n.query import QueryResourceManager, TypeInfo, ConfigSource, DescribeWithResourceTags
 from c7n.utils import (
     local_session, type_schema, get_retry, jmespath_search, QueryParser)
 from c7n.tags import (
@@ -42,17 +42,12 @@ class EMRCluster(QueryResourceManager):
     filter_registry = filters
     retry = staticmethod(get_retry(('ThrottlingException',)))
 
-    def __init__(self, ctx, data):
-        super(EMRCluster, self).__init__(ctx, data)
-        self.queries = EMRQueryParser.parse(
-            self.data.get('query', []))
-
     @classmethod
     def get_permissions(cls):
         return ("elasticmapreduce:ListClusters",
                 "elasticmapreduce:DescribeCluster")
 
-    def get_resources(self, ids):
+    def fetch_resources_by_ids(self, ids):
         # no filtering by id set supported at the api
         client = local_session(self.session_factory).client('emr')
         results = []
@@ -61,24 +56,16 @@ class EMRCluster(QueryResourceManager):
                 client.describe_cluster(ClusterId=jid)['Cluster'])
         return results
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        if 'ClusterStates' not in query:
-            query['ClusterStates'] = self.resource_type.default_cluster_states
-        return super(EMRCluster, self).resources(query=query)
+    @staticmethod
+    def get_default_query(manager):
+        return {'ClusterStates': manager.resource_type.default_cluster_states}
 
-    def augment(self, resources):
-        client = local_session(
-            self.get_resource_manager('emr').session_factory).client('emr')
-        result = []
+    @augment.map
+    def describe_cluster(manager, resource):
+        client = local_session(manager.session_factory).client('emr')
         # remap for cwmetrics
-        for r in resources:
-            cluster = self.retry(
-                client.describe_cluster, ClusterId=r['Id'])['Cluster']
-            result.append(cluster)
-        return result
+        return manager.retry(
+            client.describe_cluster, ClusterId=resource['Id'])['Cluster']
 
 
 @EMRCluster.filter_registry.register('metrics')
@@ -215,6 +202,10 @@ class EMRQueryParser(QueryParser):
     type_name = "EMR"
 
 
+EMRCluster.policy_query_parser = EMRQueryParser
+EMRCluster.policy_query_default = EMRCluster.get_default_query
+
+
 @filters.register('subnet')
 class SubnetFilter(net_filters.SubnetFilter):
 
@@ -290,6 +281,10 @@ class EMRSecurityConfiguration(QueryResourceManager):
     """Resource manager for EMR Security Configuration
     """
 
+    @augment.mutate
+    def decode_security_configuration(manager, resource):
+        resource['SecurityConfiguration'] = json.loads(resource['SecurityConfiguration'])
+
     class resource_type(TypeInfo):
         service = 'emr'
         arn_type = 'emr'
@@ -301,12 +296,6 @@ class EMRSecurityConfiguration(QueryResourceManager):
 
     permissions = ('elasticmapreduce:ListSecurityConfigurations',
                   'elasticmapreduce:DescribeSecurityConfiguration',)
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        for r in resources:
-            r['SecurityConfiguration'] = json.loads(r['SecurityConfiguration'])
-        return resources
 
 
 @EMRSecurityConfiguration.action_registry.register('delete')
@@ -324,12 +313,8 @@ class DeleteEMRSecurityConfiguration(BaseAction):
                 continue
 
 
-class DescribeEMRServerlessApp(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(
-            self.manager,
-            super().augment(resources))
+class DescribeEMRServerlessApp(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('emr-serverless-app')

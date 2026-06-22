@@ -3,29 +3,18 @@
 
 from c7n.actions import BaseAction
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import (
+    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager,
+    TagsFromApi, TypeInfo)
 from c7n.utils import local_session, type_schema, QueryParser
-from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction, universal_augment
+from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 from c7n.filters.vpc import SubnetFilter, SecurityGroupFilter, NetworkLocation
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.offhours import OffHour, OnHour
 
 
 class NotebookDescribe(DescribeSource):
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sagemaker')
-
-        def _augment(r):
-            # List tags for the Notebook-Instance & set as attribute
-            tags = self.manager.retry(client.list_tags,
-                ResourceArn=r['NotebookInstanceArn'])['Tags']
-            r['Tags'] = tags
-            return r
-
-        # Describe notebook-instance & then list tags
-        resources = super().augment(resources)
-        return list(map(_augment, resources))
+    tag_api = dict(op='list_tags', resource_path='NotebookInstanceArn')
 
 
 @resources.register('sagemaker-notebook')
@@ -51,8 +40,13 @@ NotebookInstance.filter_registry.register('offhour', OffHour)
 NotebookInstance.filter_registry.register('onhour', OnHour)
 
 
+class SagemakerQueryManager(QueryResourceManager):
+    policy_query_parser = None
+    policy_query_default = ()
+
+
 @resources.register('sagemaker-job')
-class SagemakerJob(QueryResourceManager):
+class SagemakerJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         service = 'sagemaker'
@@ -65,33 +59,11 @@ class SagemakerJob(QueryResourceManager):
         permission_augment = (
             'sagemaker:DescribeTrainingJob', 'sagemaker:ListTags')
 
-    def __init__(self, ctx, data):
-        super(SagemakerJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
-
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerJob, self).resources(query=query)
-
-    def augment(self, jobs):
-        client = local_session(self.session_factory).client('sagemaker')
-
-        def _augment(j):
-            tags = self.retry(client.list_tags,
-                ResourceArn=j['TrainingJobArn'])['Tags']
-            j['Tags'] = tags
-            return j
-
-        jobs = super(SagemakerJob, self).augment(jobs)
-        return list(map(_augment, jobs))
+    tag_api = dict(op='list_tags', resource_path='TrainingJobArn')
 
 
 @resources.register('sagemaker-transform-job')
-class SagemakerTransformJob(QueryResourceManager):
+class SagemakerTransformJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         arn_type = "transform-job"
@@ -106,38 +78,15 @@ class SagemakerTransformJob(QueryResourceManager):
         filter_type = 'scalar'
         permission_augment = ('sagemaker:DescribeTransformJob', 'sagemaker:ListTags')
 
-    def __init__(self, ctx, data):
-        super(SagemakerTransformJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
-
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerTransformJob, self).resources(query=query)
-
-    def augment(self, jobs):
-        client = local_session(self.session_factory).client('sagemaker')
-
-        def _augment(j):
-            tags = self.retry(client.list_tags,
-                ResourceArn=j['TransformJobArn'])['Tags']
-            j['Tags'] = tags
-            return j
-
-        return list(map(_augment, super(SagemakerTransformJob, self).augment(jobs)))
+    tag_api = dict(op='list_tags', resource_path='TransformJobArn')
 
 
-class SagemakerHyperParameterTuningJobDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerHyperParameterTuningJobDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-hyperparameter-tuning-job')
-class SagemakerHyperParameterTuningJob(QueryResourceManager):
+class SagemakerHyperParameterTuningJob(SagemakerQueryManager):
     class resource_type(TypeInfo):
         service = 'sagemaker'
         enum_spec = ('list_hyper_parameter_tuning_jobs', 'HyperParameterTuningJobSummaries', None)
@@ -152,32 +101,17 @@ class SagemakerHyperParameterTuningJob(QueryResourceManager):
 
     source_mapping = {'describe': SagemakerHyperParameterTuningJobDescribe}
 
-    def __init__(self, ctx, data):
-        super(SagemakerHyperParameterTuningJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerHyperParameterTuningJob, self).resources(query=query)
-
-
-class SagemakerAutoMLDescribeV2(DescribeSource):
+class SagemakerAutoMLDescribeV2(DescribeWithResourceTags):
 
     def get_permissions(self):
         perms = super().get_permissions()
         perms.remove('sagemaker:DescribeAutoMlJobV2')
         return perms
 
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
-
 
 @resources.register('sagemaker-auto-ml-job')
-class SagemakerAutoMLJob(QueryResourceManager):
+class SagemakerAutoMLJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         service = 'sagemaker'
@@ -194,27 +128,13 @@ class SagemakerAutoMLJob(QueryResourceManager):
 
     source_mapping = {'describe': SagemakerAutoMLDescribeV2}
 
-    def __init__(self, ctx, data):
-        super(SagemakerAutoMLJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerAutoMLJob, self).resources(query=query)
-
-
-class SagemakerCompilationJobDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerCompilationJobDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-compilation-job')
-class SagemakerCompilationJob(QueryResourceManager):
+class SagemakerCompilationJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         service = 'sagemaker'
@@ -229,27 +149,13 @@ class SagemakerCompilationJob(QueryResourceManager):
 
     source_mapping = {'describe': SagemakerCompilationJobDescribe}
 
-    def __init__(self, ctx, data):
-        super(SagemakerCompilationJob, self).__init__(ctx, data)
-        self.queries = CompilationJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'INPROGRESS'}]))
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerCompilationJob, self).resources(query=query)
-
-
-class SagemakerProcessingJobDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerProcessingJobDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-processing-job')
-class SagemakerProcessingJob(QueryResourceManager):
+class SagemakerProcessingJob(SagemakerQueryManager):
 
     class resource_type(TypeInfo):
         service = 'sagemaker'
@@ -264,23 +170,9 @@ class SagemakerProcessingJob(QueryResourceManager):
 
     source_mapping = {'describe': SagemakerProcessingJobDescribe}
 
-    def __init__(self, ctx, data):
-        super(SagemakerProcessingJob, self).__init__(ctx, data)
-        self.queries = SagemakerJobQueryParser.parse(
-            self.data.get('query', [
-                {'StatusEquals': 'InProgress'}]))
 
-    def resources(self, query=None):
-        query = query or {}
-        for q in self.queries:
-            query.update(q)
-        return super(SagemakerProcessingJob, self).resources(query=query)
-
-
-class SagemakerModelBiasJobDefinitionDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerModelBiasJobDefinitionDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-model-bias-job-definition')
@@ -330,20 +222,20 @@ class CompilationJobQueryParser(SagemakerJobQueryParser):
     }
 
 
+SagemakerJob.policy_query_parser = SagemakerTransformJob.policy_query_parser = \
+    SagemakerHyperParameterTuningJob.policy_query_parser = \
+    SagemakerAutoMLJob.policy_query_parser = \
+    SagemakerProcessingJob.policy_query_parser = SagemakerJobQueryParser
+SagemakerJob.policy_query_default = SagemakerTransformJob.policy_query_default = \
+    SagemakerHyperParameterTuningJob.policy_query_default = \
+    SagemakerAutoMLJob.policy_query_default = \
+    SagemakerProcessingJob.policy_query_default = [{'StatusEquals': 'InProgress'}]
+SagemakerCompilationJob.policy_query_parser = CompilationJobQueryParser
+SagemakerCompilationJob.policy_query_default = [{'StatusEquals': 'INPROGRESS'}]
+
+
 class EndpointDescribe(DescribeSource):
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sagemaker')
-
-        def _augment(e):
-            tags = self.manager.retry(client.list_tags,
-                ResourceArn=e['EndpointArn'])['Tags']
-            e['Tags'] = tags
-            return e
-
-        # Describe endpoints & then list tags
-        endpoints = super().augment(resources)
-        return list(map(_augment, endpoints))
+    tag_api = dict(op='list_tags', resource_path='EndpointArn')
 
 
 @resources.register('sagemaker-endpoint')
@@ -369,18 +261,7 @@ SagemakerEndpoint.filter_registry.register('marked-for-op', TagActionFilter)
 
 
 class EndpointConfigDescribe(DescribeSource):
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sagemaker')
-
-        def _augment(e):
-            tags = self.manager.retry(client.list_tags,
-                ResourceArn=e['EndpointConfigArn'])['Tags']
-            e['Tags'] = tags
-            return e
-
-        endpoints = super().augment(resources)
-        return list(map(_augment, endpoints))
+    tag_api = dict(op='list_tags', resource_path='EndpointConfigArn')
 
 
 @resources.register('sagemaker-endpoint-config')
@@ -405,18 +286,7 @@ SagemakerEndpointConfig.filter_registry.register('marked-for-op', TagActionFilte
 
 
 class DescribeModel(DescribeSource):
-
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('sagemaker')
-
-        def _augment(r):
-            tags = self.manager.retry(client.list_tags,
-                ResourceArn=r['ModelArn'])['Tags']
-            r.setdefault('Tags', []).extend(tags)
-            return r
-
-        resources = super(DescribeModel, self).augment(resources)
-        return list(map(_augment, resources))
+    tag_api = dict(op='list_tags', resource_path='ModelArn', merge=True)
 
 
 @resources.register('sagemaker-model')
@@ -444,10 +314,8 @@ class Model(QueryResourceManager):
 Model.filter_registry.register('marked-for-op', TagActionFilter)
 
 
-class SagemakerClusterDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerClusterDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-cluster')
@@ -469,10 +337,8 @@ class Cluster(QueryResourceManager):
     source_mapping = {'describe': SagemakerClusterDescribe}
 
 
-class SagemakerDataQualityJobDefinitionDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerDataQualityJobDefinitionDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-data-quality-job-definition')
@@ -494,10 +360,8 @@ class SagemakerDataQualityJobDefinition(QueryResourceManager):
     source_mapping = {'describe': SagemakerDataQualityJobDefinitionDescribe}
 
 
-class SagemakerModelExplainabilityJobDefinitionDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerModelExplainabilityJobDefinitionDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-model-explainability-job-definition')
@@ -519,10 +383,8 @@ class SagemakerModelExplainabilityJobDefinition(QueryResourceManager):
     source_mapping = {'describe': SagemakerModelExplainabilityJobDefinitionDescribe}
 
 
-class SagemakerModelQualityJobDefinitionDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerModelQualityJobDefinitionDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-model-quality-job-definition')
@@ -1235,10 +1097,8 @@ class ClusterDelete(BaseAction):
                 pass
 
 
-class SagemakerDomainDescribe(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class SagemakerDomainDescribe(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sagemaker-domain')

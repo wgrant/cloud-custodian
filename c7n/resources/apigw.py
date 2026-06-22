@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import functools
 import re
 from botocore.exceptions import ClientError
@@ -15,7 +16,7 @@ from c7n.filters import (
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.policystatement import HasStatementFilter
 from c7n.filters.related import RelatedResourceFilter
-from c7n.manager import resources, ResourceManager
+from c7n.manager import resources, ResourceManager, SyntheticResourceMixin
 from c7n.resources.aws import shape_schema
 from c7n import query, utils
 from c7n.utils import generate_arn, type_schema, get_retry, jmespath_search, get_partition
@@ -26,7 +27,7 @@ ANNOTATION_KEY_MATCHED_INTEGRATIONS = 'c7n:matched-method-integrations'
 
 
 @resources.register('rest-account')
-class RestAccount(ResourceManager):
+class RestAccount(SyntheticResourceMixin, ResourceManager):
     # note this is not using a regular resource manager or type info
     # its a pseudo resource, like an aws account
 
@@ -66,10 +67,7 @@ class RestAccount(ResourceManager):
         account['account_id'] = 'apigw-settings'
         return [account]
 
-    def resources(self):
-        return self.filter_resources(self._get_account())
-
-    def get_resources(self, resource_ids):
+    def get_synthetic_resources(self, query=None):
         return self._get_account()
 
 
@@ -120,19 +118,11 @@ class UpdateAccount(BaseAction):
 
 
 class ApiDescribeSource(query.DescribeSource):
-
-    def augment(self, resources):
-        for r in resources:
-            tags = r.setdefault('Tags', [])
-            for k, v in r.pop('tags', {}).items():
-                tags.append({
-                    'Key': k,
-                    'Value': v})
-        return resources
+    tag_field = dict(field='tags', remove=True, missing='empty', merge=True)
 
 
 @resources.register('rest-api')
-class RestApi(query.QueryResourceManager):
+class RestApi(query.AccountlessArnMixin, query.QueryResourceManager):
 
     class resource_type(query.TypeInfo):
         service = 'apigateway'
@@ -150,21 +140,6 @@ class RestApi(query.QueryResourceManager):
         'config': query.ConfigSource,
         'describe': ApiDescribeSource
     }
-
-    @property
-    def generate_arn(self):
-        """
-         Sample arn: arn:aws:apigateway:us-east-1::/restapis/rest-api-id
-         This method overrides c7n.utils.generate_arn and drops
-         account id from the generic arn.
-        """
-        if self._generate_arn is None:
-            self._generate_arn = functools.partial(
-                generate_arn,
-                self.resource_type.service,
-                region=self.config.region,
-                resource_type=self.resource_type.arn_type)
-        return self._generate_arn
 
 
 @RestApi.filter_registry.register('metrics')
@@ -291,20 +266,12 @@ class DeleteApi(BaseAction):
 
 @query.sources.register('describe-rest-stage')
 class DescribeRestStage(query.ChildDescribeSource):
+    capture_parent_id = True
 
-    def __init__(self, manager):
-        self.manager = manager
-        self.query = query.ChildResourceQuery(
-            self.manager.session_factory, self.manager, capture_parent_id=True)
-
-    def get_query(self):
-        return super(DescribeRestStage, self).get_query(capture_parent_id=True)
-
-    def augment(self, resources):
+    @augment.batch
+    def normalize_rest_stages(manager, resources):
         results = []
-        rest_apis = self.manager.get_resource_manager(
-            'rest-api').resources()
-        # Using capture parent, changes the protocol
+        rest_apis = manager.get_resource_manager('rest-api').resources()
         for parent_id, r in resources:
             r['restApiId'] = parent_id
             for rest_api in rest_apis:
@@ -314,16 +281,13 @@ class DescribeRestStage(query.ChildDescribeSource):
                             "/restapis/{rest_api_id}/stages/" \
                             "{stage_name}".format(
                 service="apigateway",
-                region=self.manager.config.region,
+                region=manager.config.region,
                 rest_api_id=parent_id,
                 stage_name=r['stageName'])
-            tags = r.setdefault('Tags', [])
-            for k, v in r.pop('tags', {}).items():
-                tags.append({
-                    'Key': k,
-                    'Value': v})
             results.append(r)
         return results
+
+    tag_field = dict(field='tags', remove=True, missing='empty', merge=True)
 
     def get_resources(self, ids, cache=True):
         deployment_ids = []
@@ -472,17 +436,7 @@ class RestResource(query.ChildResourceManager):
 
 @query.sources.register('describe-rest-resource')
 class DescribeRestResource(query.ChildDescribeSource):
-
-    def get_query(self):
-        return super(DescribeRestResource, self).get_query(capture_parent_id=True)
-
-    def augment(self, resources):
-        results = []
-        # Using capture parent id, changes the protocol
-        for parent_id, r in resources:
-            r['restApiId'] = parent_id
-            results.append(r)
-        return results
+    capture_parent_id = 'restApiId'
 
 
 @resources.register('rest-vpclink')
@@ -546,22 +500,11 @@ class StageClientCertificateFilter(RelatedResourceFilter):
     RelatedIdsExpression = 'clientCertificateId'
     annotation_key = "c7n:matched-client-certificate"
 
-    def process(self, resources, event=None):
-        related = self.get_related(resources)
-        matched = []
-        for r in resources:
-            if self.process_resource(r, related):
-                # Add the full certificate details rather than just the ID
-                self.augment(related, r)
-                matched.append(r)
-        return matched
-
-    def augment(self, related, resource):
-        rid = resource[self.RelatedIdsExpression]
+    def annotate_related(self, related_ids, resource, related):
         with suppress(KeyError):
+            rid = resource[self.RelatedIdsExpression]
             resource[self.annotation_key] = {
-                self.data['key']: jmespath_search(self.data['key'], related[rid])
-            }
+                self.data['key']: jmespath_search(self.data['key'], related[rid])}
 
 
 @RestStage.filter_registry.register('waf-enabled')
@@ -1086,7 +1029,8 @@ class UpdateRestMethod(BaseAction):
 
 
 @resources.register('apigw-domain-name')
-class CustomDomainName(query.QueryResourceManager):
+class CustomDomainName(query.AccountlessArnMixin, query.QueryResourceManager):
+    permission_override = ('apigateway:GET',)
 
     class resource_type(query.TypeInfo):
         enum_spec = ('get_domain_names', 'items', None)
@@ -1096,25 +1040,6 @@ class CustomDomainName(query.QueryResourceManager):
         universal_taggable = True
         cfn_type = 'AWS::ApiGateway::DomainName'
         date = 'createdDate'
-
-    @classmethod
-    def get_permissions(cls):
-        return ('apigateway:GET',)
-
-    @property
-    def generate_arn(self):
-        """
-         Sample arn: arn:aws:apigateway:us-east-1::/restapis/rest-api-id
-         This method overrides c7n.utils.generate_arn and drops
-         account id from the generic arn.
-        """
-        if self._generate_arn is None:
-            self._generate_arn = functools.partial(
-                generate_arn,
-                self.resource_type.service,
-                region=self.config.region,
-                resource_type=self.resource_type.arn_type)
-        return self._generate_arn
 
 
 @CustomDomainName.action_registry.register('update-security')
@@ -1152,20 +1077,15 @@ class DomainNameRemediateTls(BaseAction):
 
 
 class ApiGwV2DescribeSource(query.DescribeSource):
-
-    def augment(self, resources):
-        # convert tags from {'Key': 'Value'} to standard aws format
-        for r in resources:
-            r['Tags'] = [
-                {'Key': k, 'Value': v} for k, v in r.pop('Tags', {}).items()]
-        return resources
+    tag_field = dict(field='Tags', remove=True, missing='empty')
 
 
 @resources.register('apigwv2')
-class ApiGwV2(query.QueryResourceManager):
+class ApiGwV2(query.AccountlessArnMixin, query.QueryResourceManager):
 
     class resource_type(query.TypeInfo):
         service = 'apigatewayv2'
+        arn_service = 'apigateway'
         arn_type = '/apis'
         enum_spec = ('get_apis', 'Items', None)
         id = 'ApiId'
@@ -1181,23 +1101,6 @@ class ApiGwV2(query.QueryResourceManager):
         'config': query.ConfigSource,
         'describe': ApiGwV2DescribeSource
     }
-
-    @property
-    def generate_arn(self):
-        """
-         Sample arn: arn:aws:apigateway:us-east-1::/apis/api-id
-         This method overrides c7n.utils.generate_arn and drops
-         account id from the generic arn.
-        """
-        if self._generate_arn is None:
-            self._generate_arn = functools.partial(
-                generate_arn,
-                "apigateway",
-                region=self.config.region,
-                resource_type=self.resource_type.arn_type,
-            )
-
-        return self._generate_arn
 
 
 @ApiGwV2.action_registry.register('update')
@@ -1274,13 +1177,7 @@ class DeleteApiV2(BaseAction):
 
 
 class StageDescribe(query.ChildDescribeSource):
-
-    def augment(self, resources):
-        # convert tags from {'Key': 'Value'} to standard aws format
-        for r in resources:
-            r['Tags'] = [
-                {'Key': k, 'Value': v} for k, v in r.pop('Tags', {}).items()]
-        return resources
+    tag_field = dict(field='Tags', remove=True, missing='empty')
 
 
 @resources.register("apigwv2-stage")

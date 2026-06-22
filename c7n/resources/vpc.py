@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import itertools
 import zlib
 import re
@@ -7,6 +8,7 @@ from c7n.actions import BaseAction, ModifyVpcSecurityGroupsAction
 from c7n.deprecated import DeprecatedField
 from c7n.exceptions import PolicyValidationError, ClientError
 from c7n.filters import Filter, ValueFilter, MetricsFilter, ListItemFilter
+from c7n.filters.core import AnnotationPipelineFilter, annotation_mutator
 import c7n.filters.vpc as net_filters
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.related import RelatedResourceFilter, RelatedResourceByIdFilter
@@ -120,9 +122,9 @@ class DeleteVpc(BaseAction):
 
 class DescribeFlow(query.DescribeSource):
 
-    def get_resources(self, ids, cache=True):
+    def fetch_resources_by_ids(self, ids):
         params = {'Filters': [{'Name': 'flow-log-id', 'Values': ids}]}
-        return self.query.filter(self.resource_manager, **params)
+        return self.query.filter(self.manager, **params)
 
 
 @resources.register('flow-log')
@@ -692,10 +694,10 @@ class VpcPostFinding(PostFinding):
 
 class DescribeSubnets(query.DescribeSource):
 
-    def get_resources(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         while resource_ids:
             try:
-                return super().get_resources(resource_ids)
+                return super().fetch_resources_by_ids(resource_ids)
             except ClientError as e:
                 if e.response['Error']['Code'] != 'InvalidSubnetID.NotFound':
                     raise
@@ -746,7 +748,7 @@ class SubnetVpcFilter(net_filters.VpcFilter):
 
 
 @Subnet.filter_registry.register('ip-address-usage')
-class SubnetIpAddressUsageFilter(ValueFilter):
+class SubnetIpAddressUsageFilter(AnnotationPipelineFilter):
     """Filter subnets based on available IP addresses.
 
     :example:
@@ -795,10 +797,11 @@ class SubnetIpAddressUsageFilter(ValueFilter):
         rinherit=ValueFilter.schema,
     )
 
-    def augment(self, resource):
+    @annotation_mutator
+    def annotate_ip_usage(resource_filter, resource):
         cidr_block = parse_cidr(resource['CidrBlock'])
-        max_addresses = cidr_block.num_addresses - self.aws_reserved_addresses
-        resource[self.annotation_key] = dict(
+        max_addresses = cidr_block.num_addresses - resource_filter.aws_reserved_addresses
+        resource[resource_filter.annotation_key] = dict(
             MaxAvailable=max_addresses,
             NumberUsed=max_addresses - resource['AvailableIpAddressCount'],
             PercentUsed=round(
@@ -806,15 +809,6 @@ class SubnetIpAddressUsageFilter(ValueFilter):
                 2
             ),
         )
-
-    def process(self, resources, event=None):
-        results = []
-        for r in resources:
-            if self.annotation_key not in r:
-                self.augment(r)
-            if self.match(r[self.annotation_key]):
-                results.append(r)
-        return results
 
 
 @Subnet.action_registry.register('delete')
@@ -2009,11 +2003,7 @@ class SecurityGroupPostFinding(OtherResourcePostFinding):
 
 
 class DescribeENI(query.DescribeSource):
-
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = r.pop('TagSet', [])
-        return resources
+    tag_field = dict(field='TagSet', tag_format='aws-list', remove=True, missing='empty')
 
 
 @resources.register('eni')
@@ -2532,9 +2522,9 @@ class AclAwsS3Cidrs(Filter):
 
 
 class DescribeElasticIp(query.DescribeSource):
-
-    def augment(self, resources):
-        return [r for r in resources if self.manager.resource_type.id in r]
+    @augment.filter
+    def has_resource_id(manager, resource):
+        return manager.resource_type.id in resource
 
 
 @resources.register('elastic-ip', aliases=('network-addr',))
@@ -3304,7 +3294,7 @@ class SetFlowLogs(BaseAction):
 
 class PrefixListDescribe(query.DescribeSource):
 
-    def get_resources(self, ids, cache=True):
+    def fetch_resources_by_ids(self, ids):
         query = {'Filters': [
             {'Name': 'prefix-list-id',
              'Values': ids}]}

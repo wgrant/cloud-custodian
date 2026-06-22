@@ -9,19 +9,23 @@ from concurrent.futures import as_completed
 import functools
 import itertools
 import json
-from typing import List
-
 import os
 
 from c7n.actions import ActionRegistry
 from c7n.exceptions import ClientError, ResourceLimitExceeded, PolicyExecutionError
 from c7n.filters import FilterRegistry, MetricsFilter
-from c7n.manager import ResourceManager
+from c7n.manager import ResourceManager, ResourceQueryLifecycle
+from c7n.pipeline import (
+    FilterItems, MapBatch as PipelineMapBatch, MapItems, MutateItems,
+    build_decorated_pipeline, decorate_pipeline_func, get_raw_class_attr,
+    iter_pipeline_ops,
+)
 from c7n.registry import PluginRegistry
 from c7n.tags import register_ec2_tags, register_universal_tags, universal_augment
 from c7n.utils import (
     local_session, generate_arn, get_retry,
-    chunks, camelResource, jmespath_compile, get_path, is_not_found
+    chunks, camelResource, jmespath_compile, get_path, is_not_found,
+    merge_dict_list
 )
 
 try:
@@ -216,26 +220,450 @@ def _napi(op_name):
 sources = PluginRegistry('sources')
 
 
+def normalize_tags(tags, tag_format='aws-list'):
+    if tag_format == 'dict':
+        return tag_dict_to_list(tags or {})
+    if tag_format == 'lower-list':
+        return lower_key_tag_list(tags or ())
+    return tags or []
+
+
+class TagsFromField:
+    def __init__(self, field, target='Tags', tag_format='dict',
+                 remove=False, missing='skip', merge=False):
+        self.field = field
+        self.target = target
+        self.tag_format = tag_format
+        self.remove = remove
+        self.missing = missing
+        self.merge = merge
+
+    def __call__(self, manager, resources):
+        for resource in resources:
+            if self.field not in resource:
+                if self.missing == 'skip':
+                    continue
+                tags = ()
+            else:
+                tags = resource.pop(self.field) if self.remove else resource.get(self.field)
+            tags = normalize_tags(tags, self.tag_format)
+            if self.merge:
+                resource.setdefault(self.target, []).extend(tags)
+            else:
+                resource[self.target] = tags
+        return resources
+
+
+class TagsFromApi:
+    def __init__(self, op='list_tags_for_resource', resource_path=None,
+                 request_arg='ResourceArn', result_path='Tags',
+                 service=None, tag_format='aws-list', ignore_errors=(),
+                 merge=False, drop_on_error=False):
+        self.op = op
+        self.resource_path = resource_path
+        self.request_arg = request_arg
+        self.result_path = result_path
+        self.service = service
+        self.tag_format = tag_format
+        self.ignore_errors = ignore_errors
+        self.merge = merge
+        self.drop_on_error = drop_on_error
+
+    def __call__(self, manager, resources):
+        return augment_resource_tags(
+            manager, resources, op=self.op, arn_key=self.resource_path,
+            arn_arg=self.request_arg, result_key=self.result_path,
+            service=self.service,
+            normalizer=lambda tags: normalize_tags(tags, self.tag_format),
+            ignore_errors=self.ignore_errors,
+            merge=self.merge,
+            drop_on_error=self.drop_on_error)
+
+
+class TagsFromBatchApi:
+    def __init__(self, op, request_arg, result_path, result_resource_path,
+                 resource_path=None, result_tags_path='Tags', service=None,
+                 tag_format='aws-list', batch_size=20, max_workers=2,
+                 extra_args=None, resource_key=None, ignore_errors=()):
+        self.op = op
+        self.request_arg = request_arg
+        self.result_path = result_path
+        self.result_resource_path = result_resource_path
+        self.resource_path = resource_path
+        self.result_tags_path = result_tags_path
+        self.service = service
+        self.tag_format = tag_format
+        self.batch_size = batch_size
+        self.max_workers = max_workers
+        self.extra_args = extra_args or {}
+        self.resource_key = resource_key
+        self.ignore_errors = ignore_errors
+
+    def get_resource_key(self, manager, resource):
+        if self.resource_key:
+            return self.resource_key(manager, resource)
+        return get_path(self.resource_path or manager.resource_type.arn, resource)
+
+    def get_client(self, manager):
+        if self.service is None and getattr(manager, 'get_client', None):
+            return manager.get_client()
+        return local_session(manager.session_factory).client(
+            self.service or manager.resource_type.service)
+
+    def process_resource_set(self, manager, client, resource_set):
+        resource_map = {
+            self.get_resource_key(manager, resource): resource
+            for resource in resource_set}
+        extra_args = self.extra_args(manager) if callable(self.extra_args) else self.extra_args
+        response = manager.retry(
+            getattr(client, self.op),
+            ignore_err_codes=self.ignore_errors,
+            **dict(extra_args, **{self.request_arg: list(resource_map.keys())}))
+        if response is None:
+            return
+        for tag_result in response.get(self.result_path, ()):
+            resource_key = get_path(self.result_resource_path, tag_result)
+            if resource_key in resource_map:
+                resource_map[resource_key]['Tags'] = normalize_tags(
+                    get_path(self.result_tags_path, tag_result), self.tag_format)
+
+    def __call__(self, manager, resources):
+        client = self.get_client(manager)
+        with manager.executor_factory(max_workers=self.max_workers) as w:
+            list(w.map(
+                functools.partial(self.process_resource_set, manager, client),
+                chunks(resources, self.batch_size)))
+        return resources
+
+
+class UniversalTags:
+    def __call__(self, manager, resources):
+        return universal_augment(manager, resources)
+
+
+def source_account_id(source):
+    return source.manager.config.account_id
+
+
+class MergeField:
+    def __init__(self, field, remove=True, overwrite=True, missing='skip'):
+        self.field = field
+        self.remove = remove
+        self.overwrite = overwrite
+        self.missing = missing
+
+    def __call__(self, manager, resources):
+        for resource in resources:
+            if self.field not in resource:
+                if self.missing == 'skip':
+                    continue
+                value = {}
+            else:
+                value = resource.pop(self.field) if self.remove else resource.get(self.field)
+            for k, v in value.items():
+                if not self.overwrite and k in resource:
+                    continue
+                resource[k] = v
+        return resources
+
+
+class FilterResources(FilterItems):
+    """Filter resources with a ``(manager, resource)`` predicate."""
+
+
+class MutateResource(MutateItems):
+    """Run a per-resource mutator that changes resources in place."""
+
+
+class MapResource(MapItems):
+    """Map one input resource to zero or one output resources."""
+
+
+class MapBatch(PipelineMapBatch):
+    """Map a batch of resources to zero or more output resources."""
+
+
+class SourceMapBatch(PipelineMapBatch):
+    """Map batches with the source object instead of the resource manager."""
+
+    def process_source(self, source, resources):
+        return self(source, resources)
+
+
+class AnnotateParent:
+    """Replace ``(parent_id, resource)`` pairs with annotated resources."""
+
+    def __init__(self, field):
+        self.field = field
+
+    def __call__(self, manager, resources):
+        results = []
+        for parent_id, resource in resources:
+            resource[self.field] = parent_id
+            results.append(resource)
+        return results
+
+
+class Augment:
+    """Decorators for declaring resource augmentation functions."""
+
+    def _decorator(self, role, func=None, **options):
+        return decorate_pipeline_func(
+            'augment_pipeline_role', 'augment_pipeline_options',
+            role, func, **options)
+
+    def pre_filter(self, func=None):
+        return self._decorator('pre-filter', func)
+
+    def filter(self, func=None):
+        return self._decorator('filter', func)
+
+    def map(self, func=None, *, max_workers=None):
+        return self._decorator('map', func, max_workers=max_workers)
+
+    def mutate(self, func=None):
+        return self._decorator('mutate', func)
+
+    def batch(self, func=None, *, size=None, max_workers=None):
+        return self._decorator('batch', func, size=size, max_workers=max_workers)
+
+    def source_batch(self, func=None, *, size=None, max_workers=None):
+        return self._decorator(
+            'source-batch', func, size=size, max_workers=max_workers)
+
+
+augment = Augment()
+
+
+iter_augments = iter_pipeline_ops
+_get_raw_class_attr = get_raw_class_attr
+
+
+def _get_decorated_augments(owner, phase):
+    def include(role):
+        if phase == 'pre' and role != 'pre-filter':
+            return False
+        return phase == 'pre' or role != 'pre-filter'
+
+    factories = {
+        'pre-filter': lambda handler, options: FilterResources(handler),
+        'filter': lambda handler, options: FilterResources(handler),
+        'map': lambda handler, options: MapResource(
+            handler, max_workers=options.get('max_workers')),
+        'mutate': lambda handler, options: MutateResource(handler),
+        'batch': lambda handler, options: MapBatch(
+            handler,
+            size=options.get('size'),
+            max_workers=options.get('max_workers')),
+        'source-batch': lambda handler, options: SourceMapBatch(
+            handler,
+            size=options.get('size'),
+            max_workers=options.get('max_workers')),
+    }
+    return build_decorated_pipeline(
+        owner, 'augment_pipeline_role', 'augment_pipeline_options',
+        factories, include=include)
+
+
+def _as_list(value):
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return value
+    return (value,)
+
+
+def _get_merge_field_augment(field):
+    if isinstance(field, dict):
+        return MergeField(**field)
+    return MergeField(field)
+
+
+def get_augment_pipeline(owner, augments=None, phase='augment'):
+    if augments is not None:
+        return augments
+    if phase == 'pre':
+        pipeline = _get_decorated_augments(owner, phase)
+        return tuple(pipeline) if pipeline else None
+
+    pipeline = []
+    parent_annotation = (
+        _get_raw_class_attr(owner, 'parent_annotation') or
+        _get_raw_class_attr(owner, 'capture_parent_id'))
+    if not isinstance(parent_annotation, str):
+        parent_annotation = None
+    merge_field = _get_raw_class_attr(owner, 'merge_field')
+    merge_fields = _get_raw_class_attr(owner, 'merge_fields')
+    if parent_annotation:
+        pipeline.append(AnnotateParent(parent_annotation))
+    if merge_field:
+        pipeline.append(_get_merge_field_augment(merge_field))
+    for field in _as_list(merge_fields):
+        pipeline.append(_get_merge_field_augment(field))
+    pipeline.extend(_get_decorated_augments(owner, phase))
+    return tuple(pipeline) if pipeline else None
+
+
+def apply_augment_pipeline(manager, resources, augments=None, phase='augment'):
+    augments = get_augment_pipeline(manager, augments, phase)
+    for augment in iter_augments(augments):
+        resources = augment(manager, resources)
+    return resources
+
+
+def apply_source_augment_pipeline(source, resources, augments=None, phase='augment'):
+    augments = get_augment_pipeline(source, augments, phase)
+    for augment in iter_augments(augments):
+        if hasattr(augment, 'process_source'):
+            resources = augment.process_source(source, resources)
+        else:
+            resources = augment(source.manager, resources)
+    return resources
+
+
+def get_tag_augment(owner, augments=None):
+    if augments is not None:
+        return augments
+    if getattr(owner, 'universal_tags', False):
+        return UniversalTags()
+    if getattr(owner, 'tag_api', None):
+        return TagsFromApi(**owner.tag_api)
+    if getattr(owner, 'tag_batch_api', None):
+        return TagsFromBatchApi(**owner.tag_batch_api)
+    if getattr(owner, 'tag_field', None):
+        tag_field = owner.tag_field
+        if isinstance(tag_field, str):
+            return TagsFromField(tag_field)
+        return TagsFromField(**tag_field)
+    return None
+
+
+def apply_tag_augment(manager, resources, augments=None):
+    augments = get_tag_augment(manager, augments)
+    if augments is None:
+        return resources
+    augment_manager = getattr(manager, 'manager', manager)
+    return apply_augment_pipeline(augment_manager, resources, augments)
+
+
 @sources.register('describe')
 class DescribeSource:
+    """Default query source for resource listing and augmentation.
+
+    Preferred declarative augmentation attributes run in this order:
+    methods decorated with ``augment.pre_filter`` before detail fetch, then
+    ``parent_annotation``, ``merge_field(s)``, and methods decorated with ``augment.filter``,
+    ``augment.map``, ``augment.mutate``, ``augment.batch``, or
+    ``augment.source_batch``. Tag declarations run after source and manager
+    augmentation.
+
+    ``augment_pipeline``, ``pre_augment_pipeline``, and ``tag_augment`` are
+    retained for existing custom pipeline objects.
+    """
 
     resource_query_factory = ResourceQuery
+    detail_augment = True
+    pre_augment_pipeline = None
+    augment_pipeline = None
+    parent_annotation = None
+    merge_field = None
+    merge_fields = None
+    tag_augment = None
+    tag_api = None
+    tag_batch_api = None
+    tag_field = None
+    universal_tags = False
+    source_query_default = None
+    source_policy_query_parser = None
 
     def __init__(self, manager):
         self.manager = manager
         self.query = self.get_query()
 
-    def get_resources(self, ids, cache=True):
+    def prepare_resource_ids(self, ids):
+        return ids
+
+    def fetch_resources_by_ids(self, ids):
         return self.query.get(self.manager, ids)
 
-    def resources(self, query):
+    def normalize_resources_by_ids(self, resources, ids):
+        return self.normalize_resources(resources, None)
+
+    def get_resources(self, ids, cache=True):
+        ids = self.prepare_resource_ids(ids)
+        resources = self.fetch_resources_by_ids(ids)
+        return self.normalize_resources_by_ids(resources, ids)
+
+    def prepare_query(self, query):
+        return self.apply_source_query_defaults(query)
+
+    def fetch_resources(self, query):
         return self.query.filter(self.manager, **query)
+
+    def normalize_resources(self, resources, query):
+        return resources
+
+    def handle_fetch_error(self, error, query):
+        raise error
+
+    def resources(self, query, prepared=False):
+        if not prepared:
+            query = self.prepare_query(query)
+        if query is None:
+            return []
+        try:
+            resources = self.fetch_resources(query)
+        except Exception as e:
+            return self.handle_fetch_error(e, query)
+        return self.normalize_resources(resources, query)
 
     def get_query(self):
         return self.resource_query_factory(self.manager.session_factory)
 
     def get_query_params(self, query_params):
+        return self.apply_source_query_defaults(query_params)
+
+    def apply_source_query_defaults(self, query_params):
+        query_params = query_params or {}
+        source_defaults = self.get_source_query_defaults()
+        if source_defaults is None:
+            return None
+        policy_query = self.get_source_policy_query()
+        if policy_query:
+            source_defaults.update(policy_query)
+        if source_defaults:
+            source_defaults.update(query_params)
+            return source_defaults
         return query_params
+
+    def get_source_policy_query(self):
+        parser = (
+            get_raw_class_attr(self, 'source_policy_query_parser') or
+            get_raw_class_attr(self.manager, 'source_policy_query_parser'))
+        if parser is None or 'query' not in self.manager.data:
+            return None
+        if parser is True:
+            return merge_dict_list(self.manager.data['query'])
+        parsed = parser.parse(self.manager.data.get('query', []))
+        return merge_dict_list(parsed)
+
+    def get_source_query_defaults(self):
+        default = (
+            get_raw_class_attr(self, 'source_query_default') or
+            get_raw_class_attr(self.manager, 'source_query_default'))
+        if default is None:
+            return {}
+        if callable(default):
+            default = default(self)
+        if default is None:
+            return None
+        if isinstance(default, (list, tuple)):
+            default = merge_dict_list(default)
+        default = dict(default)
+        for key, value in list(default.items()):
+            if callable(value):
+                default[key] = value(self)
+        return default
 
     def get_permissions(self):
         m = self.manager.get_model()
@@ -249,56 +677,121 @@ class DescribeSource:
         if m.permissions_augment:
             perms.extend(m.permissions_augment)
 
-        if getattr(m, 'detail_spec', None):
+        if self.detail_augment and getattr(m, 'detail_spec', None):
             perms.append("%s:%s" % (prefix, _napi(m.detail_spec[0])))
-        if getattr(m, 'batch_detail_spec', None):
+        if self.detail_augment and getattr(m, 'batch_detail_spec', None):
             perms.append("%s:%s" % (prefix, _napi(m.batch_detail_spec[0])))
         return perms
 
     def augment(self, resources):
         model = self.manager.get_model()
-        if getattr(model, 'detail_spec', None):
+        resources = apply_source_augment_pipeline(
+            self, resources, self.pre_augment_pipeline, phase='pre')
+        if not self.detail_augment:
+            detail_spec = None
+        elif getattr(model, 'detail_spec', None):
             detail_spec = getattr(model, 'detail_spec', None)
             _augment = _scalar_augment
         elif getattr(model, 'batch_detail_spec', None):
             detail_spec = getattr(model, 'batch_detail_spec', None)
             _augment = _batch_augment
         else:
-            return resources
-        if self.manager.get_client:
-            client = self.manager.get_client()
-        else:
-            client = local_session(self.manager.session_factory).client(
-                model.service, region_name=self.manager.config.region)
-        _augment = functools.partial(
-            _augment, self.manager, model, detail_spec, client)
-        with self.manager.executor_factory(
-                max_workers=self.manager.max_workers) as w:
-            results = list(w.map(
-                _augment, chunks(resources, self.manager.chunk_size)))
-            return list(itertools.chain(*results))
+            detail_spec = None
+        if detail_spec:
+            if self.manager.get_client:
+                client = self.manager.get_client()
+            else:
+                client = local_session(self.manager.session_factory).client(
+                    model.service, region_name=self.manager.config.region)
+            _augment = functools.partial(
+                _augment, self.manager, model, detail_spec, client)
+            with self.manager.executor_factory(
+                    max_workers=self.manager.max_workers) as w:
+                results = list(w.map(
+                    _augment, chunks(resources, self.manager.chunk_size)))
+                resources = list(itertools.chain(*results))
+        resources = apply_source_augment_pipeline(
+            self, resources, self.augment_pipeline)
+        return apply_tag_augment(self, resources, self.tag_augment)
 
 
 class DescribeWithResourceTags(DescribeSource):
+    universal_tags = True
 
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+
+class DescribeWithInlineTags(DescribeSource):
+    tag_source_key = 'TagList'
+    tag_key = 'Tags'
+    tag_field = dict(
+        field=tag_source_key, target=tag_key, tag_format='aws-list',
+        remove=True, missing='empty')
+
+
+def tag_dict_to_list(tags):
+    return [{'Key': k, 'Value': v} for k, v in tags.items()]
+
+
+def lower_key_tag_list(tags):
+    return [{'Key': t['key'], 'Value': t['value']} for t in tags]
+
+
+def augment_resource_tags(manager, resources, op='list_tags_for_resource',
+                          arn_key=None, arn_arg='ResourceArn', result_key='Tags',
+                          service=None, normalizer=None, ignore_errors=(),
+                          merge=False, drop_on_error=False):
+    if service is None and getattr(manager, 'get_client', None):
+        client = manager.get_client()
+    else:
+        client = local_session(manager.session_factory).client(
+            service or manager.resource_type.service)
+    normalizer = normalizer or (lambda tags: tags)
+    arn_key = arn_key or manager.resource_type.arn
+    results = []
+    for resource in resources:
+        resource_id = (
+            arn_key(manager, resource) if callable(arn_key)
+            else get_path(arn_key, resource))
+        response = manager.retry(
+            getattr(client, op),
+            ignore_err_codes=ignore_errors,
+            **{arn_arg: resource_id})
+        if response is None:
+            if drop_on_error:
+                continue
+            tags = []
+        else:
+            tags = normalizer(response.get(result_key, ()))
+        if merge:
+            resource.setdefault('Tags', []).extend(tags)
+        else:
+            resource['Tags'] = tags
+        results.append(resource)
+    return results if drop_on_error else resources
 
 
 @sources.register('describe-child')
 class ChildDescribeSource(DescribeSource):
 
     resource_query_factory = ChildResourceQuery
+    # True captures parent ids for augment decorators; a string also annotates
+    # each child resource with the captured parent id under that field name.
+    capture_parent_id = None
 
     def get_query(self, capture_parent_id=False):
+        capture_parent_id = capture_parent_id or bool(self.capture_parent_id)
         return self.resource_query_factory(
             self.manager.session_factory, self.manager, capture_parent_id=capture_parent_id)
+
+
+class ChildDescribeWithResourceTags(ChildDescribeSource):
+    universal_tags = True
 
 
 @sources.register('config')
 class ConfigSource:
 
     retry = staticmethod(get_retry(('ThrottlingException',)))
+    config_select_fields = ()
 
     def __init__(self, manager):
         self.manager = manager
@@ -348,7 +841,7 @@ class ConfigSource:
             if _c:
                 _c = _c.pop()
         elif query:
-            return query
+            return self.apply_config_select_fields(query)
         else:
             _c = None
 
@@ -358,7 +851,15 @@ class ConfigSource:
         if _c:
             s += "AND {}".format(_c)
 
-        return {'expr': s}
+        return self.apply_config_select_fields({'expr': s})
+
+    def apply_config_select_fields(self, query):
+        if not self.config_select_fields or 'expr' not in query:
+            return query
+        query = dict(query)
+        fields = ", ".join(self.config_select_fields)
+        query['expr'] = query['expr'].replace('select ', f'select {fields}, ', 1)
+        return query
 
     def load_resource(self, item):
         item_config = self._load_item_config(item)
@@ -423,9 +924,10 @@ class ConfigSource:
                     results.extend(f.result())
         return results
 
-    def resources(self, query=None):
+    def resources(self, query=None, prepared=False):
         client = local_session(self.manager.session_factory).client('config')
-        query = self.get_query_params(query)
+        if not prepared:
+            query = self.get_query_params(query)
         pager = Paginator(
             client.select_resource_config,
             {'input_token': 'NextToken', 'output_token': 'NextToken',
@@ -449,7 +951,14 @@ class ConfigSource:
         return resources
 
 
-class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
+class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
+    """Base query resource manager with declarative augmentation hooks.
+
+    Manager-level declarations run after source augmentation and before tags in
+    the same order as ``DescribeSource``: parent annotation, merge fields,
+    then decorated filter/map/mutate/batch operations. ``augment_pipeline`` and
+    ``tag_augment`` remain supported for explicit pipeline objects.
+    """
 
     resource_type = ""
 
@@ -458,6 +967,24 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
     chunk_size = 20
 
     _generate_arn = None
+    augment_by_id = True
+    # policy_query_parser parses policy data["query"]; True means merge raw
+    # dict query fragments. policy_query_param nests generated params.
+    policy_query_parser = None
+    policy_query_default = None
+    policy_query_param = None
+    policy_query_extend = ()
+    permission_override = None
+    ignore_fetch_error_message = None
+    augment_pipeline = None
+    parent_annotation = None
+    merge_field = None
+    merge_fields = None
+    tag_augment = None
+    tag_api = None
+    tag_batch_api = None
+    tag_field = None
+    universal_tags = False
 
     retry = staticmethod(
         get_retry((
@@ -509,6 +1036,8 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         return ids
 
     def get_permissions(self):
+        if self.permission_override is not None:
+            return list(self.permission_override)
         perms = self.source.get_permissions()
         if getattr(self, 'permissions', None):
             perms.extend(self.permissions)
@@ -523,37 +1052,76 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
             'q': query
         }
 
-    def resources(self, query=None, augment=True) -> List[dict]:
-        query = self.source.get_query_params(query)
-        cache_key = self.get_cache_key(query)
-        resources = None
+    def prepare_query(self, query):
+        query = self.get_query_params(query)
+        return self.source.get_query_params(query)
 
-        with self._cache:
-            resources = self._cache.get(cache_key)
-            if resources is not None:
-                self.log.debug("Using cached %s: %d" % (
-                    "%s.%s" % (self.__class__.__module__, self.__class__.__name__),
-                    len(resources)))
+    def get_policy_query(self):
+        if self.policy_query_parser is None or 'query' not in self.data:
+            return None
+        parser = self.policy_query_parser
+        if parser is True:
+            return merge_dict_list(self.data['query'])
+        parsed = parser.parse(self.data.get('query', []))
+        return merge_dict_list(parsed)
 
-            if resources is None:
-                if query is None:
-                    query = {}
-                with self.ctx.tracer.subsegment('resource-fetch'):
-                    resources = self.source.resources(query)
-                if augment:
-                    with self.ctx.tracer.subsegment('resource-augment'):
-                        resources = self.augment(resources)
-                    # Don't pollute cache with unaugmented resources.
-                    self._cache.save(cache_key, resources)
+    def get_query_params(self, query):
+        policy_query = self.get_policy_query()
+        if query is None:
+            query = {}
+        default_query = self.get_default_query_params()
+        policy_params = {}
+        policy_params.update(default_query)
+        if policy_query:
+            policy_params.update(policy_query)
+        if self.policy_query_param:
+            query.setdefault(self.policy_query_param, {})
+            query[self.policy_query_param].update(policy_params)
+            return query
+        for key in self.policy_query_extend:
+            if key in query and key in policy_params:
+                policy_params[key] = list(policy_params[key]) + list(query[key])
+                query = dict(query)
+                query.pop(key)
+        query.update(policy_params)
+        return query
 
-        resource_count = len(resources)
-        with self.ctx.tracer.subsegment('filter'):
-            resources = self.filter_resources(resources)
+    def get_default_query_params(self):
+        default = _get_raw_class_attr(self, 'policy_query_default')
+        if default is None:
+            return {}
+        if callable(default):
+            default = default(self)
+        if isinstance(default, (list, tuple)):
+            return merge_dict_list(default)
+        return dict(default)
 
-        # Check if we're out of a policies execution limits.
-        if self.data == self.ctx.policy.data:
-            self.check_resource_limit(len(resources), resource_count)
+    def fetch_resources(self, query):
+        if query is None:
+            return []
+        with self.ctx.tracer.subsegment('resource-fetch'):
+            return self.source.resources(query, prepared=True)
+
+    def handle_fetch_error(self, error, query):
+        if (self.ignore_fetch_error_message and isinstance(error, ClientError) and
+                self.ignore_fetch_error_message in str(error)):
+            return []
+        raise error
+
+    def normalize_resources(self, resources, query):
         return resources
+
+    def augment_resources(self, resources):
+        with self.ctx.tracer.subsegment('resource-augment'):
+            return self.augment(resources)
+
+    def should_cache_resources(self, query, resources, augment):
+        # Don't pollute cache with unaugmented resources.
+        return augment
+
+    def filter_resource_set(self, resources):
+        with self.ctx.tracer.subsegment('filter'):
+            return self.filter_resources(resources)
 
     def check_resource_limit(self, selection_count, population_count):
         """Check if policy's execution affects more resources then its limit.
@@ -565,7 +1133,7 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         max_resource_limits = MaxResourceLimit(p, selection_count, population_count)
         return max_resource_limits.check_resource_limits()
 
-    def _get_cached_resources(self, ids):
+    def _get_cached_resources_by_ids(self, ids):
         key = self.get_cache_key(None)
         with self._cache:
             resources = self._cache.get(key)
@@ -576,21 +1144,45 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
                 return [r for r in resources if r[m.id] in id_set]
         return None
 
+    def prepare_resource_ids(self, ids):
+        return ids
+
+    def get_cached_resources_by_ids(self, ids):
+        return self._get_cached_resources_by_ids(ids)
+
+    def fetch_resources_by_ids(self, ids):
+        return self.source.get_resources(ids)
+
+    def handle_fetch_resources_by_ids_error(self, error, ids):
+        if isinstance(error, ClientError):
+            self.log.warning("event ids not resolved: %s error:%s" % (ids, error))
+            return []
+        raise error
+
+    def normalize_resources_by_ids(self, resources, ids):
+        return self.normalize_resources(resources, None)
+
+    def augment_resources_by_ids(self, resources, ids=None):
+        if not self.augment_by_id:
+            return resources
+        return self.augment_resources(resources)
+
     def get_resources(self, ids, cache=True, augment=True):
+        ids = self.prepare_resource_ids(ids)
         if not ids:
             return []
         if cache:
-            resources = self._get_cached_resources(ids)
+            resources = self.get_cached_resources_by_ids(ids)
             if resources is not None:
                 return resources
         try:
-            resources = self.source.get_resources(ids)
-            if augment:
-                resources = self.augment(resources)
-            return resources
-        except ClientError as e:
-            self.log.warning("event ids not resolved: %s error:%s" % (ids, e))
-            return []
+            resources = self.fetch_resources_by_ids(ids)
+        except Exception as e:
+            resources = self.handle_fetch_resources_by_ids_error(e, ids)
+        resources = self.normalize_resources_by_ids(resources, ids)
+        if augment:
+            resources = self.augment_resources_by_ids(resources, ids)
+        return resources
 
     def augment(self, resources):
         """subclasses may want to augment resources with additional information.
@@ -598,7 +1190,10 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         ie. we want tags by default (rds, elb), and policy, location, acl for
         s3 buckets.
         """
-        return self.source.augment(resources)
+        resources = self.source.augment(resources)
+        resources = apply_augment_pipeline(
+            self, resources, self.augment_pipeline)
+        return apply_tag_augment(self, resources, self.tag_augment)
 
     @property
     def account_id(self):
@@ -650,6 +1245,53 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
                 resource_type=self.resource_type.arn_type,
                 separator=self.resource_type.arn_separator)
         return self._generate_arn
+
+
+class AccountlessArnMixin:
+    """Generate ARNs for services such as API Gateway that omit account id."""
+
+    def get_arn_service(self):
+        return self.resource_type.arn_service or self.resource_type.service
+
+    @property
+    def generate_arn(self):
+        if self._generate_arn is None:
+            self._generate_arn = functools.partial(
+                generate_arn,
+                self.get_arn_service(),
+                region=not self.resource_type.global_resource and self.config.region or "",
+                resource_type=self.resource_type.arn_type,
+                separator=self.resource_type.arn_separator)
+        return self._generate_arn
+
+
+class ArnPathMixin:
+    arn_id_path = None
+
+    def get_arns(self, resources):
+        return [self.generate_arn(get_path(self.arn_id_path, r)) for r in resources]
+
+
+class ArnFormatMixin:
+    arn_id_template = None
+
+    def get_arn_id(self, resource):
+        return self.arn_id_template.format(**resource)
+
+    def get_arns(self, resources):
+        return [self.generate_arn(self.get_arn_id(r)) for r in resources]
+
+
+class FixedRegionClientMixin:
+    client_region = None
+
+    def get_client_region(self):
+        return self.client_region
+
+    def get_client(self):
+        return local_session(self.session_factory).client(
+            self.resource_type.service,
+            region_name=self.get_client_region())
 
 
 class MaxResourceLimit:
@@ -709,11 +1351,14 @@ class MaxResourceLimit:
 class ChildResourceManager(QueryResourceManager):
 
     child_source = 'describe-child'
+    default_child_source = None
 
     @property
     def source_type(self):
         source = self.data.get('source', self.child_source)
-        if source == 'describe':
+        if self.default_child_source and source in ('describe', self.child_source):
+            source = self.default_child_source
+        elif source == 'describe':
             source = self.child_source
         return source
 

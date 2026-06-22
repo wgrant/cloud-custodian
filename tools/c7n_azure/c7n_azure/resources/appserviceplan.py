@@ -3,7 +3,7 @@
 
 from azure.mgmt.web import models
 from c7n.lookup import Lookup
-from c7n.filters import ListItemFilter
+from c7n.filters.core import ListItemAnnotationFilter, annotation_batcher
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -49,7 +49,7 @@ class AppServicePlan(ArmResourceManager):
 
 
 @AppServicePlan.filter_registry.register("webapp")
-class AppServicePlanWebAppsFilter(ListItemFilter):
+class AppServicePlanWebAppsFilter(ListItemAnnotationFilter):
     """
     Filter service plans based on their associated WebApps
 
@@ -79,10 +79,6 @@ class AppServicePlanWebAppsFilter(ListItemFilter):
     annotation_key = "c7n:WebApps"
     FetchThreshold = 5
 
-    def __init__(self, data, manager=None):
-        data['key'] = f'"{self.annotation_key}"'
-        super().__init__(data, manager)
-
     @staticmethod
     def _get_web_apps_by_resource(client, resource):
         """
@@ -100,23 +96,22 @@ class AppServicePlanWebAppsFilter(ListItemFilter):
             serialized.setdefault("location", resource["location"])
             yield serialized
 
-    def process(self, resources, event=None):
+    @annotation_batcher
+    def annotate_webapps(resource_filter, resources):
+        webapp = resource_filter.manager.get_resource_manager("azure.webapp")
 
-        webapp = self.manager.get_resource_manager("azure.webapp")
-
-        if len(resources) < self.FetchThreshold:
-            client = self.manager.get_client()
+        if len(resources) < resource_filter.FetchThreshold:
+            client = resource_filter.manager.get_client()
             for r in resources:
-                r[self.annotation_key] = webapp.augment(list(
-                    self._get_web_apps_by_resource(client, r)
+                r[resource_filter.annotation_key] = webapp.augment(list(
+                    resource_filter._get_web_apps_by_resource(client, r)
                 ))
         else:
-            all_web_apps = self.manager.get_resource_manager("azure.webapp").resources()
+            all_web_apps = resource_filter.manager.get_resource_manager("azure.webapp").resources()
             web_apps_by_asp = group_by(all_web_apps, 'properties.serverFarmId')
             for r in resources:
-                r[self.annotation_key] = web_apps_by_asp.get(r["id"], [])
+                r[resource_filter.annotation_key] = web_apps_by_asp.get(r["id"], [])
 
-        return super().process(resources, event)
 
 
 @AppServicePlan.action_registry.register('resize-plan')

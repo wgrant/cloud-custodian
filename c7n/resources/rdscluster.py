@@ -12,7 +12,7 @@ from c7n.filters.offhours import OffHour, OnHour
 import c7n.filters.vpc as net_filters
 from c7n.manager import resources
 from c7n.query import (
-    ConfigSource, QueryResourceManager, TypeInfo, DescribeSource, RetryPageIterator)
+    ConfigSource, QueryResourceManager, TypeInfo, DescribeWithInlineTags, RetryPageIterator)
 from c7n.resources import rds
 from c7n.filters.kms import KmsRelatedFilter
 from .aws import shape_validate
@@ -27,9 +27,9 @@ from c7n.filters.backup import ConsecutiveAwsBackupsFilter
 log = logging.getLogger('custodian.rds-cluster')
 
 
-class DescribeCluster(DescribeSource):
+class DescribeCluster(DescribeWithInlineTags):
 
-    def get_resources(self, ids):
+    def fetch_resources_by_ids(self, ids):
         resources = chain.from_iterable(
             self.query.filter(
                 self.manager,
@@ -40,11 +40,6 @@ class DescribeCluster(DescribeSource):
             for ids_chunk in chunks(ids, 100)  # DescribeCluster filter length limit
         )
         return list(resources)
-
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = r.pop('TagList', ())
-        return resources
 
 
 class ConfigCluster(ConfigSource):
@@ -393,20 +388,15 @@ class ModifyDbCluster(BaseAction):
                 **self.data['attributes'])
 
 
-class DescribeClusterSnapshot(DescribeSource):
+class DescribeClusterSnapshot(DescribeWithInlineTags):
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('rds')
         return self.manager.retry(
             client.describe_db_cluster_snapshots,
             Filters=[{
                 'Name': 'db-cluster-snapshot-id',
                 'Values': resource_ids}]).get('DBClusterSnapshots', ())
-
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = r.pop('TagList', ())
-        return resources
 
 
 class ConfigClusterSnapshot(ConfigSource):
@@ -879,11 +869,8 @@ class PendingMaintenance(Filter):
         return results
 
 
-class DescribeDbShardGroup(DescribeSource):
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = r.pop('TagList', ())
-        return resources
+class DescribeDbShardGroup(DescribeWithInlineTags):
+    pass
 
 
 @resources.register('rds-db-shard-group')

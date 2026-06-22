@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.actions import BaseAction
 from c7n.filters.vpc import NetworkLocation, SecurityGroupFilter, SubnetFilter
 from c7n.manager import resources
@@ -195,23 +196,25 @@ class DeleteServer(BaseAction):
 
 
 class DescribeTransferUser(ChildDescribeSource):
+    detail_augment = False
+    capture_parent_id = True
 
-    def get_query(self):
-        return super().get_query(capture_parent_id=True)
+    def get_permissions(self):
+        return super().get_permissions() + ['transfer:DescribeUser']
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('transfer')
-        results = []
-        for parent_id, user in resources:
-            tu = self.manager.retry(
-                client.describe_user, ServerId=parent_id,
-                UserName=user['UserName']).get('User')
-            results.append(tu)
-        return results
+    @augment.map
+    def get_transfer_user(manager, resource):
+        parent_id, user = resource
+        client = local_session(manager.session_factory).client('transfer')
+        return manager.retry(
+            client.describe_user,
+            ServerId=parent_id,
+            UserName=user['UserName']).get('User')
 
 
 @resources.register('transfer-user')
 class TransferUser(ChildResourceManager):
+    augment_by_id = False
 
     class resource_type(TypeInfo):
         service = 'transfer'
@@ -226,9 +229,6 @@ class TransferUser(ChildResourceManager):
     source_mapping = {
         'describe-child': DescribeTransferUser
     }
-
-    def get_resources(self, ids, cache=True, augment=True):
-        return super(TransferUser, self).get_resources(ids, cache, augment=False)
 
 
 @TransferUser.action_registry.register('delete')

@@ -4,7 +4,7 @@
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 
-from c7n.filters.core import ValueFilter, type_schema
+from c7n.filters.core import AnnotationPipelineFilter, ValueFilter, type_schema, annotation_getter
 
 
 @resources.register('webapp')
@@ -82,22 +82,20 @@ class WebApp(ArmResourceManager):
 
 
 @WebApp.filter_registry.register('configuration')
-class ConfigurationFilter(ValueFilter):
+class ConfigurationFilter(AnnotationPipelineFilter):
     schema = type_schema('configuration', rinherit=ValueFilter.schema)
+    annotation_key = 'c7n:configuration'
 
-    def __call__(self, i):
-        if 'c7n:configuration' not in i:
-            client = self.manager.get_client().web_apps
-            instance = (
-                client.get_configuration(i['resourceGroup'], i['name'])
-            )
-            i['c7n:configuration'] = instance.serialize(keep_readonly=True)['properties']
+    @annotation_getter
+    def get_configuration(resource_filter, resource):
+        client = resource_filter.manager.get_client().web_apps
+        instance = client.get_configuration(resource['resourceGroup'], resource['name'])
+        return instance.serialize(keep_readonly=True)['properties']
 
-        return super(ConfigurationFilter, self).__call__(i['c7n:configuration'])
 
 
 @WebApp.filter_registry.register('authentication')
-class AuthenticationFilter(ValueFilter):
+class AuthenticationFilter(AnnotationPipelineFilter):
     """Web Applications Authentication Filter
 
     :example:
@@ -117,15 +115,10 @@ class AuthenticationFilter(ValueFilter):
     """
 
     schema = type_schema('authentication', rinherit=ValueFilter.schema)
+    annotation_key = 'c7n:authentication'
 
-    def __call__(self, i):
-        if 'c7n:authentication' not in i:
-            client = self.manager.get_client().web_apps
-
-            instance = (
-                client.get_auth_settings(i['resourceGroup'], i['name'])
-            )
-
-            i['c7n:authentication'] = instance.serialize(keep_readonly=True)['properties']
-
-        return super().__call__(i['c7n:authentication'])
+    @annotation_getter
+    def get_authentication(resource_filter, resource):
+        client = resource_filter.manager.get_client().web_apps
+        instance = client.get_auth_settings(resource['resourceGroup'], resource['name'])
+        return instance.serialize(keep_readonly=True)['properties']

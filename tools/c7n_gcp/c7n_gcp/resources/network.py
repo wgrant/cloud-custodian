@@ -1,12 +1,13 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import re
 
 from c7n_gcp.actions import MethodAction
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 
 from c7n_gcp.provider import resources
-from c7n.filters.core import ListItemFilter
+from c7n.filters.core import ListItemAnnotationFilter, annotation_getter
 from c7n.utils import type_schema, local_session
 from c7n_gcp.utils import get_firewall_port_ranges
 
@@ -38,7 +39,7 @@ class Network(QueryResourceManager):
 
 
 @Network.filter_registry.register('firewall')
-class VPCFirewallFilter(ListItemFilter):
+class VPCFirewallFilter(ListItemAnnotationFilter):
     schema = type_schema(
         'firewall',
         attrs={'$ref': '#/definitions/filters_common/list_item_attrs'}
@@ -46,14 +47,16 @@ class VPCFirewallFilter(ListItemFilter):
     annotate_items = True
     permissions = ("vpcaccess.locations.list",)
 
-    def get_item_values(self, resource):
-        session = local_session(self.manager.session_factory)
+    @annotation_getter
+    def get_firewalls(resource_filter, resource):
+        session = local_session(resource_filter.manager.session_factory)
         client = session.client(service_name='compute', version='v1',
                                 component='networks')
         project = session.get_default_project()
         firewalls = client.execute_query('getEffectiveFirewalls', {
             'project': project, 'network': resource['name']}).get('firewalls')
         return firewalls
+
 
 
 @resources.register('subnet')
@@ -171,10 +174,10 @@ class Firewall(QueryResourceManager):
                 'get', {'project': resource_info['project_id'],
                         'firewall': resource_info['resourceName'].rsplit('/', 1)[-1]})
 
-    def augment(self, resources):
-        if not resources:
-            return []
+    @augment.batch
+    def set_port_ranges(manager, resources):
         return get_firewall_port_ranges(resources)
+
 
 
 @Firewall.action_registry.register('delete')

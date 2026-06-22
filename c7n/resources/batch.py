@@ -8,11 +8,7 @@ from c7n.utils import local_session, type_schema
 
 
 class DescribeBatch(DescribeSource):
-
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in r.get('tags', {}).items()]
-        return resources
+    tag_field = dict(field='tags', missing='empty')
 
 
 @resources.register('batch-compute')

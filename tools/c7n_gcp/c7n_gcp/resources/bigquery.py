@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.utils import type_schema, jmespath_search
 from c7n_gcp.query import QueryResourceManager, TypeInfo, ChildTypeInfo, ChildResourceManager
 from c7n_gcp.provider import resources
@@ -11,6 +12,8 @@ from c7n_gcp.filters.recommender import RecommenderFilter
 class DataSet(QueryResourceManager):
     """GCP resource: https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets
     """
+    policy_query_key = 'filter'
+
     class resource_type(TypeInfo):
         service = 'bigquery'
         version = 'v2'
@@ -52,21 +55,11 @@ class DataSet(QueryResourceManager):
         def get_label_params(resource, all_labels):
             return {**resource['datasetReference'], 'body': {'labels': all_labels}}
 
-    def augment(self, resources):
-        client = self.get_client()
-        results = []
-        for r in resources:
-            ref = r['datasetReference']
-            results.append(
-                client.execute_query(
-                    'get', verb_arguments=ref))
-        return results
+    @augment.map
+    def describe_dataset(manager, resource):
+        return manager.get_client().execute_query(
+            'get', verb_arguments=resource['datasetReference'])
 
-    def get_resource_query(self):
-        if 'query' in self.data:
-            for child in self.data.get('query'):
-                if 'filter' in child:
-                    return {'filter': child['filter']}
 
 
 @resources.register('bq-job')
@@ -106,6 +99,8 @@ class BigQueryJob(QueryResourceManager):
 class BigQueryTable(ChildResourceManager):
     """GCP resource: https://cloud.google.com/bigquery/docs/reference/rest/v2/tables
     """
+    default_query_filter = False
+
 
     class resource_type(ChildTypeInfo):
         service = 'bigquery'
@@ -152,18 +147,11 @@ class BigQueryTable(ChildResourceManager):
         def get_label_params(resource, all_labels):
             return {**resource['tableReference'], 'body': {'labels': all_labels}}
 
-    def augment(self, resources):
-        client = self.get_client()
-        results = []
-        for r in resources:
-            ref = r['tableReference']
-            results.append(client.execute_query('get', verb_arguments=ref))
-        return results
+    @augment.map
+    def describe_table(manager, resource):
+        return manager.get_client().execute_query(
+            'get', verb_arguments=resource['tableReference'])
 
-    def get_resource_query(self):
-        # Allow query values to be consumed by parent dataset listing only.
-        # BigQuery tables.list does not accept a top-level "filter" argument.
-        return None
 
 
 @BigQueryTable.action_registry.register('delete')

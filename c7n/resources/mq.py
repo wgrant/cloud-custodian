@@ -11,12 +11,7 @@ from c7n.tags import RemoveTag, Tag, TagDelayedAction, TagActionFilter, universa
 
 
 class DescribeMessageBroker(DescribeSource):
-
-    def augment(self, resources):
-        super().augment(resources)
-        for r in resources:
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in r.get('Tags', {}).items()]
-        return resources
+    tag_field = dict(field='Tags', missing='empty')
 
 
 @resources.register('message-broker')

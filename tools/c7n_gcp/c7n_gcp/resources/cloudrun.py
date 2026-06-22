@@ -2,11 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 import copy
 
+from c7n.query import augment
 from c7n_gcp.provider import resources
 from c7n_gcp.query import QueryResourceManager, TypeInfo
 from c7n_gcp.filters import IamPolicyFilter
 from c7n_gcp.filters.iampolicy import IamPolicyValueFilter
 from c7n.utils import local_session, jmespath_search
+
+
+def set_labels(manager, resource):
+    if resource.get('metadata', {}).get('labels'):
+        resource['labels'] = dict(resource['metadata']['labels'])
 
 
 @resources.register("cloud-run-service")
@@ -43,11 +49,9 @@ class CloudRunService(QueryResourceManager):
                 'body': body
             }
 
-    def augment(self, resources):
-        for r in resources:
-            if r.get('metadata', {}).get('labels'):
-                r['labels'] = dict(r['metadata']['labels'])
-        return resources
+    @augment.mutate
+    def set_labels(manager, resource):
+        set_labels(manager, resource)
 
 
 @CloudRunService.filter_registry.register("iam-policy")
@@ -105,11 +109,9 @@ class CloudRunJob(QueryResourceManager):
                 'body': body
             }
 
-    def augment(self, resources):
-        for r in resources:
-            if r.get('metadata', {}).get('labels'):
-                r['labels'] = dict(r['metadata']['labels'])
-        return resources
+    @augment.mutate
+    def set_labels(manager, resource):
+        set_labels(manager, resource)
 
 
 @resources.register("cloud-run-revision")

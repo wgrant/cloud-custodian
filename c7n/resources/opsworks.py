@@ -7,10 +7,10 @@ from c7n.utils import type_schema
 
 
 class DescribeRemoved(DescribeSource):
-    def resources(self, query):
+    def fetch_resources(self, query):
         return []
 
-    def get_resources(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         return []
 
 
@@ -19,6 +19,7 @@ class OpsworkStack(QueryResourceManager):
     """OpsWorks Stack is no longer an available service. This resource
     soley exists for policy compatiblity.
     """
+    permission_override = ()
 
     class resource_type(TypeInfo):
         id = 'StackId'
@@ -27,9 +28,6 @@ class OpsworkStack(QueryResourceManager):
         cfn_type = 'AWS::OpsWorks::App'
 
     source_mapping = {'describe': DescribeRemoved}
-
-    def get_permissions(self):
-        return []
 
 
 @OpsworkStack.action_registry.register('delete')
@@ -59,6 +57,7 @@ class OpsworksCM(QueryResourceManager):
     """OpsWorks CM is no longer an available service. This resource
     soley exists for policy compatiblity.
     """
+    permission_override = ()
 
     class resource_type(TypeInfo):
         name = id = 'ServerName'
@@ -66,9 +65,6 @@ class OpsworksCM(QueryResourceManager):
         cfn_type = 'AWS::OpsWorksCM::Server'
 
     source_mapping = {'describe': DescribeRemoved}
-
-    def get_permissions(self):
-        return []
 
 
 @OpsworksCM.action_registry.register('delete')

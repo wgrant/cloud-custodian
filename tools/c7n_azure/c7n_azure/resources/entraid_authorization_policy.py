@@ -5,7 +5,7 @@ import logging
 
 from c7n_azure.provider import resources
 from c7n_azure.graph_utils import (
-    GraphResourceManager, GraphTypeInfo, GraphSource, EntraIDDiagnosticSettingsFilter
+    GraphResourceManager, GraphTypeInfo, EntraIDDiagnosticSettingsFilter
 )
 
 log = logging.getLogger('custodian.azure.entraid.authorization_policy')
@@ -50,11 +50,6 @@ class EntraIDAuthorizationPolicy(GraphResourceManager):
                 key: defaultUserRolePermissions.allowedToCreateSecurityGroups
                 value: false
     """
-
-    def __init__(self, ctx, data):
-        super().__init__(ctx, data)
-        # Use our custom GraphSource instead of the default source
-        self.source = GraphSource(self)
 
     class resource_type(GraphTypeInfo):
         doc_groups = ['EntraID', 'Identity', 'Authorization']

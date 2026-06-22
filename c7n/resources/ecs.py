@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import copy
 from botocore.exceptions import ClientError
 
@@ -82,11 +83,7 @@ class ContainerConfigSource(ConfigSource):
 
 
 class ClusterDescribe(query.DescribeSource):
-
-    def augment(self, resources):
-        resources = super(ClusterDescribe, self).augment(resources)
-        ecs_tag_normalize(resources)
-        return resources
+    tag_field = dict(field='tags', tag_format='lower-list', remove=True)
 
 
 @resources.register('ecs')
@@ -118,6 +115,7 @@ class ECSMetrics(MetricsFilter):
 
 
 class ECSClusterResourceDescribeSource(query.ChildDescribeSource):
+    capture_parent_id = True
 
     # We need an additional subclass of describe for ecs cluster.
     #
@@ -129,11 +127,6 @@ class ECSClusterResourceDescribeSource(query.ChildDescribeSource):
     # - The default augmentation detail_spec/batch_detail_spec need additional
     #   handling for the string resources with parent id.
     #
-
-    def __init__(self, manager):
-        self.manager = manager
-        self.query = query.ChildResourceQuery(
-            self.manager.session_factory, self.manager, capture_parent_id=True)
 
     def get_resources(self, ids, cache=True):
         """Retrieve ecs resources for serverless policies or related resources
@@ -156,29 +149,31 @@ class ECSClusterResourceDescribeSource(query.ChildDescribeSource):
                 self.process_cluster_resources(client, cid, resource_ids))
         return results
 
-    def augment(self, resources):
+    @augment.source_batch
+    def describe_cluster_resources(source, resources):
         parent_child_map = {}
         for pid, r in resources:
             parent_child_map.setdefault(pid, []).append(r)
         results = []
-        with self.manager.executor_factory(
-                max_workers=self.manager.max_workers) as w:
-            client = local_session(self.manager.session_factory).client('ecs')
+        with source.manager.executor_factory(
+                max_workers=source.manager.max_workers) as w:
+            client = local_session(source.manager.session_factory).client('ecs')
             futures = {}
             for pid, services in parent_child_map.items():
                 futures[
                     w.submit(
-                        self.process_cluster_resources, client, pid, services)
+                        source.process_cluster_resources, client, pid, services)
                 ] = (pid, services)
             for f in futures:
                 pid, services = futures[f]
                 if f.exception():
-                    self.manager.log.warning(
+                    source.manager.log.warning(
                         'error fetching ecs resources for cluster %s: %s',
                         pid, f.exception())
                     continue
                 results.extend(f.result())
         return results
+
 
 
 @query.sources.register('describe-ecs-service')
@@ -209,6 +204,7 @@ class ECSServiceConfigSource(ContainerConfigSource):
 class Service(query.ChildResourceManager):
 
     chunk_size = 10
+    augment_by_id = False
 
     class resource_type(query.TypeInfo):
         service = 'ecs'
@@ -224,9 +220,6 @@ class Service(query.ChildResourceManager):
         'describe-child': ECSServiceDescribeSource,
         'describe': ECSServiceDescribeSource,
     }
-
-    def get_resources(self, ids, cache=True, augment=True):
-        return super(Service, self).get_resources(ids, cache, augment=False)
 
 
 @Service.filter_registry.register('metrics')
@@ -679,6 +672,8 @@ class ECSTaskDescribeSource(ECSClusterResourceDescribeSource):
 class Task(query.ChildResourceManager):
 
     chunk_size = 100
+    augment_by_id = False
+    default_child_source = 'describe-ecs-task'
 
     class resource_type(query.TypeInfo):
         service = 'ecs'
@@ -688,16 +683,6 @@ class Task(query.ChildResourceManager):
         parent_spec = ('ecs', 'cluster', None)
         supports_trailevents = True
         cfn_type = 'AWS::ECS::TaskSet'
-
-    @property
-    def source_type(self):
-        source = self.data.get('source', 'describe')
-        if source in ('describe', 'describe-child'):
-            source = 'describe-ecs-task'
-        return source
-
-    def get_resources(self, ids, cache=True, augment=True):
-        return super(Task, self).get_resources(ids, cache, augment=False)
 
 
 @Task.filter_registry.register('subnet')
@@ -807,10 +792,22 @@ class StopTask(BaseAction):
 
 
 class DescribeTaskDefinition(DescribeSource):
+    @augment.map
+    def get_task_definition(manager, resource):
+        client = local_session(manager.session_factory).client('ecs')
+        response = manager.retry(
+            client.describe_task_definition,
+            taskDefinition=resource,
+            include=['TAGS'])
+        task_definition = response['taskDefinition']
+        task_definition['tags'] = response.get('tags', [])
+        ecs_tag_normalize([task_definition])
+        return task_definition
+
 
     def get_resources(self, ids, cache=True):
         if cache:
-            resources = self.manager._get_cached_resources(ids)
+            resources = self.manager._get_cached_resources_by_ids(ids)
             if resources is not None:
                 return resources
         try:
@@ -820,21 +817,6 @@ class DescribeTaskDefinition(DescribeSource):
             self.manager.log.warning("event ids not resolved: %s error:%s" % (ids, e))
             return []
 
-    def augment(self, resources):
-        results = []
-        client = local_session(self.manager.session_factory).client('ecs')
-        for task_def_set in resources:
-            response = self.manager.retry(
-                client.describe_task_definition,
-                taskDefinition=task_def_set,
-                include=['TAGS'])
-            r = response['taskDefinition']
-            r['tags'] = response.get('tags', [])
-            results.append(r)
-        ecs_tag_normalize(results)
-        return results
-
-
 class ConfigECSTaskDefinition(ContainerConfigSource):
 
     preserve_empty = {'mountPoints', 'portMappings', 'volumesFrom'}
@@ -842,6 +824,7 @@ class ConfigECSTaskDefinition(ContainerConfigSource):
 
 @resources.register('ecs-task-definition')
 class TaskDefinition(query.QueryResourceManager):
+    augment_by_id = False
 
     class resource_type(query.TypeInfo):
         service = 'ecs'
@@ -854,9 +837,6 @@ class TaskDefinition(query.QueryResourceManager):
         'config': ConfigECSTaskDefinition,
         'describe': DescribeTaskDefinition
     }
-
-    def get_resources(self, ids, cache=True, augment=True):
-        return super(TaskDefinition, self).get_resources(ids, cache, augment=False)
 
 
 @TaskDefinition.action_registry.register('delete')
@@ -921,6 +901,7 @@ class DeleteTaskDefinition(BaseAction):
 class ContainerInstance(query.ChildResourceManager):
 
     chunk_size = 100
+    default_child_source = 'describe-ecs-container-instance'
 
     class resource_type(query.TypeInfo):
         service = 'ecs'
@@ -928,13 +909,6 @@ class ContainerInstance(query.ChildResourceManager):
         enum_spec = ('list_container_instances', 'containerInstanceArns', None)
         parent_spec = ('ecs', 'cluster', None)
         arn = "containerInstanceArn"
-
-    @property
-    def source_type(self):
-        source = self.data.get('source', 'describe')
-        if source in ('describe', 'describe-child'):
-            source = 'describe-ecs-container-instance'
-        return source
 
 
 @query.sources.register('describe-ecs-container-instance')

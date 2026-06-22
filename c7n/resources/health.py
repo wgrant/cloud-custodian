@@ -1,10 +1,11 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import itertools
 
 from c7n.query import QueryResourceManager, TypeInfo
 from c7n.manager import resources
-from c7n.utils import local_session, chunks, QueryParser
+from c7n.utils import local_session, QueryParser
 
 
 @resources.register('health-event')
@@ -27,53 +28,33 @@ class HealthEvents(QueryResourceManager):
         'health:DescribeEventDetails',
         'health:DescribeAffectedEntities')
 
-    def __init__(self, ctx, data):
-        super(HealthEvents, self).__init__(ctx, data)
-        self.queries = HealthQueryParser.parse(
-            self.data.get('query', [
-                {'eventStatusCodes': 'open'},
-                {'eventTypeCategories': ['issue', 'accountNotification']}]))
+    @augment.batch(size=10)
+    def augment_event_set(manager, resource_set):
+        client = local_session(manager.session_factory).client('health')
+        event_map = {r['arn']: r for r in resource_set}
+        event_details = client.describe_event_details(
+            eventArns=list(event_map.keys()))['successfulSet']
+        for d in event_details:
+            event_map[d['event']['arn']][
+                'Description'] = d['eventDescription']['latestDescription']
 
-    def resource_query(self):
-        qf = {}
-        for q in self.queries:
-            key = list(q.keys())[0]
-            values = list(q.values())[0]
-            qf[key] = values
-        return qf
+        event_arns = [r['arn'] for r in resource_set
+                      if r['eventTypeCategory'] != 'accountNotification']
 
-    def resources(self, query=None):
-        q = self.resource_query()
-        if q is not None:
-            query = query or {}
-            query['filter'] = q
-        return super(HealthEvents, self).resources(query=query)
+        if not event_arns:
+            return resource_set
+        paginator = client.get_paginator('describe_affected_entities')
+        entities = list(itertools.chain(
+            *[p['entities']for p in paginator.paginate(
+                filter={'eventArns': event_arns})]))
 
-    def augment(self, resources):
-        client = local_session(self.session_factory).client('health')
-        for resource_set in chunks(resources, 10):
-            event_map = {r['arn']: r for r in resource_set}
-            event_details = client.describe_event_details(
-                eventArns=list(event_map.keys()))['successfulSet']
-            for d in event_details:
-                event_map[d['event']['arn']][
-                    'Description'] = d['eventDescription']['latestDescription']
+        for e in entities:
+            event_map[e.pop('eventArn')].setdefault(
+                'AffectedEntities', []).append(e)
 
-            event_arns = [r['arn'] for r in resource_set
-                          if r['eventTypeCategory'] != 'accountNotification']
+        return resource_set
 
-            if not event_arns:
-                continue
-            paginator = client.get_paginator('describe_affected_entities')
-            entities = list(itertools.chain(
-                *[p['entities']for p in paginator.paginate(
-                    filter={'eventArns': event_arns})]))
 
-            for e in entities:
-                event_map[e.pop('eventArn')].setdefault(
-                    'AffectedEntities', []).append(e)
-
-        return resources
 
 
 class HealthQueryParser(QueryParser):
@@ -89,3 +70,10 @@ class HealthQueryParser(QueryParser):
     single_value_fields = ('maxResults')
 
     type_name = 'Health Event'
+
+
+HealthEvents.policy_query_parser = HealthQueryParser
+HealthEvents.policy_query_default = [
+    {'eventStatusCodes': ['open']},
+    {'eventTypeCategories': ['issue', 'accountNotification']}]
+HealthEvents.policy_query_param = 'filter'

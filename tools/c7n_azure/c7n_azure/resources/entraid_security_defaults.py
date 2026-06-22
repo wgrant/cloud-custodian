@@ -4,7 +4,7 @@
 import logging
 
 from c7n_azure.provider import resources
-from c7n_azure.graph_utils import GraphResourceManager, GraphTypeInfo, GraphSource
+from c7n_azure.graph_utils import GraphResourceManager, GraphTypeInfo
 
 log = logging.getLogger('custodian.azure.entraid.security_defaults')
 
@@ -38,11 +38,6 @@ class EntraIDSecurityDefaults(GraphResourceManager):
                 key: isEnabled
                 value: true
     """
-
-    def __init__(self, ctx, data):
-        super().__init__(ctx, data)
-        # Use our custom GraphSource instead of the default source
-        self.source = GraphSource(self)
 
     class resource_type(GraphTypeInfo):
         doc_groups = ['EntraID', 'Identity', 'Security']

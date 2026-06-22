@@ -8,8 +8,8 @@ import oci.config
 
 from c7n.actions import ActionRegistry
 from c7n.filters import FilterRegistry
-from c7n.manager import ResourceManager
-from c7n.query import sources, MaxResourceLimit, TypeInfo
+from c7n.manager import ResourceManager, ResourceQueryLifecycle
+from c7n.query import apply_augment_pipeline, sources, MaxResourceLimit, TypeInfo
 from c7n.utils import local_session
 from c7n_oci.constants import COMPARTMENT_IDS, STORAGE_NAMESPACE
 
@@ -186,10 +186,11 @@ class QueryMeta(type):
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
-class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
+class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
     type: str
     resource_type: "TypeInfo"
     source_mapping = sources
+    augment_pipeline = None
 
     def __init__(self, ctx, data):
         super(QueryResourceManager, self).__init__(ctx, data)
@@ -232,20 +233,20 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         if "query" in self.data:
             return {"filter": self.data.get("query")}
 
-    def resources(self, query=None):
-        q = query or self.get_resource_query()
-        resources = {}
-        self._cache.load()
-        with self.ctx.tracer.subsegment("resource-fetch"):
-            resources = self._fetch_resources(q)
-        resource_count = len(resources)
-        with self.ctx.tracer.subsegment("filter"):
-            resources = self.filter_resources(resources)
+    def prepare_query(self, query):
+        return query or self.get_resource_query()
 
-        # Check resource limits if we're the current policy execution.
-        if self.data == self.ctx.policy.data:
-            self.check_resource_limit(len(resources), resource_count)
-        return resources
+    def fetch_resources(self, query):
+        with self.ctx.tracer.subsegment("resource-fetch"):
+            return self.source.get_resources(query) or []
+
+    def filter_resource_set(self, resources):
+        with self.ctx.tracer.subsegment("filter"):
+            return self.filter_resources(resources)
+
+    def get_resource_cache_key(self, query):
+        # OCI sources cache per compartment/search internally.
+        return None
 
     def check_resource_limit(self, selection_count, population_count):
         """
@@ -255,11 +256,8 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         max_resource_limits = MaxResourceLimit(p, selection_count, population_count)
         return max_resource_limits.check_resource_limits()
 
-    def _fetch_resources(self, query):
-        return self.augment(self.source.get_resources(query)) or []
-
     def augment(self, resources):
-        return resources
+        return apply_augment_pipeline(self, resources, self.augment_pipeline)
 
     def _get_extra_params(self):
         return {}

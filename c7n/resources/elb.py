@@ -10,12 +10,13 @@ from botocore.exceptions import ClientError
 
 from c7n.actions import ActionRegistry, BaseAction, ModifyVpcSecurityGroupsAction
 from c7n.exceptions import PolicyValidationError
-from c7n.filters import Filter, FilterRegistry, ValueFilter, ShieldMetrics
+from c7n.filters import (
+    Filter, FilterRegistry, ResourceAttributeFilter, ShieldMetrics, ValueFilter)
 import c7n.filters.vpc as net_filters
 from datetime import datetime
 from c7n import tags
 from c7n.manager import resources
-from c7n.query import ConfigSource, QueryResourceManager, DescribeSource, TypeInfo
+from c7n.query import ConfigSource, QueryResourceManager, DescribeWithResourceTags, TypeInfo
 from c7n.utils import local_session, chunks, type_schema
 
 from c7n.resources.shield import IsShieldProtected, SetShieldProtection
@@ -30,14 +31,16 @@ filters.register('shield-enabled', IsShieldProtected)
 filters.register('shield-metrics', ShieldMetrics)
 
 
-class DescribeELB(DescribeSource):
-
-    def augment(self, resources):
-        return tags.universal_augment(self.manager, resources)
+class DescribeELB(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('elb')
 class ELB(QueryResourceManager):
+    permission_override = (
+        'elasticloadbalancing:DescribeLoadBalancers',
+        'elasticloadbalancing:DescribeLoadBalancerAttributes',
+        'elasticloadbalancing:DescribeTags')
 
     class resource_type(TypeInfo):
         service = 'elb'
@@ -66,12 +69,6 @@ class ELB(QueryResourceManager):
         'describe': DescribeELB,
         'config': ConfigSource
     }
-
-    @classmethod
-    def get_permissions(cls):
-        return ('elasticloadbalancing:DescribeLoadBalancers',
-                'elasticloadbalancing:DescribeLoadBalancerAttributes',
-                'elasticloadbalancing:DescribeTags')
 
 
 @actions.register('set-shield')
@@ -864,7 +861,7 @@ class IsNotLoggingFilter(Filter, ELBAttributeFilterBase):
 
 
 @filters.register('attributes')
-class CheckAttributes(ValueFilter, ELBAttributeFilterBase):
+class CheckAttributes(ResourceAttributeFilter, ELBAttributeFilterBase):
     """Value Filter that allows filtering on ELB attributes
 
     :example:
@@ -885,13 +882,3 @@ class CheckAttributes(ValueFilter, ELBAttributeFilterBase):
     permissions = ("elasticloadbalancing:DescribeLoadBalancerAttributes",)
     schema = type_schema('attributes', rinherit=ValueFilter.schema)
     schema_alias = False
-
-    def process(self, resources, event=None):
-        self.augment(resources)
-        return super().process(resources, event)
-
-    def augment(self, resources):
-        self.initialize(resources)
-
-    def __call__(self, r):
-        return super().__call__(r['Attributes'])

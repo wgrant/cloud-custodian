@@ -6,8 +6,8 @@ import logging
 from c7n.actions import ActionRegistry
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import FilterRegistry
-from c7n.manager import ResourceManager
-from c7n.query import sources
+from c7n.manager import ResourceManager, ResourceQueryLifecycle
+from c7n.query import apply_augment_pipeline, sources
 from c7n.utils import local_session
 
 log = logging.getLogger("custodian.k8s.query")
@@ -66,7 +66,9 @@ class QueryMeta(type):
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
-class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
+class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
+    augment_pipeline = None
+
     def __init__(self, ctx, data):
         super(QueryResourceManager, self).__init__(ctx, data)
         self.source = self.get_source(self.source_type)
@@ -97,27 +99,14 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         if "query" in self.data:
             return {"filter": self.data.get("query")}
 
-    def resources(self, query=None):
-        q = query or self.get_resource_query()
-        key = self.get_cache_key(q)
-        resources = None
-        if self._cache.load():
-            resources = self._cache.get(key)
-            if resources:
-                self.log.debug(
-                    "Using cached %s: %d"
-                    % (
-                        "%s.%s" % (self.__class__.__module__, self.__class__.__name__),
-                        len(resources),
-                    )
-                )
-        if resources is None:
-            resources = self.augment(self.source.get_resources(q))
-            self._cache.save(key, resources)
-        return self.filter_resources(resources)
+    def prepare_query(self, query):
+        return query or self.get_resource_query()
+
+    def fetch_resources(self, query):
+        return self.source.get_resources(query)
 
     def augment(self, resources):
-        return resources
+        return apply_augment_pipeline(self, resources, self.augment_pipeline)
 
 
 class CustomResourceQueryManager(QueryResourceManager, metaclass=QueryMeta):

@@ -5,24 +5,21 @@ from botocore.exceptions import ClientError
 from c7n import query
 from c7n.actions import ActionRegistry, BaseAction
 from c7n.filters import FilterRegistry
-from c7n.manager import resources, ResourceManager
+from c7n.manager import resources, ResourceManager, SyntheticResourceMixin
 from c7n.utils import local_session, get_retry, type_schema
 
 
 class DescribeQuicksight(query.DescribeSource):
 
-    def resources(self, query):
-        required = {
-            "Namespace": "default",
-            "AwsAccountId": self.manager.config.account_id
-        }
-        try:
-            required_resources = super().resources(required)
-        except ClientError as e:
-            if is_quicksight_account_missing(e):
-                return []
-            raise
-        return required_resources
+    source_query_default = {
+        "Namespace": "default",
+        "AwsAccountId": query.source_account_id,
+    }
+
+    def handle_fetch_error(self, error, query):
+        if isinstance(error, ClientError) and is_quicksight_account_missing(error):
+            return []
+        return super().handle_fetch_error(error, query)
 
 
 @resources.register("quicksight-user")
@@ -75,7 +72,7 @@ class QuicksightGroup(query.QueryResourceManager):
 
 
 @resources.register("quicksight-account")
-class QuicksightAccount(ResourceManager):
+class QuicksightAccount(SyntheticResourceMixin, ResourceManager):
     # note this is not using a regular resource manager or type info
     # its a pseudo resource, like an aws account
 
@@ -121,35 +118,22 @@ class QuicksightAccount(ResourceManager):
         account['account_id'] = 'quicksight-settings'
         return [account]
 
-    def resources(self):
-        return self.filter_resources(self._get_account())
-
-    def get_resources(self, resource_ids):
+    def get_synthetic_resources(self, query=None):
         return self._get_account()
 
 
 class DescribeQuicksightWithAccountId(query.DescribeSource):
 
-    def resources(self, query):
-        required = {
-            "AwsAccountId": self.manager.config.account_id
-        }
-        try:
-            required_resources = super().resources(required)
-        except ClientError as e:
-            if is_quicksight_account_missing(e):
-                return []
-            raise
-        return required_resources
+    source_query_default = {
+        "AwsAccountId": query.source_account_id,
+    }
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('quicksight')
-        for r in resources:
-            result = self.manager.retry(client.list_tags_for_resource,
-                                ResourceArn=r['Arn'],
-                                ignore_err_codes=("ResourceNotFoundException",))
-            r['Tags'] = result.get('Tags', []) if result else []
-        return resources
+    def handle_fetch_error(self, error, query):
+        if isinstance(error, ClientError) and is_quicksight_account_missing(error):
+            return []
+        return super().handle_fetch_error(error, query)
+
+    tag_api = dict(resource_path='Arn', ignore_errors=('ResourceNotFoundException',))
 
 
 @resources.register("quicksight-dashboard")

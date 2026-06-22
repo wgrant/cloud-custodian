@@ -1,8 +1,15 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.manager import resources
-from c7n.query import ConfigSource, QueryResourceManager, TypeInfo, DescribeSource, ResourceQuery
-from c7n.tags import universal_augment
+from c7n.query import (
+    ConfigSource,
+    DescribeSource,
+    DescribeWithResourceTags,
+    QueryResourceManager,
+    ResourceQuery,
+    TypeInfo,
+)
 from c7n.filters import ValueFilter, ListItemFilter
 from c7n.utils import type_schema, local_session
 from c7n.actions import BaseAction
@@ -10,15 +17,11 @@ from c7n.exceptions import PolicyValidationError
 from c7n.resources.aws import shape_validate
 
 
-class DescribeRegionalWaf(DescribeSource):
+class DescribeRegionalWaf(DescribeWithResourceTags):
     def get_permissions(self):
         perms = super().get_permissions()
         perms.remove('waf-regional:GetWebAcl')
         return perms
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return universal_augment(self.manager, resources)
 
 
 class WafV2ResourceQuery(ResourceQuery):
@@ -50,57 +53,43 @@ class WafV2ResourceQuery(ResourceQuery):
 
 
 class DescribeWafV2(DescribeSource):
+    source_policy_query_parser = True
+    source_query_default = {'Scope': 'REGIONAL'}
+
+    @augment.mutate
+    def augment_web_acl(manager, resource):
+        # CloudFront WebACLs are always detailed from us-east-1.
+        region = 'us-east-1' if resource.get('Scope') == 'CLOUDFRONT' else manager.region
+        client = local_session(manager.session_factory).client('wafv2', region_name=region)
+        resource.update(manager.retry(
+            client.get_web_acl,
+            Name=resource['Name'],
+            Id=resource['Id'],
+            Scope=resource['Scope']).get('WebACL', {}))
+
     resource_query_factory = WafV2ResourceQuery
+    universal_tags = True
 
     def get_permissions(self):
         perms = super().get_permissions()
         perms.remove('wafv2:GetWebAcl')
         return perms
 
-    def augment(self, resources):
-        # CloudFront WebACLs (Scope=CLOUDFRONT) must be queried from us-east-1
-        region = self.manager.region
-        if resources and resources[0].get('Scope') == 'CLOUDFRONT':
-            region = 'us-east-1'
-
-        client = local_session(self.manager.session_factory).client('wafv2', region_name=region)
-
-        def _detail(webacl):
-            response = client.get_web_acl(
-                Name=webacl['Name'], Id=webacl['Id'], Scope=webacl['Scope']
-            )
-            detail = response.get('WebACL', {})
-
-            return {**webacl, **detail}
-
-        with_tags = universal_augment(self.manager, resources)
-
-        return list(map(_detail, with_tags))
-
-    # set REGIONAL for Scope as default
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        # Parse query from policy data
-        queries = self.manager.data.get('query', [])
-        for q in queries:
-            query_params.update(q)
-        if 'Scope' not in query_params:
-            query_params['Scope'] = 'REGIONAL'
-        return query_params
-
-    def resources(self, query):
+    def normalize_resources(self, resources, query):
         scope = (query or {}).get('Scope', 'REGIONAL')
         # The AWS API does not include the scope as part of the WebACL information, but scope
         # is a required parameter for most API calls - we augment the resource with the desired
         # scope here in order to use it downstream for API calls
-        return [{'Scope': scope, **r} for r in super().resources(query)]
+        return [{'Scope': scope, **r} for r in resources]
 
-    def get_resources(self, ids):
+    def fetch_resources_by_ids(self, ids):
         params = self.get_query_params(None)
-        scope = (params or {}).get('Scope', 'REGIONAL')
-
         resources = self.query.filter(self.manager, **params)
-        return [{'Scope': scope, **r} for r in resources if r[self.manager.resource_type.id] in ids]
+        return [r for r in resources if r[self.manager.resource_type.id] in ids]
+
+    def normalize_resources_by_ids(self, resources, ids):
+        params = self.get_query_params(None)
+        return self.normalize_resources(resources, params)
 
 
 class DescribeWaf(DescribeSource):

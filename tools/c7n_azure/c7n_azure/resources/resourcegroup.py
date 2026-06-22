@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n_azure.constants import RESOURCE_GROUPS_TYPE
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -76,10 +77,10 @@ class ResourceGroup(ArmResourceManager):
             d.type = RESOURCE_GROUPS_TYPE
         return [r.serialize(True) for r in data]
 
-    def augment(self, resources):
-        for resource in resources:
-            resource['type'] = RESOURCE_GROUPS_TYPE
-        return resources
+    @augment.mutate
+    def set_resource_type(manager, resource):
+        resource['type'] = RESOURCE_GROUPS_TYPE
+
 
 
 @ResourceGroup.filter_registry.register('empty-group')

@@ -3,6 +3,7 @@
 """
 Application & Network Load Balancers
 """
+from c7n.query import augment
 import json
 import logging
 import re
@@ -16,6 +17,7 @@ from c7n.filters import (
     FilterRegistry,
     ListItemFilter,
     MetricsFilter,
+    ResourceAttributeFilter,
     ValueFilter,
     WafV2FilterBase,
     WafClassicRegionalFilterBase
@@ -24,9 +26,10 @@ import c7n.filters.vpc as net_filters
 from c7n import tags
 from c7n.manager import resources
 
-from c7n.query import QueryResourceManager, DescribeSource, ConfigSource, TypeInfo
+from c7n.query import (
+    QueryResourceManager, DescribeSource, ConfigSource, TagsFromBatchApi, TypeInfo)
 from c7n.utils import (
-    local_session, chunks, type_schema, get_retry, set_annotation)
+    local_session, type_schema, get_retry, set_annotation)
 
 from c7n.resources.aws import Arn
 from c7n.resources.shield import IsShieldProtected, SetShieldProtection
@@ -35,8 +38,9 @@ log = logging.getLogger('custodian.app-elb')
 
 
 class DescribeAppElb(DescribeSource):
+    tag_batch_api = dict(op='describe_tags', resource_path='LoadBalancerArn', request_arg='ResourceArns', result_path='TagDescriptions', result_resource_path='ResourceArn')
 
-    def get_resources(self, ids, cache=True):
+    def fetch_resources_by_ids(self, ids):
         """Support server side filtering on arns or names
         """
         if ids[0].startswith('arn:'):
@@ -44,15 +48,6 @@ class DescribeAppElb(DescribeSource):
         else:
             params = {'Names': ids}
         return self.query.filter(self.manager, **params)
-
-    def augment(self, albs):
-        _describe_appelb_tags(
-            albs,
-            self.manager.session_factory,
-            self.manager.executor_factory,
-            self.manager.retry)
-
-        return albs
 
 
 class ConfigAppElb(ConfigSource):
@@ -74,6 +69,10 @@ class ConfigAppElb(ConfigSource):
 class AppELB(QueryResourceManager):
     """Resource manager for v2 ELBs (AKA ALBs and NLBs).
     """
+    permission_override = (
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+        "elasticloadbalancing:DescribeTags")
 
     class resource_type(TypeInfo):
         service = 'elbv2'
@@ -96,29 +95,6 @@ class AppELB(QueryResourceManager):
         'describe': DescribeAppElb,
         'config': ConfigAppElb
     }
-
-    @classmethod
-    def get_permissions(cls):
-        # override as the service is not the iam prefix
-        return ("elasticloadbalancing:DescribeLoadBalancers",
-                "elasticloadbalancing:DescribeLoadBalancerAttributes",
-                "elasticloadbalancing:DescribeTags")
-
-
-def _describe_appelb_tags(albs, session_factory, executor_factory, retry):
-    client = local_session(session_factory).client('elbv2')
-
-    def _process_tags(alb_set):
-        alb_map = {alb['LoadBalancerArn']: alb for alb in alb_set}
-
-        results = retry(client.describe_tags, ResourceArns=list(alb_map.keys()))
-        for tag_desc in results['TagDescriptions']:
-            if ('ResourceArn' in tag_desc and
-                    tag_desc['ResourceArn'] in alb_map):
-                alb_map[tag_desc['ResourceArn']]['Tags'] = tag_desc['Tags']
-
-    with executor_factory(max_workers=2) as w:
-        list(w.map(_process_tags, chunks(albs, 20)))
 
 
 AppELB.filter_registry.register('tag-count', tags.TagCountFilter)
@@ -891,7 +867,7 @@ class IsNotLoggingFilter(Filter, AppELBAttributeFilterBase):
 
 
 @AppELB.filter_registry.register('attributes')
-class CheckAttributes(ValueFilter, AppELBAttributeFilterBase):
+class CheckAttributes(ResourceAttributeFilter, AppELBAttributeFilterBase):
     """ Value filter that allows filtering on ELBv2 attributes
 
     :example:
@@ -911,17 +887,6 @@ class CheckAttributes(ValueFilter, AppELBAttributeFilterBase):
     permissions = ("elasticloadbalancing:DescribeLoadBalancerAttributes",)
     schema = type_schema('attributes', rinherit=ValueFilter.schema)
     schema_alias = False
-
-    def process(self, resources, event=None):
-        self.augment(resources)
-        return super().process(resources, event)
-
-    def augment(self, resources):
-        self.initialize(resources)
-
-    def __call__(self, r):
-        return super().__call__(r['Attributes'])
-
 
 class AppELBTargetGroupFilterBase:
     """ Mixin base class for filters that query LB target groups.
@@ -1271,29 +1236,31 @@ class AppELBDefaultVpcFilter(net_filters.DefaultVpcBase):
 
 
 class DescribeAppELBTargetGroup(DescribeSource):
-
-    def augment(self, target_groups):
-        client = local_session(self.manager.session_factory).client('elbv2')
+    @augment.batch
+    def augment_target_group_health(manager, target_groups):
+        client = local_session(manager.session_factory).client('elbv2')
 
         def _describe_target_group_health(target_group):
-            result = self.manager.retry(client.describe_target_health,
+            result = manager.retry(
+                client.describe_target_health,
                 TargetGroupArn=target_group['TargetGroupArn'])
             target_group['TargetHealthDescriptions'] = result[
                 'TargetHealthDescriptions']
 
-        with self.manager.executor_factory(max_workers=2) as w:
+        with manager.executor_factory(max_workers=2) as w:
             list(w.map(_describe_target_group_health, target_groups))
-
-        _describe_target_group_tags(
-            target_groups, self.manager.session_factory,
-            self.manager.executor_factory, self.manager.retry)
         return target_groups
+
+    tag_batch_api = dict(op='describe_tags', resource_path='TargetGroupArn', request_arg='ResourceArns', result_path='TagDescriptions', result_resource_path='ResourceArn')
 
 
 @resources.register('app-elb-target-group')
 class AppELBTargetGroup(QueryResourceManager):
     """Resource manager for v2 ELB target groups.
     """
+    permission_override = (
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTags")
 
     class resource_type(TypeInfo):
         service = 'elbv2'
@@ -1315,36 +1282,6 @@ class AppELBTargetGroup(QueryResourceManager):
 
     filter_registry.register('tag-count', tags.TagCountFilter)
     filter_registry.register('marked-for-op', tags.TagActionFilter)
-
-    @classmethod
-    def get_permissions(cls):
-        # override as the service is not the iam prefix
-        return ("elasticloadbalancing:DescribeTargetGroups",
-                "elasticloadbalancing:DescribeTags")
-
-
-def _describe_target_group_tags(target_groups, session_factory,
-                                executor_factory, retry):
-    client = local_session(session_factory).client('elbv2')
-
-    def _process_tags(target_group_set):
-        target_group_map = {
-            target_group['TargetGroupArn']:
-                target_group for target_group in target_group_set
-        }
-
-        results = retry(
-            client.describe_tags,
-            ResourceArns=list(target_group_map.keys()))
-        for tag_desc in results['TagDescriptions']:
-            if ('ResourceArn' in tag_desc and
-                    tag_desc['ResourceArn'] in target_group_map):
-                target_group_map[
-                    tag_desc['ResourceArn']
-                ]['Tags'] = tag_desc['Tags']
-
-    with executor_factory(max_workers=2) as w:
-        list(w.map(_process_tags, chunks(target_groups, 20)))
 
 
 @AppELBTargetGroup.action_registry.register('mark-for-op')
@@ -1487,7 +1424,7 @@ class TargetGroupAttributeFilterBase:
 
 
 @AppELBTargetGroup.filter_registry.register('attributes')
-class TargetGroupCheckAttributes(ValueFilter, TargetGroupAttributeFilterBase):
+class TargetGroupCheckAttributes(ResourceAttributeFilter, TargetGroupAttributeFilterBase):
     """ Value filter that allows filtering on Target group attributes
 
     :example:
@@ -1507,16 +1444,7 @@ class TargetGroupCheckAttributes(ValueFilter, TargetGroupAttributeFilterBase):
     permissions = ("elasticloadbalancing:DescribeTargetGroupAttributes",)
     schema = type_schema('attributes', rinherit=ValueFilter.schema)
     schema_alias = False
-
-    def process(self, resources, event=None):
-        self.augment(resources)
-        return super().process(resources, event)
-
-    def augment(self, resources):
-        self.initialize(resources)
-
-    def __call__(self, r):
-        return super().__call__(r['c7n:TargetGroupAttributes'])
+    attribute_key = 'c7n:TargetGroupAttributes'
 
 
 @AppELBTargetGroup.action_registry.register('modify-attributes')

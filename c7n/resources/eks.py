@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from typing import List
 
 import c7n.filters.vpc as net_filters
@@ -10,8 +11,13 @@ from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter, VpcFilter
 from c7n.manager import resources
 from c7n.resources.aws import shape_schema
 from c7n import tags, query
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, \
-    ChildResourceManager, ChildDescribeSource
+from c7n.query import (
+    QueryResourceManager,
+    TypeInfo,
+    DescribeSource,
+    ChildResourceManager,
+    ChildDescribeSource,
+)
 from c7n.utils import local_session, type_schema, get_retry
 from botocore.waiter import WaiterModel, create_waiter_with_client
 from .aws import shape_validate
@@ -22,21 +28,25 @@ from c7n.filters import Filter
 
 @query.sources.register('describe-eks-nodegroup')
 class NodeGroupDescribeSource(ChildDescribeSource):
+    detail_augment = False
+    capture_parent_id = True
 
-    def get_query(self):
-        return super().get_query(capture_parent_id=True)
+    def get_permissions(self):
+        return super().get_permissions() + ['eks:DescribeNodegroup']
 
-    def augment(self, resources):
-        results = []
-        client = local_session(self.manager.session_factory).client('eks')
-        for cluster_name, nodegroup_name in resources:
-            nodegroup = client.describe_nodegroup(
-                clusterName=cluster_name,
-                nodegroupName=nodegroup_name)['nodegroup']
-            if 'tags' in nodegroup:
-                nodegroup['Tags'] = [{'Key': k, 'Value': v} for k, v in nodegroup['tags'].items()]
-            results.append(nodegroup)
-        return results
+    @augment.map
+    def get_nodegroup(manager, resource):
+        cluster_name, nodegroup_name = resource
+        client = local_session(manager.session_factory).client('eks')
+        nodegroup = manager.retry(
+            client.describe_nodegroup,
+            clusterName=cluster_name,
+            nodegroupName=nodegroup_name)['nodegroup']
+        if 'tags' in nodegroup:
+            nodegroup['Tags'] = [
+                {'Key': k, 'Value': v}
+                for k, v in nodegroup['tags'].items()]
+        return nodegroup
 
 
 @resources.register('eks-nodegroup')
@@ -80,14 +90,7 @@ class DeleteNodeGroup(Action):
 
 
 class EKSDescribeSource(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        for r in resources:
-            if 'tags' not in r:
-                continue
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in r['tags'].items()]
-        return resources
+    tag_field = dict(field='tags')
 
 
 class EKSConfigSource(ContainerConfigSource):

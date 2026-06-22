@@ -1,31 +1,31 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.actions import Action
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.manager import resources
 from c7n.resources.aws import Arn
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource
+from c7n.query import (
+    QueryResourceManager, TypeInfo, DescribeSource,
+    source_account_id)
 from c7n.utils import local_session, type_schema
-from c7n.tags import universal_augment
 from c7n.actions import BaseAction
 
 
 class AccessPointDescribe(DescribeSource):
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        query_params['AccountId'] = self.manager.config.account_id
-        return query_params
+    source_query_default = {'AccountId': source_account_id}
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('s3control')
-        results = []
-        for r in resources:
-            arn = Arn.parse(r['AccessPointArn'])
-            ap = client.get_access_point(AccountId=arn.account_id, Name=r['Name'])
-            ap.pop('ResponseMetadata', None)
-            ap['AccessPointArn'] = arn.arn
-            results.append(ap)
-        return results
+    @augment.mutate
+    def augment_access_point(manager, resource):
+        client = local_session(manager.session_factory).client('s3control')
+        arn = Arn.parse(resource['AccessPointArn'])
+        details = manager.retry(
+            client.get_access_point,
+            AccountId=arn.account_id,
+            Name=resource['Name'])
+        details.pop('ResponseMetadata', None)
+        details['AccessPointArn'] = arn.arn
+        resource.update(details)
 
 
 @resources.register('s3-access-point')
@@ -82,11 +82,7 @@ class Delete(Action):
 
 
 class MultiRegionAccessPointDescribe(DescribeSource):
-
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        query_params['AccountId'] = self.manager.config.account_id
-        return query_params
+    source_query_default = {'AccountId': source_account_id}
 
 
 @resources.register('s3-access-point-multi')
@@ -124,23 +120,17 @@ class MultiRegionAccessPointCrossAccount(CrossAccountAccessFilter):
 
 
 class StorageLensDescribe(DescribeSource):
-    def get_query_params(self, query_params):
-        query_params = query_params or {}
-        query_params['AccountId'] = self.manager.config.account_id
-        return query_params
+    source_query_default = {'AccountId': source_account_id}
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('s3control')
-        results = []
-        for r in resources:
-            storage_lens_configuration = self.manager.retry(
-                client.get_storage_lens_configuration,
-                AccountId=self.manager.config.account_id,
-                ConfigId=r['Id']) \
-                .get('StorageLensConfiguration')
-            results.append(storage_lens_configuration)
-        return universal_augment(
-            self.manager, super().augment(results))
+    @augment.mutate
+    def augment_storage_lens(manager, resource):
+        client = local_session(manager.session_factory).client('s3control')
+        resource.update(manager.retry(
+            client.get_storage_lens_configuration,
+            AccountId=manager.config.account_id,
+            ConfigId=resource['Id']).get('StorageLensConfiguration'))
+
+    universal_tags = True
 
 
 @resources.register('s3-storage-lens')

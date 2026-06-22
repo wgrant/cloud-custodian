@@ -1,17 +1,19 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 import logging
 import requests
 from datetime import datetime
 
 from c7n.filters import Filter, ValueFilter
+from c7n.filters.core import AnnotationPipelineFilter, annotation_mutator
 from c7n.utils import local_session, type_schema
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.constants import MSGRAPH_RESOURCE_ID
 from c7n_azure.provider import resources
 from c7n_azure.graph_utils import (
-    GraphResourceManager, GraphTypeInfo, GraphSource,
+    GraphResourceManager, GraphTypeInfo,
     EntraIDDiagnosticSettingsFilter
 )
 
@@ -47,11 +49,6 @@ class EntraIDUser(GraphResourceManager):
             actions:
               - type: require-mfa
     """
-
-    def __init__(self, ctx, data):
-        super().__init__(ctx, data)
-        # Use our custom GraphSource instead of the default source
-        self.source = GraphSource(self)
 
     class resource_type(GraphTypeInfo):
         doc_groups = ['EntraID', 'Identity']
@@ -108,20 +105,16 @@ class EntraIDUser(GraphResourceManager):
                 )
             return []
 
-    def augment(self, resources):
-        """Augment user resources with additional Graph API data"""
+    @augment.mutate
+    def augment_user(manager, resource):
         try:
-            # Enhance with additional properties
-            for resource in resources:
-                # Add computed fields for policy evaluation
-                resource['c7n:LastSignInDays'] = self._calculate_last_signin_days(resource)
-                resource['c7n:IsHighPrivileged'] = self._is_high_privileged_user(resource)
-                resource['c7n:PasswordAge'] = self._calculate_password_age(resource)
-
+            # Add computed fields for policy evaluation
+            resource['c7n:LastSignInDays'] = manager._calculate_last_signin_days(resource)
+            resource['c7n:IsHighPrivileged'] = manager._is_high_privileged_user(resource)
+            resource['c7n:PasswordAge'] = manager._calculate_password_age(resource)
         except Exception as e:
             log.warning(f"Failed to augment EntraID users: {e}")
 
-        return resources
 
     def _calculate_last_signin_days(self, user):
         """Calculate days since last sign-in"""
@@ -265,7 +258,7 @@ class EntraIDUser(GraphResourceManager):
 
 
 @EntraIDUser.filter_registry.register('auth-methods')
-class AuthMethodsFilter(ValueFilter):
+class AuthMethodsFilter(AnnotationPipelineFilter):
     """Filter users by authentication methods.
 
     Filters users based on their registered authentication methods.
@@ -284,28 +277,24 @@ class AuthMethodsFilter(ValueFilter):
     """
 
     schema = type_schema('auth-methods', rinherit=ValueFilter.schema)
-    auth_methods_annotation_key = 'c7n:AuthMethods'
-    annotate = False
+    annotation_key = 'c7n:AuthMethods'
+    auth_methods_annotation_key = annotation_key
 
-    def __call__(self, i):
-        if self.auth_methods_annotation_key not in i:
-            # Get user's authentication methods from Graph API
-            user_id = i.get('id') or i.get('objectId')
-            auth_methods = self.manager.get_user_auth_methods(user_id)
+    @annotation_mutator
+    def annotate_auth_methods(resource_filter, resource):
+        user_id = resource.get('id') or resource.get('objectId')
+        auth_methods = resource_filter.manager.get_user_auth_methods(user_id)
 
-            if auth_methods is None:
-                # Unknown auth methods (permission error or API failure)
-                # Skip this user to avoid false results
-                log.warning(
-                    f"Could not determine authentication methods for user "
-                    f"{i.get('displayName', user_id)}"
-                )
-                auth_methods = []
+        if auth_methods is None:
+            # Unknown auth methods (permission error or API failure).
+            log.warning(
+                f"Could not determine authentication methods for user "
+                f"{resource.get('displayName', user_id)}"
+            )
+            auth_methods = []
 
-            # Add auth methods to user resource for filtering
-            i[self.auth_methods_annotation_key] = auth_methods
+        resource[resource_filter.annotation_key] = auth_methods
 
-        return super().__call__(i[self.auth_methods_annotation_key])
 
 
 @EntraIDUser.filter_registry.register('risk-level')

@@ -15,7 +15,7 @@ from c7n.filters.kms import KmsRelatedFilter
 from c7n.filters.offhours import OffHour, OnHour
 from c7n.manager import resources
 from c7n.resolver import ValuesFrom
-from c7n.query import QueryResourceManager, TypeInfo, RetryPageIterator
+from c7n.query import ArnFormatMixin, QueryResourceManager, TypeInfo, RetryPageIterator
 from c7n import tags
 from c7n.utils import (
     type_schema, local_session, chunks, snapshot_identifier, jmespath_search)
@@ -795,9 +795,10 @@ class RedshiftSubnetGroup(QueryResourceManager):
 
 
 @resources.register('redshift-snapshot')
-class RedshiftSnapshot(QueryResourceManager):
+class RedshiftSnapshot(ArnFormatMixin, QueryResourceManager):
     """Resource manager for Redshift snapshots.
     """
+    arn_id_template = '{ClusterIdentifier}/{SnapshotIdentifier}'
 
     class resource_type(TypeInfo):
         service = 'redshift'
@@ -808,12 +809,6 @@ class RedshiftSnapshot(QueryResourceManager):
         date = 'SnapshotCreateTime'
         config_type = "AWS::Redshift::ClusterSnapshot"
         universal_taggable = True
-
-    def get_arns(self, resources):
-        arns = []
-        for r in resources:
-            arns.append(self.generate_arn(r['ClusterIdentifier'] + '/' + r[self.get_model().id]))
-        return arns
 
 
 @RedshiftSnapshot.filter_registry.register('age')

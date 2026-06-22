@@ -77,25 +77,29 @@ class OrgPolicy(QueryResourceManager, OrgAccess):
         permissions_augment = ("organizations:ListTagsForResource",)
         universal_taggable = object()
 
-    def resources(self, query=None):
-        q = self.parse_query()
-        if query is not None:
-            q.update(query)
-        else:
-            query = q
-        return super().resources(query=query)
-
-    def augment(self, resources):
-        return universal_augment(self, resources)
+    policy_query_default = {"Filter": "SERVICE_CONTROL_POLICY"}
+    universal_tags = True
 
     def parse_query(self, query=None):
-        params = {}
-        for q in self.data.get("query", ()):
-            if isinstance(q, dict) and "filter" in q:
-                params["Filter"] = q["filter"]
-        if not params:
-            params["Filter"] = "SERVICE_CONTROL_POLICY"
+        params = self.get_default_query_params()
+        policy_query = self.get_policy_query()
+        if policy_query:
+            params.update(policy_query)
+        if query is not None:
+            params.update(query)
         return params
+
+
+class OrgPolicyQueryParser:
+    @classmethod
+    def parse(cls, data):
+        return [
+            {"Filter": q["filter"]}
+            for q in data
+            if isinstance(q, dict) and "filter" in q]
+
+
+OrgPolicy.policy_query_parser = OrgPolicyQueryParser
 
 
 class DescribeUnit(DescribeSource):
@@ -105,15 +109,19 @@ class DescribeUnit(DescribeSource):
         m = self.manager.get_model()
         return list(m.permissions_augment)
 
-    def resources(self, query=None):
-        if query is None:
-            query = {}
+    def prepare_query(self, query):
+        return query or {}
+
+    def fetch_resources(self, query):
         client = local_session(self.manager.session_factory).client("organizations")
         if "ParentId" not in query:
             query["ParentId"] = client.list_roots().get("Roots", ())[0].get("Id")
         ous = {}
         self.fetch_ous(client, query["ParentId"], ous, [query["ParentId"]])
-        return universal_augment(self.manager, list(ous.values()))
+        return list(ous.values())
+
+    def normalize_resources(self, resources, query):
+        return universal_augment(self.manager, resources)
 
     def fetch_ous(self, client, parent_id, units, stack):
         pager = client.get_paginator("list_children")
@@ -168,8 +176,7 @@ class OrgAccount(QueryResourceManager, OrgAccess):
 
     org_session = None
 
-    def augment(self, resources):
-        return universal_augment(self, resources)
+    universal_tags = True
 
     def validate(self):
         self.parse_query()

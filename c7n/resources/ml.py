@@ -10,6 +10,8 @@ from c7n.utils import local_session, type_schema
 
 @resources.register('ml-model')
 class MLModel(QueryResourceManager):
+    # Machine Learning is not available to new accounts; use SageMaker.
+    ignore_fetch_error_message = 'no longer available'
 
     class resource_type(TypeInfo):
         service = 'machinelearning'
@@ -21,15 +23,6 @@ class MLModel(QueryResourceManager):
         # dimension = 'MLModelId'
         arn_type = "mlmodel"
         permissions_enum = ('machinelearning:DescribeMLModels',)
-
-    def resources(self, query=None, augment=True):
-        try:
-            return super().resources(query, augment)
-        except ClientError as e:
-            # ml not available to new accounts, use sagemaker.
-            if 'no longer available' in str(e):
-                return []
-            raise
 
 
 @MLModel.action_registry.register('delete')

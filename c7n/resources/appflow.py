@@ -8,13 +8,7 @@ from c7n.utils import local_session, type_schema
 
 
 class AppFlowDescribe(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        for r in resources:
-            if 'tags' in r:
-                r['Tags'] = [{'Key': k, 'Value': v} for k, v in r['tags'].items()]
-        return resources
+    tag_field = dict(field='tags')
 
 
 @resources.register('app-flow')

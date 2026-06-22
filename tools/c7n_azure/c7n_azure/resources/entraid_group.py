@@ -1,6 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
+from c7n.query import augment
 import logging
 import requests
 
@@ -10,7 +11,7 @@ from c7n.utils import type_schema
 
 from c7n_azure.provider import resources
 from c7n_azure.graph_utils import (
-    GraphResourceManager, GraphTypeInfo, GraphSource, EntraIDDiagnosticSettingsFilter
+    GraphResourceManager, GraphTypeInfo, EntraIDDiagnosticSettingsFilter
 )
 
 log = logging.getLogger('custodian.azure.entraid.group')
@@ -41,11 +42,6 @@ class EntraIDGroup(GraphResourceManager):
                 count: 0
                 op: equal
     """
-
-    def __init__(self, ctx, data):
-        super().__init__(ctx, data)
-        # Use our custom GraphSource instead of the default source
-        self.source = GraphSource(self)
 
     class resource_type(GraphTypeInfo):
         doc_groups = ['EntraID', 'Identity']
@@ -88,21 +84,17 @@ class EntraIDGroup(GraphResourceManager):
                 )
             raise
 
-    def augment(self, resources):
-        """Augment group resources with additional Graph API data"""
+    @augment.mutate
+    def augment_group(manager, resource):
         try:
-            # Enhance with additional properties
-            for resource in resources:
-                # Add computed fields for policy evaluation
-                resource['c7n:IsSecurityGroup'] = self._is_security_group(resource)
-                resource['c7n:IsDistributionGroup'] = self._is_distribution_group(resource)
-                resource['c7n:IsDynamicGroup'] = self._is_dynamic_group(resource)
-                resource['c7n:IsAdminGroup'] = self._is_admin_group(resource)
-
+            # Add computed fields for policy evaluation
+            resource['c7n:IsSecurityGroup'] = manager._is_security_group(resource)
+            resource['c7n:IsDistributionGroup'] = manager._is_distribution_group(resource)
+            resource['c7n:IsDynamicGroup'] = manager._is_dynamic_group(resource)
+            resource['c7n:IsAdminGroup'] = manager._is_admin_group(resource)
         except Exception as e:
             log.warning(f"Failed to augment EntraID groups: {e}")
 
-        return resources
 
     def _is_security_group(self, group):
         """Determine if group is a security group"""

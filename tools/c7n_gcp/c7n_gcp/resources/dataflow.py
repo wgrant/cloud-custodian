@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from googleapiclient.errors import HttpError
 
 from c7n_gcp.provider import resources
@@ -11,6 +12,9 @@ from c7n.utils import jmespath_search
 class DataflowJob(QueryResourceManager):
     """GCP resource: https://cloud.google.com/dataflow/docs/reference/rest/v1b3/projects.jobs
     """
+
+    policy_query_key = 'filter'
+    policy_query_default = {'filter': 'ACTIVE'}
 
     class resource_type(TypeInfo):
         service = 'dataflow'
@@ -36,26 +40,15 @@ class DataflowJob(QueryResourceManager):
                 }
             )
 
-    def resources(self, query=None):
-        query_filter = 'ACTIVE'
-        if self.data.get('query'):
-            query_filter = self.data['query'][0].get('filter', 'ACTIVE')
-
-        return super(DataflowJob, self).resources(query={'filter': query_filter})
-
-    def augment(self, resources):
-        client = self.get_client()
-        results = []
-        for r in resources:
-            ref = {
-                'jobId': r['id'],
-                'projectId': r['projectId'],
-                'view': 'JOB_VIEW_ALL'
-            }
-            try:
-                results.append(
-                    client.execute_query(
-                        'get', verb_arguments=ref))
-            except HttpError:
-                results.append(r)
-        return results
+    @augment.map
+    def describe_job(manager, resource):
+        ref = {
+            'jobId': resource['id'],
+            'projectId': resource['projectId'],
+            'view': 'JOB_VIEW_ALL'
+        }
+        try:
+            return manager.get_client().execute_query(
+                'get', verb_arguments=ref)
+        except HttpError:
+            return resource

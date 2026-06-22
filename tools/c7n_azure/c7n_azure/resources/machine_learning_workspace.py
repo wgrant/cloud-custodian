@@ -1,7 +1,7 @@
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 from c7n.utils import type_schema
-from c7n.filters import ListItemFilter
+from c7n.filters.core import ListItemAnnotationFilter, annotation_getter
 from c7n_azure.utils import ResourceIdParser
 from azure.mgmt.machinelearningservices.models import (ComputeInstanceProperties,
                                                        AmlComputeProperties)
@@ -33,7 +33,7 @@ class MachineLearningWorkspace(ArmResourceManager):
 
 
 @MachineLearningWorkspace.filter_registry.register("compute-instances")
-class ComputeInstancesFilter(ListItemFilter):
+class ComputeInstancesFilter(ListItemAnnotationFilter):
     schema = type_schema(
         "compute-instances",
         attrs={"$ref": "#/definitions/filters_common/list_item_attrs"},
@@ -48,8 +48,9 @@ class ComputeInstancesFilter(ListItemFilter):
         ComputeInstanceProperties.enable_additional_properties_sending()
         AmlComputeProperties.enable_additional_properties_sending()
 
-    def get_item_values(self, resource):
-        computes = self.manager.get_client().compute.list(
+    @annotation_getter
+    def get_compute_instances(resource_filter, resource):
+        computes = resource_filter.manager.get_client().compute.list(
             resource_group_name=ResourceIdParser.get_resource_group(resource['id']),
             workspace_name=resource['name']
         )

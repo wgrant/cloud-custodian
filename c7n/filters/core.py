@@ -25,6 +25,11 @@ from c7n.exceptions import PolicyValidationError, PolicyExecutionError
 from c7n.manager import ResourceManager
 from c7n.registry import PluginRegistry
 from c7n.resolver import ValuesFrom
+from c7n.pipeline import (
+    MapBatch as PipelineMapBatch, MutateBatch as PipelineMutateBatch,
+    MutateItems, build_decorated_pipeline, decorate_pipeline_func,
+    iter_pipeline_ops,
+)
 from c7n.utils import (
     set_annotation,
     type_schema,
@@ -905,6 +910,279 @@ class AgeFilter(Filter):
         return op(self.threshold_date, v)
 
 
+class ResourceAttributeFilter(ValueFilter):
+    """Value filter for resources that need an attribute augmentation pass."""
+
+    attribute_key = 'Attributes'
+
+    def process(self, resources, event=None):
+        self.augment(resources)
+        return super().process(resources, event)
+
+    def augment(self, resources):
+        self.initialize(resources)
+
+    def __call__(self, resource):
+        return super().__call__(resource[self.attribute_key])
+
+
+def _apply_annotation_pipeline(resource_filter, resources, ops=None):
+    for op in iter_pipeline_ops(ops):
+        resources = op(resource_filter, resources)
+    return resources
+
+
+def _get_path(resource, path):
+    current = resource
+    for part in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def _has_path(resource, path):
+    current = resource
+    for part in path[:-1]:
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    return isinstance(current, dict) and path[-1] in current
+
+
+def _set_path(resource, path, value):
+    current = resource
+    for part in path[:-1]:
+        current = current.setdefault(part, {})
+    current[path[-1]] = value
+
+
+def _pop_path(resource, path):
+    current = resource
+    for part in path[:-1]:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    if not isinstance(current, dict):
+        return None
+    return current.pop(path[-1], None)
+
+
+class AnnotateResource(MutateItems):
+    """Run a per-resource annotation mutator."""
+
+
+class SetAnnotation(PipelineMutateBatch):
+    def __init__(self, func, key=None, path=None, size=None, max_workers=None):
+        super().__init__(self.process_resource_set, size=size, max_workers=max_workers)
+        self.getter = func
+        self.key = key
+        self.path = path
+
+    def get_annotation_key(self, resource_filter):
+        if self.key:
+            return self.key
+        if hasattr(resource_filter, 'get_annotation_key'):
+            return resource_filter.get_annotation_key()
+        return resource_filter.annotation_key
+
+    def get_annotation_path(self, resource_filter):
+        if self.path:
+            return self.path
+        if hasattr(resource_filter, 'get_annotation_path'):
+            return resource_filter.get_annotation_path()
+        return (self.get_annotation_key(resource_filter),)
+
+    def process_resource_set(self, resource_filter, resources):
+        annotation_path = self.get_annotation_path(resource_filter)
+        for resource in resources:
+            _set_path(resource, annotation_path, self.getter(resource_filter, resource))
+
+
+class AnnotateBatch(PipelineMutateBatch):
+    """Run an annotation mutator over resource batches."""
+
+
+def _annotation_decorator(role, func=None, size=None, max_workers=None):
+    return decorate_pipeline_func(
+        'annotation_pipeline_role', 'annotation_pipeline_options',
+        role, func, size=size, max_workers=max_workers)
+
+
+def annotation_getter(func=None, *, size=None, max_workers=None):
+    return _annotation_decorator('getter', func, size, max_workers)
+
+
+def annotation_mutator(func=None):
+    return _annotation_decorator('mutator', func)
+
+
+def annotation_batcher(func=None, *, size=None, max_workers=None):
+    return _annotation_decorator('batcher', func, size, max_workers)
+
+
+class _FilterBatchOp:
+    def __init__(self, func, size=None, max_workers=None):
+        self.func = func
+        self.size = size
+        self.max_workers = max_workers
+
+    def __call__(self, resource_filter, resources, event=None):
+        def process_batch(resource_filter, resource_set):
+            return self.func(resource_filter, resource_set, event=event)
+
+        return PipelineMapBatch(
+            process_batch,
+            size=self.size,
+            max_workers=self.max_workers)(resource_filter, resources)
+
+
+class BatchedFilter(Filter):
+    batch_filter = 'filter_resource_set'
+    batch_size = None
+    max_workers = None
+
+    def prepare_batch_filter(self):
+        pass
+
+    def get_batch_filter(self):
+        if isinstance(self.batch_filter, str):
+            return getattr(self, self.batch_filter)
+        return self.batch_filter
+
+    def process(self, resources, event=None):
+        self.prepare_batch_filter()
+        return _FilterBatchOp(
+            self.get_batch_filter(),
+            size=self.batch_size,
+            max_workers=self.max_workers)(self, resources, event=event)
+
+
+FilterBatch = _FilterBatchOp
+BatchFilter = BatchedFilter
+
+
+class AnnotationPipelineMixin:
+    annotation_key = None
+    annotation_pipeline = None
+    annotation_getter = None
+    annotation_mutator = None
+    annotation_batcher = None
+    annotation_batch_size = None
+    annotation_max_workers = None
+    annotation_path = None
+    source_annotation_path = None
+
+    def get_annotation_key(self):
+        return self.annotation_key
+
+    def get_annotation_path(self):
+        if self.annotation_path:
+            return self.annotation_path
+        if self.source_annotation_path:
+            return self.source_annotation_path
+        return (self.get_annotation_key(),)
+
+    def get_annotation_resources(self, resources):
+        annotation_path = self.get_annotation_path()
+        return [r for r in resources if not _has_path(r, annotation_path)]
+
+    def get_decorated_annotation_pipeline(self):
+        factories = {
+            'getter': lambda handler, options: SetAnnotation(
+                handler,
+                size=options.get('size'),
+                max_workers=options.get('max_workers')),
+            'mutator': lambda handler, options: AnnotateResource(handler),
+            'batcher': lambda handler, options: AnnotateBatch(
+                handler,
+                size=options.get('size'),
+                max_workers=options.get('max_workers')),
+        }
+        return build_decorated_pipeline(
+            self, 'annotation_pipeline_role', 'annotation_pipeline_options',
+            factories, first=True)
+
+    def get_annotation_pipeline(self):
+        if self.annotation_pipeline:
+            return self.annotation_pipeline
+        if self.annotation_getter:
+            return SetAnnotation(
+                self.annotation_getter,
+                size=self.annotation_batch_size,
+                max_workers=self.annotation_max_workers)
+        if self.annotation_mutator:
+            return AnnotateResource(self.annotation_mutator)
+        if self.annotation_batcher:
+            return AnnotateBatch(
+                self.annotation_batcher,
+                size=self.annotation_batch_size,
+                max_workers=self.annotation_max_workers)
+        return self.get_decorated_annotation_pipeline()
+
+    def annotate_resources(self, resources):
+        if resources:
+            return _apply_annotation_pipeline(
+                self, resources, self.get_annotation_pipeline())
+        return resources
+
+
+class AnnotationFilter(AnnotationPipelineMixin, Filter):
+    def process(self, resources, event=None):
+        self.annotate_resources(self.get_annotation_resources(resources))
+        return super().process(resources, event)
+
+
+class AnnotationPipelineFilter(AnnotationFilter, ValueFilter):
+    annotate = False
+
+    def get_filter_resource(self, resource):
+        return _get_path(resource, self.get_annotation_path())
+
+    def __call__(self, resource):
+        return super().__call__(self.get_filter_resource(resource))
+
+
+class AnyAnnotationFilter(AnnotationPipelineFilter):
+    def get_filter_resources(self, resource):
+        return self.get_filter_resource(resource) or ()
+
+    def __call__(self, resource):
+        return any(
+            ValueFilter.__call__(self, filter_resource)
+            for filter_resource in self.get_filter_resources(resource))
+
+
+class EnabledAnnotationFilter(AnnotationPipelineFilter):
+    legacy_enabled_path = None
+    legacy_enabled_value = None
+
+    def __init__(self, data, manager=None):
+        super().__init__(data, manager)
+        self.enabled = self.data.get('enabled')
+        self.is_legacy = 'enabled' in self.data
+
+    def validate(self):
+        if self.is_legacy:
+            if len(self.data) > 2:
+                raise PolicyValidationError(
+                    "When using 'enabled', ValueFilter properties are not allowed")
+            return self
+        return super().validate()
+
+    def get_legacy_enabled(self, annotation):
+        value = _get_path(annotation, self.legacy_enabled_path)
+        if self.legacy_enabled_value is not None:
+            return value == self.legacy_enabled_value
+        return bool(value)
+
+    def __call__(self, resource):
+        annotation = self.get_filter_resource(resource)
+        if self.is_legacy:
+            return self.get_legacy_enabled(annotation) == self.enabled
+        return ValueFilter.__call__(self, annotation)
+
+
 class EventFilter(ValueFilter):
     """Filter a resource based on an event."""
 
@@ -1313,3 +1591,42 @@ class ListItemFilter(Filter):
         if self.process((resource,)):
             return True
         return False
+
+
+class ListItemAnnotationFilter(AnnotationPipelineMixin, ListItemFilter):
+    source_annotation_key = None
+
+    def __init__(self, data, manager=None):
+        data = dict(data)
+        annotation_path = self.get_annotation_path()
+        if 'key' not in data and annotation_path:
+            data['key'] = '.'.join(f'"{p}"' for p in annotation_path)
+        super().__init__(data, manager)
+
+    def get_annotation_key(self):
+        if self.annotation_key:
+            return self.annotation_key
+        if self.source_annotation_key:
+            return self.source_annotation_key
+        if self.annotate_items:
+            return f'{self.item_annotation_key}:Items'
+        return self.item_annotation_key
+
+    def get_annotation_path(self):
+        if self.annotation_path:
+            return self.annotation_path
+        if self.source_annotation_path:
+            return self.source_annotation_path
+        return (self.get_annotation_key(),)
+
+    def discard_annotation(self):
+        return self.annotation_key is None and self.annotate_items
+
+    def process(self, resources, event=None):
+        annotation_path = self.get_annotation_path()
+        self.annotate_resources(self.get_annotation_resources(resources))
+        results = super().process(resources, event)
+        if self.discard_annotation():
+            for resource in resources:
+                _pop_path(resource, annotation_path)
+        return results

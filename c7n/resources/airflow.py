@@ -24,12 +24,7 @@ class ApacheAirflow(QueryResourceManager):
         'airflow:GetEnvironment',
         'airflow:ListEnvironments',
     )
-
-    def augment(self, resources):
-        resources = super(ApacheAirflow, self).augment(resources)
-        for r in resources:
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in r.get('Tags', {}).items()]
-        return resources
+    tag_field = dict(field='Tags', missing='empty')
 
 
 @ApacheAirflow.filter_registry.register('kms-key')

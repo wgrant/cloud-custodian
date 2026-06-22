@@ -211,12 +211,6 @@ class OpsItem(QueryResourceManager):
                 'Values': [i],
                 'Operator': 'Equal'} for i in ids]})
 
-    def resources(self, query=None):
-        q = self.resource_query()
-        if q and query and 'OpsItemFilters' in query:
-            q['OpsItemFilters'].extend(query['OpsItemFilters'])
-        return super(OpsItem, self).resources(query=q)
-
     def resource_query(self):
         filters = []
         for q in self.data.get('query', ()):
@@ -228,6 +222,10 @@ class OpsItem(QueryResourceManager):
                     "invalid ops-item query %s" % self.data['query'])
             filters.append(q)
         return {'OpsItemFilters': filters}
+
+
+OpsItem.policy_query_default = OpsItem.resource_query
+OpsItem.policy_query_extend = ('OpsItemFilters',)
 
 
 @OpsItem.action_registry.register('update')
@@ -897,16 +895,9 @@ class SSMSessionManager(QueryResourceManager):
 
     retry = staticmethod(get_retry(('Throttled',)))
     permissions = ('ssm:DescribeSessions',)
+    policy_query_default = {'State': 'Active'}
 
     augment = universal_augment
-
-    def resources(self, query=None):
-        if query is None:
-            query = {}
-        if 'State' not in query:
-            # Default to Active if not given
-            query['State'] = 'Active'
-        return super(SSMSessionManager, self).resources(query=query)
 
 
 @SSMSessionManager.action_registry.register('terminate')

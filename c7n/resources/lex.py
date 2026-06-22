@@ -1,11 +1,11 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from c7n.manager import resources
 from c7n import query
 from c7n.query import QueryResourceManager
 from c7n.filters import CrossAccountAccessFilter
 from c7n.utils import local_session, type_schema
-from c7n.tags import universal_augment
 from c7n.actions import BaseAction
 
 
@@ -43,17 +43,19 @@ class LexV2Bot(QueryResourceManager):
 
 
 class LexV2BotAliasDescribe(query.ChildDescribeSource):
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('lexv2-models')
-        for r in resources:
-            botalias = client.describe_bot_alias(
-                botId=r['c7n:parent-id'], botAliasId=r['botAliasId'])
-            botalias.pop('ResponseMetadata')
-            r.update(botalias)
-        return universal_augment(self.manager, resources)
+    @augment.mutate
+    def augment_bot_alias(manager, resource):
+        client = local_session(manager.session_factory).client('lexv2-models')
+        botalias = manager.retry(
+            client.describe_bot_alias,
+            botId=resource['c7n:parent-id'],
+            botAliasId=resource['botAliasId'])
+        botalias.pop('ResponseMetadata', None)
+        resource.update(botalias)
 
-    def resources(self, query):
-        resources = self.query.filter(self.manager, **query)
+    universal_tags = True
+
+    def normalize_resources(self, resources, query):
         return [r for r in resources if r['botAliasStatus'] == 'Available']
 
 

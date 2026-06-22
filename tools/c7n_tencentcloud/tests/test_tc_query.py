@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-from c7n_tencentcloud.query import ResourceTypeInfo, ResourceQuery, QueryResourceManager
+from types import SimpleNamespace
+
+from c7n_tencentcloud.query import (
+    DescribeSource, ResourceTypeInfo, ResourceQuery, QueryResourceManager)
 from c7n_tencentcloud.utils import PageMethod
 
 
@@ -60,6 +63,40 @@ class TestResourcetQuery:
         resource_query = ResourceQuery(session)
         res = resource_query.paged_filter("ap-singapore", CVMInfo, {})
         assert len(res) == 6
+
+
+def make_describe_source(source_factory):
+    manager = SimpleNamespace(
+        resource_type=SimpleNamespace(paging_def=None),
+        config=SimpleNamespace(region="ap-singapore", account_id=""),
+        session_factory=None)
+    return source_factory(manager)
+
+
+def test_describe_source_resources_uses_augment_return():
+    class ReplacingDescribeSource(DescribeSource):
+
+        def fetch_resources(self, params):
+            return [{"id": "original"}]
+
+        def augment(self, resources):
+            return [{"id": "augmented"}]
+
+    source = make_describe_source(ReplacingDescribeSource)
+    assert source.resources({}) == [{"id": "augmented"}]
+
+
+def test_describe_source_resources_preserves_mutating_augment():
+    class MutatingDescribeSource(DescribeSource):
+
+        def fetch_resources(self, params):
+            return [{"id": "original"}]
+
+        def augment(self, resources):
+            resources[0]["mutated"] = True
+
+    source = make_describe_source(MutatingDescribeSource)
+    assert source.resources({}) == [{"id": "original", "mutated": True}]
 
 
 # (data, expected_query_params)

@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import functools
 import fnmatch
 import json
@@ -11,12 +12,14 @@ from botocore.paginate import Paginator
 from c7n.query import (
     DescribeSource,
     ChildResourceManager,
+    FixedRegionClientMixin,
     QueryResourceManager,
     RetryPageIterator,
+    TagsFromBatchApi,
     TypeInfo,
 )
 from c7n.manager import resources
-from c7n.utils import chunks, get_retry, generate_arn, local_session, type_schema
+from c7n.utils import get_retry, generate_arn, local_session, type_schema
 from c7n.actions import BaseAction
 from c7n.filters import Filter, ListItemFilter
 from c7n.resources.shield import IsShieldProtected, SetShieldProtection
@@ -36,6 +39,19 @@ class Route53Base:
     permissions = ('route53:ListTagsForResources',)
     retry = staticmethod(get_retry(('Throttled',)))
 
+    @staticmethod
+    def get_tag_resource_id(manager, resource):
+        resource_id = resource[manager.resource_type.id]
+        if "hostedzone" in resource_id:
+            resource_id = resource_id.split("/")[-1]
+        return resource_id
+
+    @staticmethod
+    def get_tag_extra_args(manager):
+        return {'ResourceType': manager.resource_type.arn_type}
+
+    tag_batch_api = dict(op='list_tags_for_resources', request_arg='ResourceIds', result_path='ResourceTagSets', result_resource_path='ResourceId', resource_key=get_tag_resource_id, batch_size=10, extra_args=get_tag_extra_args)
+
     @property
     def generate_arn(self):
         if self._generate_arn is None:
@@ -47,39 +63,6 @@ class Route53Base:
 
     def get_arn(self, r):
         return self.generate_arn(r[self.get_model().id].split("/")[-1])
-
-    def augment(self, resources):
-        _describe_route53_tags(
-            self.get_model(), resources, self.session_factory,
-            self.executor_factory, self.retry)
-        return resources
-
-
-def _describe_route53_tags(
-        model, resources, session_factory, executor_factory, retry):
-
-    def process_tags(resources):
-        client = local_session(session_factory).client('route53')
-        resource_map = {}
-        for r in resources:
-            k = r[model.id]
-            if "hostedzone" in k:
-                k = k.split("/")[-1]
-            resource_map[k] = r
-
-        for resource_batch in chunks(list(resource_map.keys()), 10):
-            results = retry(
-                client.list_tags_for_resources,
-                ResourceType=model.arn_type,
-                ResourceIds=resource_batch)
-            for resource_tag_set in results['ResourceTagSets']:
-                if ('ResourceId' in resource_tag_set and
-                        resource_tag_set['ResourceId'] in resource_map):
-                    resource_map[resource_tag_set['ResourceId']]['Tags'] = resource_tag_set['Tags']
-
-    with executor_factory(max_workers=2) as w:
-        return list(w.map(process_tags, chunks(resources, 20)))
-
 
 def generate_rrset(recordset):
     keys = (
@@ -93,6 +76,10 @@ def generate_rrset(recordset):
 
 @resources.register('hostedzone')
 class HostedZone(Route53Base, QueryResourceManager):
+    @augment.mutate
+    def set_config_hosted_zone_id(manager, resource):
+        resource['c7n:ConfigHostedZoneId'] = resource['Id'].split("/")[-1]
+
 
     class resource_type(TypeInfo):
         service = 'route53'
@@ -114,14 +101,6 @@ class HostedZone(Route53Base, QueryResourceManager):
             _id = r[self.get_model().id].split("/")[-1]
             arns.append(self.generate_arn(_id))
         return arns
-
-    def augment(self, resources):
-        annotation_key = 'c7n:ConfigHostedZoneId'
-        resources = super(HostedZone, self).augment(resources)
-        for r in resources:
-            config_hzone_id = r['Id'].split("/")[-1]
-            r[annotation_key] = config_hzone_id
-        return resources
 
 
 HostedZone.filter_registry.register('shield-enabled', IsShieldProtected)
@@ -157,6 +136,7 @@ class ResourceRecordSet(ChildResourceManager):
 
 @resources.register('r53domain')
 class Route53Domain(QueryResourceManager):
+    tag_api = dict(op='list_tags_for_domain', resource_path='DomainName', request_arg='DomainName', result_path='TagList', service='route53domains')
 
     class resource_type(TypeInfo):
         service = 'route53domains'
@@ -167,14 +147,6 @@ class Route53Domain(QueryResourceManager):
         global_resource = False
 
     permissions = ('route53domains:ListTagsForDomain',)
-
-    def augment(self, domains):
-        client = local_session(self.session_factory).client('route53domains')
-        for d in domains:
-            d['Tags'] = self.retry(
-                client.list_tags_for_domain,
-                DomainName=d['DomainName'])['TagList']
-        return super().augment(domains)
 
 
 @Route53Domain.action_registry.register('tag')
@@ -581,18 +553,20 @@ class IsQueryLoggingEnabled(Filter):
 
 
 class ResolverRuleDescribeSource(DescribeSource):
-    def augment(self, resources):
+    @augment.batch
+    def augment_local_rules(manager, resources):
         owner_resource_map = dict(
             (owner, list(group))
             for owner, group in itertools.groupby(
                 resources,
-                key=lambda x: x.get('OwnerId') == self.manager.account_id and 'Local' or 'Shared',
+                key=lambda x: x.get('OwnerId') == manager.account_id and 'Local' or 'Shared',
             )
         )
         return (
-            universal_augment(self.manager, owner_resource_map.get('Local', []))
+            universal_augment(manager, owner_resource_map.get('Local', []))
             + owner_resource_map.get('Shared', [])
         )
+
 
 
 @resources.register('resolver-rule')
@@ -632,17 +606,19 @@ class ResolverQueryLogConfig(QueryResourceManager):
         'route53resolver:ListResolverQueryLogConfigs',
         'route53resolver:ListResolverQueryLogConfigAssociations')
 
-    def augment(self, rqlcs):
-        client = local_session(self.session_factory).client('route53resolver')
+    @augment.batch
+    def augment_configs(manager, rqlcs):
+        client = local_session(manager.session_factory).client('route53resolver')
         for rqlc in rqlcs:
-            if rqlc['OwnerId'] != self.account_id:
+            if rqlc['OwnerId'] != manager.account_id:
                 continue  # don't try to fetch tags for shared resources
-            rqlc['Tags'] = self.retry(
+            rqlc['Tags'] = manager.retry(
                 client.list_tags_for_resource,
                 ResourceArn=rqlc['Arn'])['Tags']
-            rqlc[self.annotation_key] = client.list_resolver_query_log_config_associations().get(
+            rqlc[manager.annotation_key] = client.list_resolver_query_log_config_associations().get(
                 'ResolverQueryLogConfigAssociations')
         return rqlcs
+
 
 
 @ResolverQueryLogConfig.action_registry.register('associate-vpc')
@@ -750,18 +726,11 @@ ARC_REGION = 'us-west-2'
 
 
 class DescribeCheck(query.DescribeSource):
-
-    def augment(self, readiness_checks):
-        for r in readiness_checks:
-            Tags = self.manager.retry(
-                self.manager.get_client().list_tags_for_resources,
-                ResourceArn=r['ReadinessCheckArn'])['Tags']
-            r['Tags'] = [{'Key': k, "Value": v} for k, v in Tags.items()]
-        return readiness_checks
+    tag_api = dict(op='list_tags_for_resources', resource_path='ReadinessCheckArn', tag_format='dict')
 
 
 @resources.register('readiness-check')
-class ReadinessCheck(QueryResourceManager):
+class ReadinessCheck(FixedRegionClientMixin, QueryResourceManager):
 
     class resource_type(TypeInfo):
         service = 'route53-recovery-readiness'
@@ -773,9 +742,7 @@ class ReadinessCheck(QueryResourceManager):
 
     source_mapping = {'describe': DescribeCheck, 'config': query.ConfigSource}
 
-    def get_client(self):
-        return local_session(self.session_factory) \
-            .client('route53-recovery-readiness', region_name=ARC_REGION)
+    client_region = ARC_REGION
 
 
 @ReadinessCheck.action_registry.register('tag')
@@ -884,17 +851,11 @@ class ReadinessCheckCrossAccount(CrossAccountAccessFilter):
 
 
 class DescribeCluster(query.DescribeSource):
-    def augment(self, clusters):
-        for r in clusters:
-            Tags = self.manager.retry(
-                self.manager.get_client().list_tags_for_resource,
-                ResourceArn=r['ClusterArn'])['Tags']
-            r['Tags'] = [{'Key': k, "Value": v} for k, v in Tags.items()]
-        return clusters
+    tag_api = dict(resource_path='ClusterArn', tag_format='dict')
 
 
 @resources.register('recovery-cluster')
-class RecoveryCluster(QueryResourceManager):
+class RecoveryCluster(FixedRegionClientMixin, QueryResourceManager):
 
     class resource_type(TypeInfo):
         service = 'route53-recovery-control-config'
@@ -909,9 +870,7 @@ class RecoveryCluster(QueryResourceManager):
         'config': query.ConfigSource
     }
 
-    def get_client(self):
-        return local_session(self.session_factory) \
-            .client('route53-recovery-control-config', region_name=ARC_REGION)
+    client_region = ARC_REGION
 
 
 @RecoveryCluster.action_registry.register('tag')
@@ -984,17 +943,11 @@ class DescribeControlPanel(query.ChildDescribeSource):
         self.query = query.ChildResourceQuery(
             self.manager.session_factory, self.manager)
 
-    def augment(self, controlpanels):
-        for r in controlpanels:
-            Tags = self.manager.retry(
-                self.manager.get_client().list_tags_for_resource,
-                ResourceArn=r['ControlPanelArn'])['Tags']
-            r['Tags'] = [{'Key': k, "Value": v} for k, v in Tags.items()]
-        return controlpanels
+    tag_api = dict(resource_path='ControlPanelArn', tag_format='dict')
 
 
 @resources.register('recovery-control-panel')
-class ControlPanel(query.ChildResourceManager):
+class ControlPanel(FixedRegionClientMixin, query.ChildResourceManager):
 
     class resource_type(query.TypeInfo):
         service = 'route53-recovery-control-config'
@@ -1011,9 +964,7 @@ class ControlPanel(query.ChildResourceManager):
         'config': query.ConfigSource
     }
 
-    def get_client(self):
-        return local_session(self.session_factory) \
-            .client('route53-recovery-control-config', region_name=ARC_REGION)
+    client_region = ARC_REGION
 
 
 @ControlPanel.action_registry.register('tag')

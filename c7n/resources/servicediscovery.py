@@ -5,10 +5,9 @@ from c7n.manager import resources
 from c7n.query import (
     QueryResourceManager,
     TypeInfo,
-    DescribeSource,
+    DescribeWithResourceTags,
     ConfigSource,
 )
-from c7n.tags import universal_augment
 from c7n.filters import ListItemFilter
 
 from c7n.utils import (
@@ -16,12 +15,9 @@ from c7n.utils import (
 )
 
 
-class DescribeServiceDiscoveryNamespace(DescribeSource):
+class DescribeServiceDiscoveryNamespace(DescribeWithResourceTags):
     # override default describe augment to get tags
-    def augment(self, resources):
-        detailed_resources = super().augment(resources)
-        tagged_resources = universal_augment(self.manager, detailed_resources)
-        return tagged_resources
+    pass
 
 
 @resources.register('servicediscovery-namespace')

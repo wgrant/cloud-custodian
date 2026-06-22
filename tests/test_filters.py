@@ -18,7 +18,9 @@ from c7n.resources.elb import ELB
 from c7n.testing import mock_datetime_now
 from c7n.utils import annotation
 from .common import instance, event_data, Bag, BaseTest
-from c7n.filters.core import AnnotationSweeper, ValueRegex, parse_date as core_parse_date
+from c7n.filters.core import (
+    AnnotationPipelineMixin, AnnotationSweeper, ValueRegex, annotation_getter,
+    annotation_mutator, parse_date as core_parse_date)
 
 
 class BaseFilterTest(BaseTest):
@@ -53,6 +55,23 @@ class TestFilter(unittest.TestCase):
     def test_filter_call(self):
         filter_instance = base_filters.Filter({})
         self.assertIsInstance(filter_instance, base_filters.Filter)
+
+    def test_annotation_pipeline_uses_first_decorated_provider(self):
+        class AnnotationFilter(AnnotationPipelineMixin):
+            annotation_key = 'c7n:annotation'
+
+            @annotation_getter
+            def get_annotation(self, resource):
+                return {'value': 'first'}
+
+            @annotation_mutator
+            def mutate_annotation(self, resource):
+                resource['unexpected'] = True
+
+        resources = [{}]
+        AnnotationFilter().annotate_resources(resources)
+
+        self.assertEqual(resources, [{'c7n:annotation': {'value': 'first'}}])
 
     def test_merge_annotation(self):
         filter_instance1 = base_filters.Filter({})

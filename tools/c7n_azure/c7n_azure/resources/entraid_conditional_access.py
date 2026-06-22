@@ -7,7 +7,7 @@ import requests
 from c7n.filters import Filter
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
-from c7n_azure.graph_utils import (GraphResourceManager, GraphTypeInfo, GraphSource,
+from c7n_azure.graph_utils import (GraphResourceManager, GraphTypeInfo,
                                    get_required_permissions_for_endpoint)
 
 log = logging.getLogger('custodian.azure.entraid.conditional_access')
@@ -41,11 +41,6 @@ class EntraIDConditionalAccessPolicy(GraphResourceManager):
               - type: admin-mfa-required
                 value: false
     """
-
-    def __init__(self, ctx, data):
-        super().__init__(ctx, data)
-        # Use our custom GraphSource instead of the default source
-        self.source = GraphSource(self)
 
     class resource_type(GraphTypeInfo):
         doc_groups = ['EntraID', 'Identity', 'Security']

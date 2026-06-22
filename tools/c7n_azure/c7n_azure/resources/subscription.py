@@ -9,7 +9,7 @@ from c7n.actions import BaseAction
 from c7n.exceptions import PolicyValidationError
 from c7n.filters.missing import Missing
 from c7n.filters.core import ValueFilter
-from c7n.manager import ResourceManager
+from c7n.manager import ResourceManager, SyntheticResourceMixin
 from c7n.utils import local_session, type_schema
 
 from c7n_azure.actions.tagging import Tag, RemoveTag, TagTrim, TagDelayedAction
@@ -19,7 +19,7 @@ from c7n_azure.query import QueryMeta, TypeInfo
 
 
 @resources.register('subscription')
-class Subscription(ResourceManager, metaclass=QueryMeta):
+class Subscription(SyntheticResourceMixin, ResourceManager, metaclass=QueryMeta):
     """Subscription Resource
 
     :example:
@@ -64,10 +64,7 @@ class Subscription(ResourceManager, metaclass=QueryMeta):
         """Get the session for this resource manager."""
         return local_session(self.session_factory)
 
-    def resources(self):
-        return self.filter_resources([self._get_subscription(self.session_factory, self.config)])
-
-    def get_resources(self, resource_ids):
+    def get_synthetic_resources(self, query=None):
         return [self._get_subscription(self.session_factory, self.config)]
 
     def _get_subscription(self, session_factory, config):

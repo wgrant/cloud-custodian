@@ -12,6 +12,7 @@ from .core import (
     And,
     Not,
     ValueFilter,
+    ResourceAttributeFilter,
     AgeFilter,
     EventFilter,
     ReduceFilter,

@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from botocore.exceptions import ClientError
 
 from c7n.actions import BaseAction
@@ -7,7 +8,8 @@ from c7n.filters.vpc import SubnetFilter, SecurityGroupFilter, VpcFilter
 from c7n.filters import ValueFilter
 from c7n.manager import resources
 from c7n.query import (
-    QueryResourceManager, DescribeSource, ConfigSource, TypeInfo, ChildResourceManager)
+    ChildResourceManager, ConfigSource, DescribeSource, DescribeWithResourceTags,
+    QueryResourceManager, TagsFromApi, TypeInfo, ArnFormatMixin, ArnPathMixin)
 from c7n.tags import universal_augment
 from c7n.utils import local_session, type_schema, jmespath_search
 from c7n import query
@@ -15,13 +17,8 @@ from c7n import query
 from .securityhub import OtherResourcePostFinding
 
 
-class DescribeRepo(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(
-            self.manager,
-            super().augment(resources)
-        )
+class DescribeRepo(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('codecommit')
@@ -83,12 +80,8 @@ class DeleteRepository(BaseAction):
                 "Exception deleting repo:\n %s" % e)
 
 
-class DescribeBuild(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(
-            self.manager,
-            super(DescribeBuild, self).augment(resources))
+class DescribeBuild(DescribeWithResourceTags):
+    pass
 
 
 class ConfigBuild(ConfigSource):
@@ -252,11 +245,8 @@ class ConfigPipeline(ConfigSource):
         return resource
 
 
-class DescribePipeline(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return universal_augment(self.manager, resources)
+class DescribePipeline(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('codepipeline')
@@ -295,18 +285,16 @@ class DeletePipeline(BaseAction):
 
 
 class DescribeApplication(DescribeSource):
+    @staticmethod
+    def get_application_arn(manager, resource):
+        return manager.get_arns([resource])[0]
 
-    def augment(self, resources):
-        resources = super().augment(resources)
-        client = local_session(self.manager.session_factory).client('codedeploy')
-        for r, arn in zip(resources, self.manager.get_arns(resources)):
-            r['Tags'] = client.list_tags_for_resource(
-                ResourceArn=arn).get('Tags', [])
-        return resources
+    tag_api = dict(resource_path=get_application_arn)
 
 
 @resources.register('codedeploy-app')
-class CodeDeployApplication(QueryResourceManager):
+class CodeDeployApplication(ArnPathMixin, QueryResourceManager):
+    arn_id_path = 'applicationName'
 
     class resource_type(TypeInfo):
         service = 'codedeploy'
@@ -325,9 +313,6 @@ class CodeDeployApplication(QueryResourceManager):
         'describe': DescribeApplication,
         'config': ConfigSource
     }
-
-    def get_arns(self, resources):
-        return [self.generate_arn(r['applicationName']) for r in resources]
 
 
 @CodeDeployApplication.action_registry.register('delete')
@@ -365,27 +350,34 @@ class CodeDeployDeployment(QueryResourceManager):
 
 
 class DescribeDeploymentGroup(query.ChildDescribeSource):
+    detail_augment = False
+    capture_parent_id = True
 
-    def get_query(self):
-        return super().get_query(capture_parent_id=True)
+    @augment.map
+    def get_deployment_group(manager, resource):
+        parent_id, group_name = resource
+        client = local_session(manager.session_factory).client('codedeploy')
+        return manager.retry(
+            client.get_deployment_group,
+            applicationName=parent_id,
+            deploymentGroupName=group_name).get('deploymentGroupInfo')
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client('codedeploy')
-        results = []
-        for parent_id, group_name in resources:
-            dg = self.manager.retry(
-                client.get_deployment_group, applicationName=parent_id,
-                deploymentGroupName=group_name).get('deploymentGroupInfo')
-            results.append(dg)
-        for r in results:
-            rarn = self.manager.generate_arn(r['applicationName'] + '/' + r['deploymentGroupName'])
-            r['Tags'] = self.manager.retry(
-                client.list_tags_for_resource, ResourceArn=rarn).get('Tags')
-        return results
+    @staticmethod
+    def get_deployment_group_arn(manager, resource):
+        return manager.generate_arn(
+            resource['applicationName'] + '/' + resource['deploymentGroupName'])
+
+    tag_api = dict(resource_path=get_deployment_group_arn)
+
+    def get_permissions(self):
+        return super().get_permissions() + [
+            'codedeploy:GetDeploymentGroup',
+            'codedeploy:ListTagsForResource']
 
 
 @resources.register('codedeploy-group')
-class CodeDeployDeploymentGroup(ChildResourceManager):
+class CodeDeployDeploymentGroup(ArnFormatMixin, ChildResourceManager):
+    arn_id_template = '{applicationName}/{deploymentGroupName}'
 
     class resource_type(TypeInfo):
         service = 'codedeploy'
@@ -402,12 +394,6 @@ class CodeDeployDeploymentGroup(ChildResourceManager):
     source_mapping = {
         'describe-child': DescribeDeploymentGroup
     }
-
-    def get_arns(self, resources):
-        arns = []
-        for r in resources:
-            arns.append(self.generate_arn(r['applicationName'] + '/' + r['deploymentGroupName']))
-        return arns
 
 
 @resources.register('codedeploy-config')

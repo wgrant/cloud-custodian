@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 import json
 from botocore.exceptions import ClientError
 from c7n.manager import resources
@@ -15,14 +16,18 @@ from c7n.filters.core import ValueFilter
 
 
 class DescribeSecret(DescribeSource):
+    detail_augment = False
 
-    def _augment_secret(self, secret, client):
-        detail_op, param_name, param_key, _ = self.manager.resource_type.detail_spec
+    @augment.map(max_workers=QueryResourceManager.max_workers)
+    def augment_secret(manager, secret):
+        client = local_session(manager.session_factory).client(
+            manager.resource_type.service)
+        detail_op, param_name, param_key, _ = manager.resource_type.detail_spec
         op = getattr(client, detail_op)
         kw = {param_name: secret[param_key]}
 
         try:
-            secret.update(self.manager.retry(
+            secret.update(manager.retry(
                 op, **kw
             ))
         except ClientError as e:
@@ -31,21 +36,14 @@ class DescribeSecret(DescribeSource):
                 raise
             # Same logic as S3 augment: describe is expected to be restricted
             # by resource-based policies
-            self.manager.log.warning(
+            manager.log.warning(
                 "Secret:%s unable to invoke method:%s error:%s ",
                 secret[param_key], detail_op, e.response['Error']['Message']
             )
             secret.setdefault('c7n:DeniedMethods', []).append(detail_op)
+        return secret
 
-    def augment(self, secrets):
-        client = local_session(self.manager.session_factory).client(
-            self.manager.resource_type.service
-        )
-        with self.manager.executor_factory(max_workers=self.manager.max_workers) as w:
-            for s in secrets:
-                w.submit(self._augment_secret, s, client)
 
-        return secrets
 
 
 @resources.register('secrets-manager')

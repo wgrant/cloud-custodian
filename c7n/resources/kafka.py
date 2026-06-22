@@ -5,7 +5,8 @@ from c7n.filters import Filter
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter
 from c7n.manager import resources
 from c7n.filters.kms import KmsRelatedFilter
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
+from c7n.query import (
+    QueryResourceManager, TypeInfo, DescribeSource, ConfigSource)
 from c7n.utils import local_session, type_schema
 from c7n.vendored.distutils.version import LooseVersion
 
@@ -14,23 +15,8 @@ from c7n.filters import CrossAccountAccessFilter
 
 
 class DescribeKafka(DescribeSource):
-
-    def augment(self, resources):
-        for r in resources:
-            # preserve backwards compat with extant list_clsuters api
-            if 'Provisioned' in r:
-                for k, v in r['Provisioned'].items():
-                    # dont overwrite
-                    if k in r:
-                        continue
-                    r[k] = v
-            if 'Tags' not in r:
-                continue
-            tags = []
-            for k, v in r['Tags'].items():
-                tags.append({'Key': k, 'Value': v})
-            r['Tags'] = tags
-        return resources
+    merge_field = dict(field='Provisioned', remove=False, overwrite=False)
+    tag_field = 'Tags'
 
 
 @resources.register('kafka')

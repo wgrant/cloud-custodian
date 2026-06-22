@@ -6,15 +6,14 @@ from c7n.utils import local_session
 
 
 class DescribeGuarddutyFinding(query.DescribeSource):
-    def resources(self, query):
+    def get_query_default(self):
         detector_id = self.get_detector_id()
         if not detector_id:
-            return ()
-        if not query:
-            query = {}
-        query['DetectorId'] = detector_id
+            return None
         self.manager.resource_type.batch_detail_spec[-1] = {'DetectorId': detector_id}
-        return super().resources(query)
+        return {'DetectorId': detector_id}
+
+    source_query_default = get_query_default
 
     def get_detector_id(self):
         client = local_session(self.manager.session_factory).client('guardduty')

@@ -7,20 +7,18 @@ from c7n.filters import CrossAccountAccessFilter, PolicyChecker, ValueFilter, Me
 from c7n.filters.kms import KmsRelatedFilter
 import c7n.filters.policystatement as polstmt_filter
 from c7n.manager import resources
-from c7n.query import ConfigSource, DescribeSource, QueryResourceManager, TypeInfo
+from c7n.query import (
+    ConfigSource, DescribeSource, DescribeWithResourceTags, QueryResourceManager, TypeInfo)
 from c7n.resolver import ValuesFrom
 from c7n.utils import local_session, type_schema
-from c7n.tags import RemoveTag, Tag, TagDelayedAction, TagActionFilter, universal_augment
+from c7n.tags import RemoveTag, Tag, TagDelayedAction, TagActionFilter
 from c7n.filters.related import RelatedResourceFilter
 
 from c7n.resources.securityhub import PostFinding
 
 
-class DescribeTopic(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return universal_augment(self.manager, resources)
+class DescribeTopic(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sns')
@@ -459,7 +457,7 @@ class Metrics(MetricsFilter):
 
 class DescribeSubscription(DescribeSource):
 
-    def get_resources(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         """Get resource details one at a time rather than client filter of all.
 
         The list_subscriptions call has no way to provide a server side filter,

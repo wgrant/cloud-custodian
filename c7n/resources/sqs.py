@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from botocore.exceptions import ClientError
 
 import json
@@ -12,40 +13,42 @@ from c7n.filters.kms import KmsRelatedFilter
 import c7n.filters.policystatement as polstmt_filter
 from c7n.manager import resources
 from c7n.utils import local_session
-from c7n.query import ConfigSource, DescribeSource, QueryResourceManager, TypeInfo
+from c7n.query import (
+    ConfigSource,
+    DescribeSource,
+    QueryResourceManager,
+    TypeInfo,
+)
 from c7n.actions import BaseAction
 from c7n.utils import type_schema
-from c7n.tags import universal_augment
 
 from c7n.resources.aws import Arn
 from c7n.resources.securityhub import PostFinding
 
 
 class DescribeQueue(DescribeSource):
+    detail_augment = False
 
-    def augment(self, resources):
-        client = self.manager.get_client()
+    @augment.map(max_workers=2)
+    def describe_queue(manager, resource):
+        client = manager.get_client()
+        try:
+            queue = manager.retry(
+                client.get_queue_attributes,
+                QueueUrl=resource,
+                AttributeNames=['All'])['Attributes']
+            queue['QueueUrl'] = resource
+            queue['QueueName'] = queue['QueueArn'].rsplit(':', 1)[-1]
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'AWS.SimpleQueueService.NonExistentQueue':
+                return None
+            if e.response['Error']['Code'] == 'AccessDenied':
+                manager.log.warning("Denied access to sqs %s" % resource)
+                return None
+            raise
+        return queue
 
-        def _augment(r):
-            try:
-                queue = self.manager.retry(
-                    client.get_queue_attributes,
-                    QueueUrl=r,
-                    AttributeNames=['All'])['Attributes']
-                queue['QueueUrl'] = r
-                queue['QueueName'] = queue['QueueArn'].rsplit(':', 1)[-1]
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'AWS.SimpleQueueService.NonExistentQueue':
-                    return
-                if e.response['Error']['Code'] == 'AccessDenied':
-                    self.manager.log.warning("Denied access to sqs %s" % r)
-                    return
-                raise
-            return queue
-
-        with self.manager.executor_factory(max_workers=2) as w:
-            return universal_augment(
-                self.manager, list(filter(None, w.map(_augment, resources))))
+    universal_tags = True
 
 
 class QueueConfigSource(ConfigSource):
@@ -113,15 +116,18 @@ class SQS(QueryResourceManager):
         perms.append('sqs:GetQueueAttributes')
         return perms
 
-    def get_resources(self, ids, cache=True):
+    def prepare_resource_ids(self, ids):
         ids_normalized = []
         for i in ids:
             if not i.startswith('https://'):
                 ids_normalized.append(i)
                 continue
             ids_normalized.append(i.rsplit('/', 1)[-1])
-        resources = super(SQS, self).get_resources(ids_normalized, cache)
-        return [r for r in resources if Arn.parse(r['QueueArn']).resource in ids_normalized]
+        return ids_normalized
+
+    def augment_resources_by_ids(self, resources, ids=None):
+        resources = super().augment_resources_by_ids(resources, ids)
+        return [r for r in resources if Arn.parse(r['QueueArn']).resource in ids]
 
 
 @SQS.filter_registry.register('metrics')

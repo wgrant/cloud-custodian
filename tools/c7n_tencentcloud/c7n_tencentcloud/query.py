@@ -8,11 +8,14 @@ from c7n.actions import ActionRegistry
 from c7n.ctx import ExecutionContext
 from c7n.exceptions import PolicyExecutionError
 from c7n.filters import FilterRegistry
-from c7n.manager import ResourceManager
-from c7n.query import sources
+from c7n.manager import ResourceManager, ResourceQueryLifecycle
+from c7n.query import (
+    apply_augment_pipeline, iter_augments,
+    get_augment_pipeline as get_core_augment_pipeline, sources)
 from c7n.utils import local_session, chunks, jmespath_search
 from .actions.tags import register_tag_actions, register_tag_filters
 from .client import Session
+from .utils import isoformat_datetime_str
 
 DESC_SOURCE_NAME = "describe-tencentcloud"
 
@@ -51,6 +54,32 @@ class ResourceTypeInfo(metaclass=TypeMeta):
     metrics_instance_id_name: str = ""
 
     resource_prefix: str = ""
+
+
+class NormalizeDateField:
+    def __init__(self, field):
+        self.field = field
+
+    def __call__(self, manager, resources):
+        field_format = manager.resource_type.datetime_fields_format[self.field]
+        for resource in resources:
+            resource[self.field] = isoformat_datetime_str(
+                resource[self.field], field_format[0], field_format[1])
+        return resources
+
+
+def get_augment_pipeline(owner, augments=None):
+    if augments is not None:
+        return augments
+    pipeline = list(iter_augments(get_core_augment_pipeline(owner)))
+    date_fields = getattr(owner, "normalize_date_fields", None)
+    if date_fields is None:
+        date_fields = getattr(owner, "normalize_date_field", None)
+    if isinstance(date_fields, str):
+        date_fields = (date_fields,)
+    for field in date_fields or ():
+        pipeline.append(NormalizeDateField(field))
+    return tuple(pipeline) if pipeline else None
 
 
 class ResourceQuery:
@@ -138,6 +167,8 @@ class DescribeSource:
         self.tag_batch_size: int = 9
 
     _query_helper = None
+    augment_pipeline = None
+    tag_augment = True
 
     @property
     def query_helper(self):
@@ -147,32 +178,50 @@ class DescribeSource:
                     self.resource_manager.session_factory))
         return self._query_helper
 
-    def resources(self, params=None):
+    def prepare_query(self, params):
+        return params or {}
+
+    def fetch_resources(self, params):
         """
         It returns a list of resources that match the given parameters
 
         :param params: A dictionary of parameters to filter the list of resources returned
         :return: A list of resources.
         """
-        if params is None:
-            params = {}
-
         if self.resource_manager.resource_type.paging_def:
-            res = self.query_helper.paged_filter(self.resource_manager.config.region,
-                                                 self.resource_manager.resource_type,
-                                                 params)
-        else:
-            res = self.query_helper.filter(self.resource_manager.config.region,
-                                           self.resource_manager.resource_type,
-                                           params)
-        self.augment(res)
-        return res
+            return self.query_helper.paged_filter(self.resource_manager.config.region,
+                                                  self.resource_manager.resource_type,
+                                                  params)
+        return self.query_helper.filter(self.resource_manager.config.region,
+                                        self.resource_manager.resource_type,
+                                        params)
+
+    def normalize_resources(self, resources, params):
+        return resources
+
+    def handle_fetch_error(self, error, params):
+        raise error
+
+    def resources(self, params=None):
+        params = self.prepare_query(params)
+        if params is None:
+            return []
+        try:
+            resources = self.fetch_resources(params)
+        except Exception as e:
+            return self.handle_fetch_error(e, params)
+        resources = self.normalize_resources(resources, params)
+        augmented = self.augment(resources)
+        return resources if augmented is None else augmented
 
     def get_permissions(self):
         return []
 
     def augment(self, resources):
-        return self.get_resource_tag(resources)
+        if self.tag_augment:
+            resources = self.get_resource_tag(resources)
+        return apply_augment_pipeline(
+            self.resource_manager, resources, self.augment_pipeline or ())
 
     def get_resource_tag(self, resources):
         """
@@ -242,10 +291,11 @@ class QueryMeta(type):
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
-class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
+class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
     """QueryResourceManager"""
 
     source_mapping = {'describe': DescribeSource}
+    augment_pipeline = None
 
     class resource_type(ResourceTypeInfo):
         pass
@@ -300,18 +350,30 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
             params.update(it)
         return params
 
-    def resources(self):
-        params = self.get_resource_query_params()
-        resources = self.source.resources(params)
-        resources = self.augment(resources)
-        # filter resources
-        resources = self.filter_resources(resources)
+    def prepare_query(self, query):
+        return self.get_resource_query_params() if query is None else query
 
-        self.check_resource_limit(resources)
+    def fetch_resources(self, query):
+        return self.source.resources(query)
+
+    def handle_fetch_error(self, error, query):
+        raise error
+
+    def normalize_resources(self, resources, query):
         return resources
+
+    def augment_resources(self, resources):
+        return self.augment(resources)
+
+    def filter_resource_set(self, resources):
+        return self.filter_resources(resources)
+
+    def check_resource_query_limits(self, resources, resource_count):
+        self.check_resource_limit(resources)
 
     def augment(self, resources):
-        return resources
+        return apply_augment_pipeline(
+            self, resources, get_augment_pipeline(self, self.augment_pipeline))
 
     # TODO
     # to support configs: max-resources, max-resources-percent

@@ -10,15 +10,16 @@ from c7n.utils import type_schema
 
 
 class DescribeRemoved(DescribeSource):
-    def resources(self, query):
+    def fetch_resources(self, query):
         return []
 
-    def get_resources(self, resource_ids):
+    def fetch_resources_by_ids(self, resource_ids):
         return []
 
 
 @resources.register('qldb')
 class QLDB(QueryResourceManager):
+    permission_override = ()
 
     class resource_type(TypeInfo):
         arn_type = 'ledger'
@@ -33,9 +34,6 @@ class QLDB(QueryResourceManager):
         'describe': DescribeRemoved,
         'config': ConfigSource
     }
-
-    def get_permissions(self):
-        return []
 
 
 @QLDB.action_registry.register('delete')

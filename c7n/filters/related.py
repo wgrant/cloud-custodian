@@ -74,6 +74,7 @@ class RelatedResourceFilter(ValueFilter):
             count_matches = OPERATORS[self.data.get('op')](len(related_ids), self.data.get('value'))
             if count_matches:
                 self._add_annotations(related_ids, resource)
+                self.annotate_related(related_ids, resource, related)
             return count_matches
 
         for rid in related_ids:
@@ -97,12 +98,16 @@ class RelatedResourceFilter(ValueFilter):
 
         if found:
             self._add_annotations(found, resource)
+            self.annotate_related(found, resource, related)
 
         if op == 'or' and found:
             return True
         elif op == 'and' and len(found) == len(related_ids):
             return True
         return False
+
+    def annotate_related(self, related_ids, resource, related):
+        return
 
     def _add_annotations(self, related_ids, resource):
         if self.AnnotationKey is not None:

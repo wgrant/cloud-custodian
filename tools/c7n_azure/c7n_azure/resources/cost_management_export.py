@@ -5,11 +5,11 @@ import datetime
 import logging
 
 from c7n_azure.actions.base import AzureBaseAction
+from c7n_azure import constants
 from c7n_azure.provider import resources
 from c7n_azure.query import QueryResourceManager
-from c7n_azure.utils import ThreadHelper
 
-from c7n.filters import Filter
+from c7n.filters.core import BatchedFilter
 from c7n.utils import get_annotation_prefix
 from c7n.utils import type_schema
 
@@ -52,7 +52,7 @@ class CostManagementExport(QueryResourceManager):
 
 
 @CostManagementExport.filter_registry.register('last-execution')
-class CostManagementExportFilterLastExecution(Filter):
+class CostManagementExportFilterLastExecution(BatchedFilter):
     """ Find Cost Management Exports with last execution more than X days ago.
 
     :example:
@@ -76,29 +76,24 @@ class CostManagementExportFilterLastExecution(Filter):
             'age': {'type': 'integer', 'minimum': 0}
         }
     )
+    batch_filter = 'check_resources'
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
-    def process(self, resources, event=None):
+    def prepare_batch_filter(self):
         self.client = self.manager.get_client()
         self.scope = 'subscriptions/{0}'.format(self.manager.get_session().get_subscription_id())
         self.min_date = datetime.datetime.now() - datetime.timedelta(days=self.data['age'])
 
-        result, _ = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._check_resources,
-            executor_factory=self.executor_factory,
-            log=log
-        )
-
-        return result
-
-    def _check_resources(self, resources, event):
+    @staticmethod
+    def check_resources(resource_filter, resources, event=None):
         result = []
 
         for r in resources:
             if get_annotation_prefix('last-execution') in r:
                 continue
-            history = self.client.exports.get_execution_history(self.scope, r['name'])
+            history = resource_filter.client.exports.get_execution_history(
+                resource_filter.scope, r['name'])
 
             # Include exports that has no execution history
             if not history.value:
@@ -107,7 +102,7 @@ class CostManagementExportFilterLastExecution(Filter):
                 continue
 
             last_execution = max(history.value, key=lambda execution: execution.submitted_time)
-            if last_execution.submitted_time.date() <= self.min_date.date():
+            if last_execution.submitted_time.date() <= resource_filter.min_date.date():
                 r[get_annotation_prefix('last-execution')] = last_execution.serialize(True)
                 result.append(r)
 

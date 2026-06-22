@@ -22,15 +22,7 @@ class Directory(QueryResourceManager):
         arn_type = "directory"
         permission_augment = ('ds:ListTagsForResource',)
 
-    def augment(self, directories):
-        client = local_session(self.session_factory).client('ds')
-
-        def _add_tags(d):
-            d['Tags'] = client.list_tags_for_resource(
-                ResourceId=d['DirectoryId']).get('Tags', [])
-            return d
-
-        return list(map(_add_tags, directories))
+    tag_api = dict(resource_path='DirectoryId', request_arg='ResourceId')
 
 
 @Directory.filter_registry.register('subnet')
@@ -306,18 +298,9 @@ class CloudDirectory(QueryResourceManager):
         name = "Name"
         arn_type = "directory"
         universal_taggable = object()
-        permissions_augment = ("clouddirectory:ListTagsForResource",)
+    permissions_augment = ("clouddirectory:ListTagsForResource",)
 
     augment = universal_augment
-
-    def resources(self, query=None):
-        queries = CloudDirectoryQueryParser.parse(self.data.get('query', []))
-        query = query or {}
-        for q in queries:
-            query.update(q)
-        if 'state' not in query:
-            query['state'] = 'ENABLED'
-        return super(CloudDirectory, self).resources(query=query)
 
 
 @CloudDirectory.action_registry.register('delete')
@@ -386,3 +369,7 @@ class CloudDirectoryQueryParser(QueryParser):
 
     type_name = 'CloudDirectory'
     multi_value = False
+
+
+CloudDirectory.policy_query_parser = CloudDirectoryQueryParser
+CloudDirectory.policy_query_default = {'state': 'ENABLED'}

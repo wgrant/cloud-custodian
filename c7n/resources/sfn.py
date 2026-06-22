@@ -3,17 +3,14 @@
 
 from c7n.actions import Action
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
-from c7n.tags import Tag, RemoveTag, universal_augment
+from c7n.query import QueryResourceManager, TypeInfo, DescribeWithResourceTags, ConfigSource
+from c7n.tags import Tag, RemoveTag
 from c7n.utils import type_schema, local_session, dumps, chunks
 from c7n.filters.kms import KmsRelatedFilter
 
 
-class DescribeStepFunction(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return universal_augment(self.manager, resources)
+class DescribeStepFunction(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('step-machine')
@@ -41,11 +38,8 @@ class StepFunction(QueryResourceManager):
     }
 
 
-class DescribeActivity(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        return universal_augment(self.manager, resources)
+class DescribeActivity(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('sfn-activity')

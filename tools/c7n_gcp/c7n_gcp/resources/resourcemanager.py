@@ -10,7 +10,8 @@ from c7n_gcp.query import QueryResourceManager, TypeInfo
 
 from c7n.resolver import ValuesFrom
 from c7n.utils import type_schema, local_session
-from c7n.filters.core import ValueFilter, ListItemFilter
+from c7n.filters.core import (
+    AnnotationPipelineFilter, ListItemAnnotationFilter, ValueFilter, annotation_getter)
 from c7n.filters.missing import Missing
 
 from googleapiclient.errors import HttpError
@@ -60,6 +61,8 @@ class OrganizationSetIamPolicy(SetIamPolicy):
 class Folder(QueryResourceManager):
     """GCP resource: https://cloud.google.com/resource-manager/reference/rest/v1/folders
     """
+    policy_query_key = 'parent'
+
     class resource_type(TypeInfo):
         service = 'cloudresourcemanager'
         version = 'v2'
@@ -84,17 +87,13 @@ class Folder(QueryResourceManager):
             results.append(client.execute_query('get', {'name': rid}))
         return results
 
-    def get_resource_query(self):
-        if 'query' in self.data:
-            for child in self.data.get('query'):
-                if 'parent' in child:
-                    return {'parent': child['parent']}
-
 
 @resources.register('project')
 class Project(QueryResourceManager):
     """GCP resource: https://cloud.google.com/compute/docs/reference/rest/v1/projects
     """
+    policy_query_key = 'filter'
+
     class resource_type(TypeInfo):
         service = 'cloudresourcemanager'
         version = 'v1'
@@ -125,13 +124,6 @@ class Project(QueryResourceManager):
             return client.execute_query(
                 'get', {'projectId': resource_info['resourceName'].rsplit('/', 1)[-1]})
 
-    def get_resource_query(self):
-        # https://cloud.google.com/resource-manager/reference/rest/v1/projects/list
-        if 'query' in self.data:
-            for child in self.data.get('query'):
-                if 'filter' in child:
-                    return {'filter': child['filter']}
-
 
 Project.filter_registry.register('missing', Missing)
 
@@ -150,7 +142,7 @@ class ProjectIamPolicyFilter(IamPolicyFilter):
 
 
 @Project.filter_registry.register('compute-meta')
-class ProjectComputeMetaFilter(ValueFilter):
+class ProjectComputeMetaFilter(AnnotationPipelineFilter):
     """
     Allows filtering on project-level compute metadata including common instance metadata
     and quotas.
@@ -173,20 +165,16 @@ class ProjectComputeMetaFilter(ValueFilter):
 
     """
 
-    key = 'c7n:projectComputeMeta'
+    annotation_key = 'c7n:projectComputeMeta'
     permissions = ('compute.projects.get',)
     schema = type_schema('compute-meta', rinherit=ValueFilter.schema)
 
-    def __call__(self, resource):
-        if self.key in resource:
-            return resource[self.key]
+    @annotation_getter
+    def get_compute_meta(resource_filter, resource):
+        session = local_session(resource_filter.manager.session_factory)
+        client = session.client('compute', 'v1', 'projects')
+        return client.execute_command('get', {"project": resource['projectId']})
 
-        session = local_session(self.manager.session_factory)
-        self.client = session.client('compute', 'v1', 'projects')
-
-        resource[self.key] = self.client.execute_command('get', {"project": resource['projectId']})
-
-        return super().__call__(resource[self.key])
 
 
 @Project.action_registry.register('delete')
@@ -374,7 +362,7 @@ class ProjectPropagateLabels(HierarchyAction):
 
 
 @Organization.filter_registry.register('essential-contacts')
-class OrgContactsFilter(ListItemFilter):
+class OrgContactsFilter(ListItemAnnotationFilter):
     """Filter Resources based on essential contacts configuration
 
     .. code-block:: yaml
@@ -402,8 +390,9 @@ class OrgContactsFilter(ListItemFilter):
     annotate_items = True
     permissions = ("essentialcontacts.contacts.list",)
 
-    def get_item_values(self, resource):
-        session = local_session(self.manager.session_factory)
+    @annotation_getter
+    def get_contacts(resource_filter, resource):
+        session = local_session(resource_filter.manager.session_factory)
         client = session.client("essentialcontacts", "v1", "organizations.contacts")
         pages = client.execute_paged_query('list', {'parent': resource['name'], 'pageSize': 100})
         contacts = []
@@ -412,8 +401,9 @@ class OrgContactsFilter(ListItemFilter):
         return contacts
 
 
+
 @Organization.filter_registry.register('org-policy')
-class OrgPoliciesFilter(ListItemFilter):
+class OrgPoliciesFilter(ListItemAnnotationFilter):
     """Filter Resources based on orgpolicy configuration
 
     .. code-block:: yaml
@@ -436,14 +426,16 @@ class OrgPoliciesFilter(ListItemFilter):
     annotate_items = True
     permissions = ("orgpolicy.policy.get",)
 
-    def get_item_values(self, resource):
-        session = local_session(self.manager.session_factory)
+    @annotation_getter
+    def get_policies(resource_filter, resource):
+        session = local_session(resource_filter.manager.session_factory)
         client = session.client("cloudresourcemanager", "v1", "organizations")
         pages = client.execute_paged_query('listOrgPolicies', {'resource': resource['name']})
         policies = []
         for page in pages:
             policies.extend(page.get('policies', []))
         return policies
+
 
 
 @Project.filter_registry.register('access-approval')

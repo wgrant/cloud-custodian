@@ -11,8 +11,8 @@ from googleapiclient.errors import HttpError
 
 from c7n.actions import ActionRegistry
 from c7n.filters import FilterRegistry
-from c7n.manager import ResourceManager
-from c7n.query import sources, MaxResourceLimit
+from c7n.manager import ResourceManager, ResourceQueryLifecycle
+from c7n.query import apply_augment_pipeline, sources, MaxResourceLimit
 from c7n.utils import local_session, chunks, jmespath_search, jmespath_compile
 
 
@@ -149,11 +149,16 @@ class QueryMeta(type):
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
-class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
+class QueryResourceManager(ResourceQueryLifecycle, ResourceManager, metaclass=QueryMeta):
     # The resource manager type is injected by the PluginRegistry.register
     # decorator.
     type: str
     resource_type: 'TypeInfo'
+    default_query_filter = True
+    policy_query_key = None
+    policy_query_param = None
+    policy_query_default = None
+    augment_pipeline = None
 
     def __init__(self, ctx, data):
         super(QueryResourceManager, self).__init__(ctx, data)
@@ -188,36 +193,54 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         return self.data.get('source', 'describe-gcp')
 
     def get_resource_query(self):
-        if 'query' in self.data:
-            return {'filter': self.data.get('query')}
+        params = self.get_default_query_params()
+        if self.policy_query_key:
+            policy_query = self.get_policy_query_param(
+                self.policy_query_key, self.policy_query_param)
+        elif self.default_query_filter and 'query' in self.data:
+            policy_query = {'filter': self.data.get('query')}
+        else:
+            policy_query = None
+        if policy_query:
+            params.update(policy_query)
+        return params or None
 
-    def resources(self, query=None):
-        q = query or self.get_resource_query()
-        cache_key = self.get_cache_key(q)
-        resources = None
+    def get_default_query_params(self):
+        default = self.policy_query_default
+        if default is None:
+            return {}
+        if callable(default):
+            default = default(self)
+        return dict(default)
 
-        if self._cache.load():
-            resources = self._cache.get(cache_key)
-            if resources is not None:
-                self.log.debug("Using cached %s: %d" % (
-                    "%s.%s" % (self.__class__.__module__,
-                               self.__class__.__name__),
-                    len(resources)))
+    def get_policy_query_param(self, policy_key, param_key=None):
+        param_key = param_key or policy_key
+        for child in self.data.get('query', ()):
+            if policy_key in child:
+                return {param_key: child[policy_key]}
 
-        if resources is None:
-            with self.ctx.tracer.subsegment('resource-fetch'):
-                resources = self._fetch_resources(q)
-            self._cache.save(cache_key, resources)
+    def prepare_query(self, query):
+        return query or self.get_resource_query()
 
-        self._cache.close()
-        resource_count = len(resources)
-        with self.ctx.tracer.subsegment('filter'):
-            resources = self.filter_resources(resources)
+    def fetch_resources(self, query):
+        with self.ctx.tracer.subsegment('resource-fetch'):
+            return self._fetch_resources(query)
 
-        # Check resource limits if we're the current policy execution.
-        if self.data == self.ctx.policy.data:
-            self.check_resource_limit(len(resources), resource_count)
+    def handle_fetch_error(self, error, query):
+        raise error
+
+    def normalize_resources(self, resources, query):
         return resources
+
+    def augment_resources(self, resources):
+        return resources
+
+    def should_cache_resources(self, query, resources, augment=True):
+        return True
+
+    def filter_resource_set(self, resources):
+        with self.ctx.tracer.subsegment('filter'):
+            return self.filter_resources(resources)
 
     def check_resource_limit(self, selection_count, population_count):
         """Check if policy's execution affects more resources then its limit.
@@ -247,7 +270,7 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
             raise
 
     def augment(self, resources):
-        return resources
+        return apply_augment_pipeline(self, resources, self.augment_pipeline)
 
     def get_urns(self, resources):
         """Generate URNs for the resources.
@@ -267,6 +290,70 @@ class QueryResourceManager(ResourceManager, metaclass=QueryMeta):
         """
         return self.resource_type.get_urns(
             resources, local_session(self.session_factory).project_id)
+
+
+class MultiLocationResourceManager(QueryResourceManager):
+    """Query manager for resources enumerated once per provider location."""
+
+    location_resource_type = None
+    location_annotation = 'c7n:location'
+
+    def get_location_query(self):
+        if 'query' in self.data:
+            return self.data['query']
+        return None
+
+    def get_location_manager(self):
+        location_query = self.get_location_query()
+        return self.get_resource_manager(
+            resource_type=self.location_resource_type,
+            data=({'query': location_query} if location_query else {}))
+
+    def get_location_name(self, location):
+        return location['name']
+
+    def get_location_parent(self, project, location):
+        return f'projects/{project}/locations/{location}'
+
+    def get_location_client_options(self, location):
+        return None
+
+    def get_location_client(self, session, location):
+        client_options = self.get_location_client_options(location)
+        kwargs = {'client_options': client_options} if client_options else {}
+        return session.client(
+            self.resource_type.service,
+            self.resource_type.version,
+            self.resource_type.component,
+            **kwargs)
+
+    def get_location_params(self, project, location):
+        return {'parent': self.get_location_parent(project, location)}
+
+    def fetch_location_resources(self, client, params):
+        enum_op, path, _ = self.resource_type.enum_spec
+        resources = []
+        for page in client.execute_paged_query(enum_op, params):
+            page_items = jmespath_search(path, page)
+            if page_items:
+                resources.extend(page_items)
+        return resources
+
+    def _fetch_resources(self, query):
+        session = local_session(self.session_factory)
+        project = session.get_default_project()
+        all_resources = []
+
+        for location_instance in self.get_location_manager().resources():
+            location = self.get_location_name(location_instance)
+            client = self.get_location_client(session, location)
+            params = self.get_location_params(project, location)
+            location_resources = self.fetch_location_resources(client, params)
+            for resource in location_resources:
+                resource[self.location_annotation] = location_instance
+            all_resources.extend(location_resources)
+
+        return all_resources
 
 
 class ChildResourceManager(QueryResourceManager):

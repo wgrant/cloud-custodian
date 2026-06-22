@@ -8,15 +8,7 @@ from c7n.utils import type_schema, local_session, get_partition
 
 
 class ExperimentTemplateDescribe(DescribeSource):
-
-    def augment(self, resources):
-        resources = super().augment(resources)
-        # tag normalize for value filter
-        for r in resources:
-            if 'tags' not in r:
-                continue
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in r.pop('tags', {}).items()]
-        return resources
+    tag_field = dict(field='tags', remove=True)
 
 
 @resources.register('fis-template')
@@ -90,11 +82,7 @@ class Delete(Action):
 
 
 class ExperimentDescribe(DescribeSource):
-    def augment(self, resources):
-        resources = super().augment(resources)
-        for r in resources:
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in r.pop('tags', {}).items()]
-        return resources
+    tag_field = dict(field='tags', remove=True, missing='empty')
 
 
 @resources.register('fis-experiment')

@@ -64,20 +64,9 @@ class Snapshot(QueryResourceManager):
             'State',
         )
 
-    def resources(self, query=None):
-        query = query or {}
-        queries = SnapshotQueryParser.parse(self.data.get('query', []))
-        for q in queries:
-            query.update(q)
-        if 'OwnerIds' not in query:
-            query['OwnerIds'] = ['self']
-        if 'MaxResults' not in query:
-            query['MaxResults'] = 1000
-        return super(Snapshot, self).resources(query=query)
-
     def get_resources(self, ids, cache=True, augment=True):
         if cache:
-            resources = self._get_cached_resources(ids)
+            resources = self._get_cached_resources_by_ids(ids)
             if resources is not None:
                 return resources
         while ids:
@@ -198,6 +187,10 @@ class VolumeQueryParser(QueryParser):
     single_value_fields = ('MaxResults',)
 
     type_name = 'EBS Volume'
+
+
+Snapshot.policy_query_parser = SnapshotQueryParser
+Snapshot.policy_query_default = {'OwnerIds': ['self'], 'MaxResults': 1000}
 
 
 @Snapshot.action_registry.register('tag')
@@ -713,18 +706,9 @@ class EBS(QueryResourceManager):
             'KmsKeyId'
         )
 
-    def resources(self, query=None):
-        query = query or {}
-        queries = VolumeQueryParser.parse(self.data.get('query', []))
-        for q in queries:
-            query.update(q)
-        if 'MaxResults' not in query:
-            query['MaxResults'] = 1000
-        return super(EBS, self).resources(query=query)
-
     def get_resources(self, ids, cache=True, augment=True):
         if cache:
-            resources = self._get_cached_resources(ids)
+            resources = self._get_cached_resources_by_ids(ids)
             if resources is not None:
                 return resources
         while ids:
@@ -755,6 +739,10 @@ class VolumeTag(Tag):
                     ErrorHandler.remove_volume(bad_vol, resource_set)
                     continue
                 raise
+
+
+EBS.policy_query_parser = VolumeQueryParser
+EBS.policy_query_default = {'MaxResults': 1000}
 
 
 @EBS.filter_registry.register('snapshots')

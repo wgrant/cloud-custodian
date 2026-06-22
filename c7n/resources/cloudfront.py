@@ -6,10 +6,9 @@ from botocore.exceptions import ClientError
 
 from c7n.actions import BaseAction
 from c7n.filters import MetricsFilter, ShieldMetrics, Filter
+from c7n.filters.core import AnnotationPipelineFilter, annotation_batcher
 from c7n.manager import resources
-from c7n.query import (ConfigSource, QueryResourceManager, DescribeSource,
-                       TypeInfo, DescribeWithResourceTags)
-from c7n.tags import universal_augment
+from c7n.query import (ConfigSource, QueryResourceManager, TypeInfo, DescribeWithResourceTags)
 from c7n.utils import local_session, merge_dict, type_schema, get_retry
 from c7n.filters import ValueFilter, WafV2FilterBase
 from .aws import shape_validate
@@ -20,13 +19,9 @@ from c7n.resources.shield import IsShieldProtected, SetShieldProtection
 from c7n.resources.securityhub import PostFinding
 
 
-class DescribeDistribution(DescribeSource):
+class DescribeDistribution(DescribeWithResourceTags):
 
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
-
-    def get_resources(self, ids, cache=True):
-        results = []
+    def prepare_resource_ids(self, ids):
         distribution_ids = []
         for i in ids:
             # if we get cloudfront distribution arn, we pick distribution id
@@ -34,9 +29,7 @@ class DescribeDistribution(DescribeSource):
                 distribution_ids.append(Arn.parse(i).resource)
             else:
                 distribution_ids.append(i)
-        if distribution_ids:
-            results = super().get_resources(distribution_ids, cache)
-        return results
+        return distribution_ids
 
 
 @resources.register('distribution')
@@ -63,10 +56,8 @@ class Distribution(QueryResourceManager):
     }
 
 
-class DescribeStreamingDistribution(DescribeSource):
-
-    def augment(self, resources):
-        return universal_augment(self.manager, resources)
+class DescribeStreamingDistribution(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('streaming-distribution')
@@ -270,19 +261,10 @@ class IsWafV2Enabled(WafV2FilterBase):
         return self.get_web_acl_by_arn(resource.get('WebACLId'), scope='CLOUDFRONT')
 
 
-class BaseDistributionConfig(ValueFilter):
+class BaseDistributionConfig(AnnotationPipelineFilter):
     schema = type_schema('distribution-config', rinherit=ValueFilter.schema)
     schema_alias = False
     annotation_key = 'c7n:distribution-config'
-    annotate = False
-
-    def process(self, resources, event=None):
-
-        self.augment([r for r in resources if self.annotation_key not in r])
-        return super().process(resources, event)
-
-    def __call__(self, r):
-        return super(BaseDistributionConfig, self).__call__(r[self.annotation_key])
 
 
 @Distribution.filter_registry.register('distribution-config')
@@ -303,21 +285,23 @@ class DistributionConfig(BaseDistributionConfig):
    """
     permissions = ('cloudfront:GetDistributionConfig',)
 
-    def augment(self, resources):
-        client = local_session(self.manager.session_factory).client(
-            'cloudfront', region_name=self.manager.config.region)
+    @annotation_batcher
+    def annotate_configs(resource_filter, resources):
+        client = local_session(resource_filter.manager.session_factory).client(
+            'cloudfront', region_name=resource_filter.manager.config.region)
 
         for r in resources:
             try:
-                r[self.annotation_key] = client.get_distribution_config(Id=r['Id']) \
+                r[resource_filter.annotation_key] = client.get_distribution_config(Id=r['Id']) \
                     .get('DistributionConfig')
             except (client.exceptions.NoSuchDistribution):
-                r[self.annotation_key] = {}
+                r[resource_filter.annotation_key] = {}
             except Exception as e:
-                self.log.warning(
+                resource_filter.log.warning(
                     "Exception trying to get Distribution Config: %s error: %s",
                     r['ARN'], e)
                 raise e
+
 
 
 @StreamingDistribution.filter_registry.register('distribution-config')
@@ -338,22 +322,23 @@ class StreamingDistributionConfig(BaseDistributionConfig):
    """
     permissions = ('cloudfront:GetStreamingDistributionConfig',)
 
-    def augment(self, resources):
-
-        client = local_session(self.manager.session_factory).client(
-            'cloudfront', region_name=self.manager.config.region)
+    @annotation_batcher
+    def annotate_configs(resource_filter, resources):
+        client = local_session(resource_filter.manager.session_factory).client(
+            'cloudfront', region_name=resource_filter.manager.config.region)
 
         for r in resources:
             try:
-                r[self.annotation_key] = client.get_streaming_distribution_config(Id=r['Id']) \
-                    .get('StreamingDistributionConfig')
+                r[resource_filter.annotation_key] = client.get_streaming_distribution_config(
+                    Id=r['Id']).get('StreamingDistributionConfig')
             except (client.exceptions.NoSuchStreamingDistribution):
-                r[self.annotation_key] = {}
+                r[resource_filter.annotation_key] = {}
             except Exception as e:
-                self.log.warning(
+                resource_filter.log.warning(
                     "Exception trying to get Streaming Distribution Config: %s error: %s",
                     r['ARN'], e)
                 raise e
+
 
 
 @Distribution.filter_registry.register('mismatch-s3-origin')

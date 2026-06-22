@@ -1,5 +1,6 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
+from c7n.query import augment
 from collections import OrderedDict
 import csv
 import datetime
@@ -30,11 +31,12 @@ from c7n.query import (
     ChildResourceManager,
     ConfigSource,
     DescribeSource,
+    DescribeWithResourceTags,
     QueryResourceManager,
     TypeInfo,
 )
 from c7n.resolver import ValuesFrom
-from c7n.tags import TagActionFilter, TagDelayedAction, Tag, RemoveTag, universal_augment
+from c7n.tags import TagActionFilter, TagDelayedAction, Tag, RemoveTag
 from c7n.utils import (
     get_partition, local_session, type_schema, chunks, filter_empty, QueryParser,
     select_keys
@@ -46,7 +48,7 @@ from c7n.resources.securityhub import OtherResourcePostFinding
 
 class DescribeGroup(DescribeSource):
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         """For IAM Groups on events, resource ids are Group Names."""
         client = local_session(self.manager.session_factory).client('iam')
         resources = []
@@ -83,7 +85,7 @@ class Group(QueryResourceManager):
 
 class DescribeRole(DescribeSource):
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('iam')
         resources = []
         for rid in resource_ids:
@@ -224,21 +226,24 @@ class RoleSetBoundary(SetBoundary):
 
 
 class DescribeUser(DescribeSource):
+    detail_augment = False
 
-    def augment(self, resources):
-        # iam has a race condition, where listing will potentially return a
-        # new user prior it to its availability to get user
-        client = local_session(self.manager.session_factory).client('iam')
-        results = []
-        for r in resources:
-            ru = self.manager.retry(
-                client.get_user, UserName=r['UserName'],
-                ignore_err_codes=('NoSuchEntity',))
-            if ru:
-                results.append(ru['User'])
-        return list(filter(None, results))
+    def get_permissions(self):
+        return super().get_permissions() + ['iam:GetUser']
 
-    def get_resources(self, resource_ids, cache=True):
+    @augment.map
+    def get_user(manager, resource):
+        # IAM has a race condition where listing can return a new user
+        # before it is available via get_user.
+        client = local_session(manager.session_factory).client('iam')
+        result = manager.retry(
+            client.get_user,
+            UserName=resource['UserName'],
+            ignore_err_codes=('NoSuchEntity',))
+        if result:
+            return result.get('User') or None
+
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('iam')
         results = []
 
@@ -377,18 +382,9 @@ class UserSetBoundary(SetBoundary):
                 'UserName': resource['UserName']}
 
 
-class DescribePolicy(DescribeSource):
+class DescribePolicy(DescribeWithResourceTags):
 
-    def resources(self, query=None):
-        queries = PolicyQueryParser.parse(self.manager.data.get('query', []))
-        query = query or {}
-        for q in queries:
-            query.update(q)
-        if 'Scope' not in query:
-            query['Scope'] = 'Local'
-        return super(DescribePolicy, self).resources(query=query)
-
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('iam')
         results = []
 
@@ -399,9 +395,6 @@ class DescribePolicy(DescribeSource):
                 if e.response['Error']['Code'] == 'NoSuchEntityException':
                     continue
         return results
-
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
 
 
 @resources.register('iam-policy')
@@ -437,6 +430,10 @@ class PolicyQueryParser(QueryParser):
     }
     multi_value = False
     type_name = 'IAM Policy'
+
+
+DescribePolicy.source_policy_query_parser = PolicyQueryParser
+DescribePolicy.source_query_default = {'Scope': 'Local'}
 
 
 @resources.register('iam-profile')
@@ -3056,16 +3053,11 @@ class UserGroupDelete(BaseAction):
 
 
 class SamlProviderDescribe(DescribeSource):
-
-    def augment(self, resources):
-        super().augment(resources)
-        for r in resources:
-            md = r.get('SAMLMetadataDocument')
-            if not md:
-                continue
-            root = sso_metadata(md)
-            r['IDPSSODescriptor'] = root['IDPSSODescriptor']
-        return resources
+    @augment.mutate
+    def augment_sso_descriptor(manager, resource):
+        if resource.get('SAMLMetadataDocument'):
+            resource['IDPSSODescriptor'] = sso_metadata(
+                resource['SAMLMetadataDocument'])['IDPSSODescriptor']
 
     def get_permissions(self):
         return ('iam:GetSAMLProvider', 'iam:ListSAMLProviders')

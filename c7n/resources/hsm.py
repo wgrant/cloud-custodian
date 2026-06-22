@@ -1,27 +1,21 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
-from c7n.exceptions import ClientError
 from c7n.manager import resources
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource
+from c7n.query import QueryResourceManager, TypeInfo, DescribeWithInlineTags
 import c7n.filters.vpc as net_filters
 from c7n.actions import BaseAction
 from c7n.utils import local_session, type_schema
 import c7n.filters.policystatement as polstmt_filter
 
 
-class DescribeCloudHSMCluster(DescribeSource):
+class DescribeCloudHSMCluster(DescribeWithInlineTags):
 
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('cloudhsmv2')
         return self.manager.retry(
             client.describe_clusters,
             Filters={
                 'clusterIds': resource_ids}).get('Clusters', ())
-
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = r.pop('TagList', ())
-        return resources
 
 
 @resources.register('cloudhsm-cluster')
@@ -71,6 +65,8 @@ class DeleteHSMCluster(BaseAction):
 
 @resources.register('hsm')
 class CloudHSM(QueryResourceManager):
+    # Classic CloudHSM is not available for new accounts; use CloudHSMv2.
+    ignore_fetch_error_message = 'service is unavailable'
 
     class resource_type(TypeInfo):
         service = 'cloudhsm'
@@ -79,15 +75,6 @@ class CloudHSM(QueryResourceManager):
         arn_type = 'cluster'
         name = 'Name'
         detail_spec = ("describe_hsm", "HsmArn", None, None)
-
-    def resources(self, query=None, augment=True):
-        try:
-            return super().resources(query, augment)
-        except ClientError as e:
-            # cloudhsm is not available for new accounts, use cloudhsmV2
-            if 'service is unavailable' in str(e):
-                return []
-            raise
 
 
 @resources.register('hsm-hapg')
@@ -113,15 +100,9 @@ class HSMClient(QueryResourceManager):
         name = 'Label'
 
 
-class DescribeCloudHSMBackup(DescribeSource):
+class DescribeCloudHSMBackup(DescribeWithInlineTags):
 
-    def augment(self, resources):
-        for r in resources:
-            r['Tags'] = r.pop('TagList', ())
-        return resources
-
-    def resources(self, query):
-        resources = self.query.filter(self.manager, **query)
+    def normalize_resources(self, resources, query):
         return [r for r in resources if r['BackupState'] != 'PENDING_DELETION']
 
 

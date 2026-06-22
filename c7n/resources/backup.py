@@ -2,29 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 from c7n.manager import resources
 from c7n.filters.kms import KmsRelatedFilter
-from c7n.query import QueryResourceManager, TypeInfo, DescribeSource, ConfigSource
-from c7n.tags import universal_augment
+from c7n.query import (
+    ConfigSource, DescribeSource, DescribeWithResourceTags,
+    QueryResourceManager, TypeInfo)
 from c7n.utils import local_session
 
 
 class DescribeBackup(DescribeSource):
+    merge_field = 'BackupPlan'
+    tag_api = dict(op='list_tags', resource_path='BackupPlanArn', result_path='Tags', tag_format='dict', ignore_errors=('ResourceNotFoundException',), drop_on_error=True)
 
-    def augment(self, resources):
-        resources = super(DescribeBackup, self).augment(resources)
-        client = local_session(self.manager.session_factory).client('backup')
-        results = []
-        for r in resources:
-            plan = r.pop('BackupPlan', {})
-            r.update(plan)
-            try:
-                tags = client.list_tags(ResourceArn=r['BackupPlanArn']).get('Tags', {})
-            except client.exceptions.ResourceNotFoundException:
-                continue
-            r['Tags'] = [{'Key': k, 'Value': v} for k, v in tags.items()]
-            results.append(r)
-        return results
-
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('backup')
         resources = []
 
@@ -59,12 +47,9 @@ class BackupPlan(QueryResourceManager):
     }
 
 
-class DescribeVault(DescribeSource):
+class DescribeVault(DescribeWithResourceTags):
 
-    def augment(self, resources):
-        return universal_augment(self.manager, super(DescribeVault, self).augment(resources))
-
-    def get_resources(self, resource_ids, cache=True):
+    def fetch_resources_by_ids(self, resource_ids):
         client = local_session(self.manager.session_factory).client('backup')
         resources = []
         for rid in resource_ids:

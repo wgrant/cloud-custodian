@@ -9,21 +9,21 @@ from datetime import datetime, timedelta
 from c7n.actions import BaseAction
 from c7n.exceptions import PolicyValidationError
 from c7n.filters import Filter, MetricsFilter
-from c7n.filters.core import parse_date, ValueFilter
+from c7n.filters.core import (
+    AnnotationPipelineFilter, parse_date, ValueFilter, annotation_batcher)
 from c7n.filters.iamaccess import CrossAccountAccessFilter
 from c7n.filters.kms import KmsRelatedFilter
 from c7n.manager import resources
 from c7n.query import (
     QueryResourceManager,
-    TypeInfo, DescribeSource, ConfigSource, DescribeWithResourceTags)
+    TagsFromApi, TagsFromField, TypeInfo, ConfigSource, DescribeWithResourceTags)
 from c7n.resolver import ValuesFrom
 from c7n.tags import universal_augment
 from c7n.utils import type_schema, local_session, chunks, get_retry, jmespath_search
 
 
-class DescribeAlarm(DescribeSource):
-    def augment(self, resources):
-        return universal_augment(self.manager, super().augment(resources))
+class DescribeAlarm(DescribeWithResourceTags):
+    pass
 
 
 @resources.register('alarm')
@@ -194,6 +194,12 @@ class LogGroup(QueryResourceManager):
 
 @resources.register('insight-rule')
 class InsightRule(QueryResourceManager):
+    @staticmethod
+    def get_rule_arn(manager, resource):
+        return manager.generate_arn(resource['Name'])
+
+    tag_api = dict(resource_path=get_rule_arn, request_arg='ResourceARN')
+
     class resource_type(TypeInfo):
         service = 'cloudwatch'
         arn_type = 'insight-rule'
@@ -202,17 +208,6 @@ class InsightRule(QueryResourceManager):
         universal_taggable = object()
         permission_augment = ('cloudWatch::ListTagsForResource',)
         cfn_type = 'AWS::CloudWatch::InsightRule'
-
-    def augment(self, rules):
-        client = local_session(self.session_factory).client('cloudwatch')
-
-        def _add_tags(r):
-            arn = self.generate_arn(r['Name'])
-            r['Tags'] = client.list_tags_for_resource(
-                ResourceARN=arn).get('Tags', [])
-            return r
-
-        return list(map(_add_tags, rules))
 
 
 @InsightRule.action_registry.register('disable')
@@ -300,7 +295,7 @@ class LogMetric(QueryResourceManager):
 
 
 @LogMetric.filter_registry.register('alarm')
-class LogMetricAlarmFilter(ValueFilter):
+class LogMetricAlarmFilter(AnnotationPipelineFilter):
     """
     Filter log metric filters based on associated alarms.
 
@@ -321,25 +316,26 @@ class LogMetricAlarmFilter(ValueFilter):
     annotation_key = 'c7n:MetricAlarms'
     FetchThreshold = 10  # below this number of resources, fetch alarms individually
 
-    def augment(self, resources):
+    @annotation_batcher
+    def annotate_alarms(resource_filter, resources):
         """Add alarm details to log metric filter resources
 
         This includes all alarms where the metric name and namespace match
         a log metric filter's metric transformation.
         """
 
-        if len(resources) < self.FetchThreshold:
-            client = local_session(self.manager.session_factory).client('cloudwatch')
+        if len(resources) < resource_filter.FetchThreshold:
+            client = local_session(resource_filter.manager.session_factory).client('cloudwatch')
             for r in resources:
-                r[self.annotation_key] = list(itertools.chain(*(
-                    self.manager.retry(
+                r[resource_filter.annotation_key] = list(itertools.chain(*(
+                    resource_filter.manager.retry(
                         client.describe_alarms_for_metric,
                         Namespace=t['metricNamespace'],
                         MetricName=t['metricName'])['MetricAlarms']
                     for t in r.get('metricTransformations', ())
                 )))
         else:
-            alarms = self.manager.get_resource_manager('aws.alarm').resources()
+            alarms = resource_filter.manager.get_resource_manager('aws.alarm').resources()
 
             # We'll be matching resources to alarms based on namespace and
             # metric name - this lookup table makes that smoother
@@ -348,10 +344,11 @@ class LogMetricAlarmFilter(ValueFilter):
                 alarms_by_metric[(alarm['Namespace'], alarm['MetricName'])].append(alarm)
 
             for r in resources:
-                r[self.annotation_key] = list(itertools.chain(*(
+                r[resource_filter.annotation_key] = list(itertools.chain(*(
                     alarms_by_metric.get((t['metricNamespace'], t['metricName']), [])
                     for t in r.get('metricTransformations', ())
                 )))
+
 
     def get_permissions(self):
         return [
@@ -360,7 +357,7 @@ class LogMetricAlarmFilter(ValueFilter):
         ]
 
     def process(self, resources, event=None):
-        self.augment(resources)
+        self.annotate_resources(self.get_annotation_resources(resources))
 
         matched = []
         for r in resources:
@@ -861,13 +858,7 @@ class SyntheticsCanary(QueryResourceManager):
         enum_spec = ('describe_canaries', 'Canaries', None)
         universal_taggable = object()
 
-    def augment(self, resources):
-        for r in resources:
-            # AWS returns tags as a dict { "Key": "Value" }
-            # Custodian expects [{"Key": k, "Value": v}, ...]
-            r["Tags"] = [{"Key": k, "Value": v} for k, v in r["Tags"].items()]
-
-        return resources
+    tag_field = dict(field='Tags')
 
 
 @SyntheticsCanary.action_registry.register('start')

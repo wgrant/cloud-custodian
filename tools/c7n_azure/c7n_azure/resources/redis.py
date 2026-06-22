@@ -1,7 +1,7 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-from c7n.filters import ListItemFilter
+from c7n.filters.core import ListItemAnnotationFilter, annotation_getter
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -47,7 +47,7 @@ class Redis(ArmResourceManager):
 
 
 @Redis.filter_registry.register('firewall')
-class RedisFirewallFilter(ListItemFilter):
+class RedisFirewallFilter(ListItemAnnotationFilter):
     """
     Filter redis caches based on their firewall rules
 
@@ -80,8 +80,9 @@ class RedisFirewallFilter(ListItemFilter):
     annotate_items = True
     item_annotation_key = "c7n:FirewallRules"
 
-    def get_item_values(self, resource):
-        client = self.manager.get_client()
+    @annotation_getter
+    def get_firewall_rules(resource_filter, resource):
+        client = resource_filter.manager.get_client()
         rules = client.firewall_rules.list(
             cache_name=resource["name"],
             resource_group_name=resource["resourceGroup"]

@@ -5,8 +5,7 @@ from c7n_azure import constants
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 
-from c7n.filters.core import ValueFilter, type_schema
-from c7n_azure.utils import ThreadHelper
+from c7n.filters.core import BatchedFilter, ValueFilter, type_schema
 import logging
 
 max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
@@ -46,7 +45,7 @@ class NetworkInterface(ArmResourceManager):
 
 
 @NetworkInterface.filter_registry.register('effective-route-table')
-class EffectiveRouteTableFilter(ValueFilter):
+class EffectiveRouteTableFilter(BatchedFilter, ValueFilter):
     """Filters network interfaces by the Effective Route Table
 
     :example:
@@ -68,22 +67,12 @@ class EffectiveRouteTableFilter(ValueFilter):
                   - VirtualAppliance
     """
     schema = type_schema('effective-route-table', rinherit=ValueFilter.schema)
+    batch_size = chunk_size
+    max_workers = max_workers
 
-    def process(self, resources, event=None):
-
-        resources, _ = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=log,
-            max_workers=max_workers,
-            chunk_size=chunk_size
-        )
-        return resources
-
-    def _process_resource_set(self, resources, event):
-        client = self.manager.get_client()
+    @staticmethod
+    def filter_resource_set(resource_filter, resources, event=None):
+        client = resource_filter.manager.get_client()
         matched = []
 
         for resource in resources:
@@ -97,8 +86,8 @@ class EffectiveRouteTableFilter(ValueFilter):
                     )
 
                     resource['routes'] = route_table.serialize()
-                    filtered_effective_route_table = super(EffectiveRouteTableFilter, self)\
-                        .process([resource], event)
+                    filtered_effective_route_table = ValueFilter.process(
+                        resource_filter, [resource], event)
 
                     if filtered_effective_route_table:
                         matched.append(resource)

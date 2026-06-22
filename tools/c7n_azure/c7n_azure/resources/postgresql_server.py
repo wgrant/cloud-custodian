@@ -1,7 +1,8 @@
 # Copyright The Cloud Custodian Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-from c7n.filters.core import ValueFilter, ListItemFilter
+from c7n.filters.core import (
+    AnnotationPipelineFilter, ListItemAnnotationFilter, ValueFilter, annotation_getter)
 from c7n.utils import type_schema
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
@@ -58,7 +59,7 @@ class PostgresqlServer(ArmResourceManager):
 
 
 @PostgresqlServer.filter_registry.register("server-configurations")
-class PostgresqlServerConfigurationFilter(ListItemFilter):
+class PostgresqlServerConfigurationFilter(ListItemAnnotationFilter):
     schema = type_schema(
         "server-configurations",
         attrs={"$ref": "#/definitions/filters_common/list_item_attrs"},
@@ -68,16 +69,18 @@ class PostgresqlServerConfigurationFilter(ListItemFilter):
     item_annotation_key = "c7n:ServerConfigurations"
     annotate_items = True
 
-    def get_item_values(self, resource):
-        it = self.manager.get_client().configurations.list_by_server(
+    @annotation_getter
+    def get_configurations(resource_filter, resource):
+        it = resource_filter.manager.get_client().configurations.list_by_server(
             resource_group_name=resource["resourceGroup"],
             server_name=resource["name"]
         )
         return [item.serialize(True) for item in it]
 
 
+
 @PostgresqlServer.filter_registry.register('security-alert-policies')
-class PostgresqlServerSecurityAlertPoliciesFilter(ListItemFilter):
+class PostgresqlServerSecurityAlertPoliciesFilter(ListItemAnnotationFilter):
     schema = type_schema(
         "security-alert-policies",
         attrs={"$ref": "#/definitions/filters_common/list_item_attrs"},
@@ -88,12 +91,14 @@ class PostgresqlServerSecurityAlertPoliciesFilter(ListItemFilter):
     annotate_items = True
     item_annotation_key = "c7n:SecurityAlertPolicies"
 
-    def get_item_values(self, resource):
-        it = self.manager.get_client().server_security_alert_policies.list_by_server(
+    @annotation_getter
+    def get_security_alert_policies(resource_filter, resource):
+        it = resource_filter.manager.get_client().server_security_alert_policies.list_by_server(
             resource_group_name=resource["resourceGroup"],
             server_name=resource["name"],
         )
         return [item.serialize(True) for item in it]
+
 
 
 @PostgresqlServer.filter_registry.register("firewall-bypass")
@@ -149,7 +154,7 @@ class PostgresqlServerFirewallRulesFilter(FirewallRulesFilter):
 
 
 @PostgresqlServer.filter_registry.register('configuration-parameter')
-class ConfigurationParametersFilter(ValueFilter):
+class ConfigurationParametersFilter(AnnotationPipelineFilter):
     """Filter by configuration parameter for this postresql server
 
     Configurations are made available to the filter as a map with each
@@ -199,16 +204,17 @@ class ConfigurationParametersFilter(ValueFilter):
         name=dict(type='string')
     )
 
-    def __call__(self, resource):
-        key = f'c7n:config-params:{self.data["name"]}'
-        if key not in resource['properties']:
-            client = self.manager.get_client()
-            query = client.configurations.get(
-                resource['resourceGroup'],
-                resource['name'],
-                self.data["name"]
-            )
+    def get_annotation_key(self):
+        return f'c7n:config-params:{self.data["name"]}'
 
-            resource['properties'][key] = query.serialize(True).get('properties')
+    def get_annotation_path(self):
+        return ('properties', self.get_annotation_key())
 
-        return super().__call__(resource['properties'][key])
+    @annotation_getter
+    def get_configuration(resource_filter, resource):
+        query = resource_filter.manager.get_client().configurations.get(
+            resource['resourceGroup'],
+            resource['name'],
+            resource_filter.data["name"]
+        )
+        return query.serialize(True).get('properties')

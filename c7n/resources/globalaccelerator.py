@@ -3,8 +3,7 @@
 
 from .aws import AWS
 from c7n.query import (
-    QueryResourceManager, TypeInfo)
-from c7n.utils import local_session
+    FixedRegionClientMixin, QueryResourceManager, TagsFromApi, TypeInfo)
 from c7n.tags import RemoveTag, Tag, TagActionFilter, TagDelayedAction
 from c7n.resources.shield import IsShieldProtected
 from c7n.filters import ValueFilter
@@ -19,11 +18,13 @@ GlobalAccelerator_REGION = 'us-west-2'
 
 
 @AWS.resources.register('globalaccelerator')
-class GlobalAccelerator(QueryResourceManager):
+class GlobalAccelerator(FixedRegionClientMixin, QueryResourceManager):
     """AWS Global Accelerator
 
     https://docs.aws.amazon.com/global-accelerator/latest/dg/what-is-global-accelerator.html
     """
+
+    client_region = GlobalAccelerator_REGION
 
     class resource_type(TypeInfo):
 
@@ -37,20 +38,7 @@ class GlobalAccelerator(QueryResourceManager):
         arn_type = 'accelerator'
         cfn_type = 'AWS::GlobalAccelerator::Accelerator'
         permission_prefix = 'globalaccelerator'
-
-    def augment(self, resources):
-        client = self.get_client()
-
-        def _augment(r):
-            r['Tags'] = self.retry(client.list_tags_for_resource,
-                ResourceArn=r['AcceleratorArn'])['Tags']
-            return r
-        resources = super().augment(resources)
-        return list(map(_augment, resources))
-
-    def get_client(self):
-        return local_session(self.session_factory) \
-            .client('globalaccelerator', region_name=GlobalAccelerator_REGION)
+    tag_api = dict(resource_path='AcceleratorArn')
 
 
 # When taggingresource api is used in tagging operation, got the error:

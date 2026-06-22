@@ -24,15 +24,15 @@ from azure.mgmt.sql.models import (
     DatabaseUpdate,
     Sku,
 )
-from c7n.filters import Filter
-from c7n.filters.core import PolicyValidationError
+from c7n.filters.core import BatchedFilter, PolicyValidationError
 from c7n.utils import get_annotation_prefix, type_schema
 from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.filters import scalar_ops
 from c7n_azure.provider import resources
 from c7n_azure.query import ChildTypeInfo
 from c7n_azure.resources.arm import ChildArmResourceManager
-from c7n_azure.utils import ResourceIdParser, RetentionPeriod, ThreadHelper, StringUtils
+from c7n_azure import constants
+from c7n_azure.utils import ResourceIdParser, RetentionPeriod, StringUtils
 
 log = logging.getLogger('custodian.azure.sqldatabase')
 
@@ -78,7 +78,7 @@ class SqlDatabase(ChildArmResourceManager):
 
 
 @SqlDatabase.filter_registry.register('transparent-data-encryption')
-class TransparentDataEncryptionFilter(Filter):
+class TransparentDataEncryptionFilter(BatchedFilter):
     """
     Filter by the current Transparent Data Encryption
     configuration for this database.
@@ -107,25 +107,16 @@ class TransparentDataEncryptionFilter(Filter):
     )
 
     log = logging.getLogger('custodian.azure.sqldatabase.transparent-data-encryption-filter')
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(TransparentDataEncryptionFilter, self).__init__(data, manager)
         self.enabled = self.data['enabled']
 
-    def process(self, resources, event=None):
-        resources, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=log
-        )
-        if exceptions:
-            raise exceptions[0]
-        return resources
-
-    def _process_resource_set(self, resources, event=None):
-        client = self.manager.get_client()
+    @staticmethod
+    def filter_resource_set(resource_filter, resources, event=None):
+        client = resource_filter.manager.get_client()
         result = []
         for resource in resources:
             if 'transparentDataEncryption' not in resource['properties']:
@@ -141,7 +132,7 @@ class TransparentDataEncryptionFilter(Filter):
                 resource['properties']['transparentDataEncryption'] = \
                     tde.serialize(True).get('properties', {})
 
-            required_status = 'Enabled' if self.enabled else 'Disabled'
+            required_status = 'Enabled' if resource_filter.enabled else 'Disabled'
 
             if StringUtils.equal(
                     resource['properties']['transparentDataEncryption'].get('status'),
@@ -152,7 +143,7 @@ class TransparentDataEncryptionFilter(Filter):
 
 
 @SqlDatabase.filter_registry.register('data-masking-policy')
-class DataMaskingPolicyFilter(Filter):
+class DataMaskingPolicyFilter(BatchedFilter):
     """
     Filter by the current data masking policy
     configuration for this database.
@@ -184,25 +175,16 @@ class DataMaskingPolicyFilter(Filter):
     )
 
     log = logging.getLogger('custodian.azure.sqldatabase.data-masking-policy-filter')
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, data, manager=None):
         super(DataMaskingPolicyFilter, self).__init__(data, manager)
         self.enabled = self.data['enabled']
 
-    def process(self, resources, event=None):
-        resources, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=log
-        )
-        if exceptions:
-            raise exceptions[0]
-        return resources
-
-    def _process_resource_set(self, resources, event=None):
-        client = self.manager.get_client()
+    @staticmethod
+    def filter_resource_set(resource_filter, resources, event=None):
+        client = resource_filter.manager.get_client()
         result = []
         for resource in resources:
             database_name = resource['name']
@@ -223,7 +205,7 @@ class DataMaskingPolicyFilter(Filter):
                 else:
                     resource['c7n:data-masking-policy'] = {}
 
-            required_status = 'Enabled' if self.enabled else 'Disabled'
+            required_status = 'Enabled' if resource_filter.enabled else 'Disabled'
 
             if StringUtils.equal(
                     resource['c7n:data-masking-policy'].get('dataMaskingState'),
@@ -294,7 +276,7 @@ class BackupRetentionPolicyHelper:
         return retention_policy
 
 
-class BackupRetentionPolicyBaseFilter(Filter, metaclass=abc.ABCMeta):
+class BackupRetentionPolicyBaseFilter(BatchedFilter, metaclass=abc.ABCMeta):
 
     schema = type_schema(
         'backup-retention-policy',
@@ -302,6 +284,8 @@ class BackupRetentionPolicyBaseFilter(Filter, metaclass=abc.ABCMeta):
             'op': {'enum': list(scalar_ops.keys())}
         }
     )
+    batch_size = constants.DEFAULT_CHUNK_SIZE
+    max_workers = constants.DEFAULT_MAX_THREAD_WORKERS
 
     def __init__(self, operations_property, retention_limit, data, manager=None):
         super(BackupRetentionPolicyBaseFilter, self).__init__(data, manager)
@@ -312,25 +296,14 @@ class BackupRetentionPolicyBaseFilter(Filter, metaclass=abc.ABCMeta):
     def get_retention_from_backup_policy(self, retention_policy):
         raise NotImplementedError()
 
-    def process(self, resources, event=None):
-        resources, exceptions = ThreadHelper.execute_in_parallel(
-            resources=resources,
-            event=event,
-            execution_method=self._process_resource_set,
-            executor_factory=self.executor_factory,
-            log=log
-        )
-        if exceptions:
-            raise exceptions[0]
-        return resources
-
-    def _process_resource_set(self, resources, event):
-        client = self.manager.get_client()
-        get_operation = getattr(client, self.operations_property).get
+    @staticmethod
+    def filter_resource_set(resource_filter, resources, event=None):
+        client = resource_filter.manager.get_client()
+        get_operation = getattr(client, resource_filter.operations_property).get
         matched_resources = []
 
         for resource in resources:
-            match = self._process_resource(resource, get_operation)
+            match = resource_filter._process_resource(resource, get_operation)
             if match:
                 matched_resources.append(resource)
         return matched_resources

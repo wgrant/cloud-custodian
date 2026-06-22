@@ -7,7 +7,8 @@ import pytz
 from c7n.exceptions import PolicyValidationError
 from c7n.utils import chunks, type_schema
 from c7n_tencentcloud.provider import resources
-from c7n_tencentcloud.query import ResourceTypeInfo, QueryResourceManager, DescribeSource
+from c7n_tencentcloud.query import (
+    ResourceTypeInfo, QueryResourceManager, DescribeSource)
 from c7n_tencentcloud.utils import isoformat_datetime_str, PageMethod, convert_date_str
 from c7n.filters import ValueFilter, Filter
 
@@ -78,12 +79,7 @@ class User(QueryResourceManager):
             self._query_client = self.get_client()
         return self._query_client
 
-    def augment(self, resources):
-        """augment"""
-        for item in resources:
-            fm = self.resource_type.datetime_fields_format["CreateTime"]
-            item["CreateTime"] = isoformat_datetime_str(item["CreateTime"], fm[0], fm[1])
-        return resources
+    normalize_date_field = "CreateTime"
 
 
 @User.filter_registry.register('group')
@@ -340,12 +336,8 @@ class CredentialFilter(Filter):
 
 class DescribePolicy(DescribeCAM):
     """DescribePolicy"""
-    def augment(self, resources):
-        """
-        Policy don't have tags.
-        If we try getting policy's tags, tencentcloud api will return error.
-        """
-        return resources
+    # Policy does not support tag retrieval; TencentCloud returns an error.
+    tag_augment = False
 
 
 @resources.register("cam-policy")

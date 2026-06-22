@@ -5,7 +5,9 @@ from c7n_azure.actions.base import AzureBaseAction
 from c7n_azure.provider import resources
 from c7n_azure.resources.arm import ArmResourceManager
 
-from c7n.filters.core import ValueFilter, type_schema, ListItemFilter
+from c7n.filters.core import (
+    AnnotationPipelineFilter, ListItemAnnotationFilter,
+    ValueFilter, type_schema, annotation_batcher, annotation_getter)
 from c7n.filters.related import RelatedResourceFilter
 from c7n.utils import local_session
 
@@ -165,24 +167,24 @@ class VirtualMachine(ArmResourceManager):
 
 
 @VirtualMachine.filter_registry.register('instance-view')
-class InstanceViewFilter(ValueFilter):
+class InstanceViewFilter(AnnotationPipelineFilter):
     schema = type_schema('instance-view', rinherit=ValueFilter.schema)
+    annotation_key = 'instanceView'
 
-    def __call__(self, i):
-        if 'instanceView' not in i:
-            client = self.manager.get_client()
-            instance = (
-                client.virtual_machines
-                .get(i['resourceGroup'], i['name'], expand='instanceview')
-                .instance_view
-            )
-            i['instanceView'] = instance.serialize()
+    @annotation_getter
+    def get_instance_view(resource_filter, resource):
+        instance = (
+            resource_filter.manager.get_client()
+            .virtual_machines
+            .get(resource['resourceGroup'], resource['name'], expand='instanceview')
+            .instance_view
+        )
+        return instance.serialize()
 
-        return super(InstanceViewFilter, self).__call__(i['instanceView'])
 
 
 @VirtualMachine.filter_registry.register('vm-extensions')
-class VMExtensionsFilter(ValueFilter):
+class VMExtensionsFilter(AnnotationPipelineFilter):
     """
         Provides a value filter targetting the virtual machine
         extensions array.  Requires an additional API call per
@@ -248,18 +250,17 @@ class VMExtensionsFilter(ValueFilter):
 
         """
     schema = type_schema('vm-extensions', rinherit=ValueFilter.schema)
-    annotate = False  # cannot annotate arrays
+    annotation_key = 'c7n:vm-extensions'
 
-    def __call__(self, i):
-        if 'c7n:vm-extensions' not in i:
-            client = self.manager.get_client()
-            extensions = (
-                client.virtual_machine_extensions
-                .list(i['resourceGroup'], i['name'])
-            )
-            i['c7n:vm-extensions'] = [e.serialize(True) for e in extensions.value]
+    @annotation_getter
+    def get_extensions(resource_filter, resource):
+        extensions = (
+            resource_filter.manager.get_client()
+            .virtual_machine_extensions
+            .list(resource['resourceGroup'], resource['name'])
+        )
+        return [e.serialize(True) for e in extensions.value]
 
-        return super(VMExtensionsFilter, self).__call__(i['c7n:vm-extensions'])
 
 
 @VirtualMachine.filter_registry.register('network-interface')
@@ -272,7 +273,7 @@ class NetworkInterfaceFilter(RelatedResourceFilter):
 
 
 @VirtualMachine.filter_registry.register('backup-status')
-class BackupStatusFilter(ValueFilter):
+class BackupStatusFilter(AnnotationPipelineFilter):
     """Filters Virtual Machines by their backup protection status.
 
     :example:
@@ -294,28 +295,24 @@ class BackupStatusFilter(ValueFilter):
         rinherit=ValueFilter.schema
     )
 
-    backup_annotation_key = "c7n:BackupStatus"
-    annotate = False
+    annotation_key = "c7n:BackupStatus"
+    backup_annotation_key = annotation_key
 
-    def process(self, resources, event=None):
-        s = local_session(self.manager.session_factory)
+    @annotation_batcher
+    def annotate_backup_statuses(resource_filter, resources):
+        s = local_session(resource_filter.manager.session_factory)
         client = s.client('azure.mgmt.recoveryservicesbackup.RecoveryServicesBackupClient')
 
         for resource in resources:
-            if self.backup_annotation_key in resource:
-                continue
-            resource[self.backup_annotation_key] = client.backup_status.get(
+            resource[resource_filter.annotation_key] = client.backup_status.get(
                 azure_region=resource['location'],
                 parameters=dict(resourceId=resource['id'], resourceType='VM')
             ).serialize(True)
-        return super().process(resources, event)
 
-    def __call__(self, r):
-        return super().__call__(r[self.backup_annotation_key])
 
 
 @VirtualMachine.filter_registry.register('jit-policy-port')
-class VirtualMachineJitPortsFilter(ListItemFilter):
+class VirtualMachineJitPortsFilter(ListItemAnnotationFilter):
     schema = type_schema(
         'jit-policy-port',
         attrs={"$ref": "#/definitions/filters_common/list_item_attrs"},
@@ -324,12 +321,10 @@ class VirtualMachineJitPortsFilter(ListItemFilter):
     )
     annotation_key = 'c7n:JitPolicyPorts'
 
-    def __init__(self, data, manager=None):
-        data['key'] = f'"{self.annotation_key}"'
-        super().__init__(data, manager)
-
-    def process(self, resources, event=None):
-        policies = self.manager.get_resource_manager('azure.defender-jit-policy').resources()
+    @annotation_batcher
+    def annotate_jit_policy_ports(resource_filter, resources):
+        policies = resource_filter.manager.get_resource_manager(
+            'azure.defender-jit-policy').resources()
         vm_id_to_ports = {}
         for p in policies:
             for machine in p['properties'].get('virtualMachines', []):
@@ -339,8 +334,8 @@ class VirtualMachineJitPortsFilter(ListItemFilter):
                     machine.get('ports', [])
                 )
         for r in resources:
-            r[self.annotation_key] = vm_id_to_ports.get(r['id'].lower(), [])
-        return super().process(resources, event)
+            r[resource_filter.annotation_key] = vm_id_to_ports.get(r['id'].lower(), [])
+
 
 
 @VirtualMachine.action_registry.register('poweroff')
